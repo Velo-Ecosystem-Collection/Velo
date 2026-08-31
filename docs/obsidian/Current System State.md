@@ -39,6 +39,7 @@ Functional repository capabilities include:
 
 ## Planned / Not Implemented
 
+- Managed Testnet Gas Station fee sponsorship: Convex policy/API, relayer signer, SDK/dashboard integration, and reviewer evidence package. No gas or relayer implementation is present in the current source; the three-day Deliverable 1 plan is [[../instawards/Velo-Instawards-Deliverable-1-Sprint-Plan]].
 - General Mainnet payment/checkout support and production settlement/compliance flows.
 - Full RPC gateway and broad analytics/indexing products.
 - Broader SEP-10 infrastructure and confirmed SEP-31/SEP-24 production anchor integrations.
@@ -50,4 +51,3 @@ Functional repository capabilities include:
 - `deployments/testnet.json` is the checked-in deployment manifest to consult for the current recorded deployment. Older contract READMEs and `docs/velo-pay-checkout.md` contain different hard-coded Testnet IDs; do not copy those IDs without reconciling the manifest and environment.
 - The canonical PDAX callback is Convex HTTP `POST /api/webhooks/pdax/v1?token=...`. The Next.js `POST /api/webhooks/pdax` route is intentionally retired with `410 Gone`; older docs use the unversioned path.
 - Older context says a cron directly checks pending PaymentIntents. Current `packages/backend/convex/crons.ts` schedules the durable payment reconciliation drain; `checkPendingPayments` remains an internal scanner action and should not be assumed to be the scheduled entry point.
-

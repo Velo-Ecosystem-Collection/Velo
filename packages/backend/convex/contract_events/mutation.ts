@@ -28,12 +28,25 @@ export const storePollResult = internalMutation({
     const observedAt = Date.now();
 
     for (const event of args.events) {
+      const execution = await ctx.db
+        .query("playgroundExecutions")
+        .withIndex("by_project_and_transaction_hash", (q) =>
+          q.eq("projectId", args.projectId).eq("transactionHash", event.transactionHash),
+        )
+        .first();
       const eventKey = `${args.projectId}:${event.eventId}`;
       const existing = await ctx.db
         .query("contractEvents")
         .withIndex("by_event_key", (q) => q.eq("eventKey", eventKey))
         .unique();
-      const value = { ...event, eventKey, projectId: args.projectId, observedAt };
+      const value = {
+        ...event,
+        eventKey,
+        projectId: args.projectId,
+        network: "testnet" as const,
+        ...(execution ? { journeyCorrelationId: execution.journeyCorrelationId } : {}),
+        observedAt,
+      };
 
       if (existing) {
         await ctx.db.patch(existing._id, value);
@@ -43,6 +56,7 @@ export const storePollResult = internalMutation({
           projectId: args.projectId,
           eventType: "contract.event",
           contractEventId,
+          ...(execution ? { correlationId: execution.journeyCorrelationId } : {}),
         });
       }
     }

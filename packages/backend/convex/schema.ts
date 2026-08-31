@@ -39,6 +39,16 @@ import paymentIntentRouteJobs from "./payment_intent_route_jobs/schema";
 import paymentIntents from "./payment_intents/schema";
 import paymentReconciliationJobs from "./payment_reconciliation_jobs/schema";
 import pdaxRouteCache from "./pdax_route_cache/schema";
+import {
+  playgroundEnvironmentVariables,
+  playgroundExecutions,
+  playgroundRequestVersions,
+  playgroundSavedContracts,
+  playgroundSavedRequests,
+  playgroundShares,
+  playgroundWebhookFilters,
+  projectMemberships,
+} from "./playground_projects/schema";
 import pollerState from "./poller_state/schema";
 import projectContracts from "./project_contracts/schema";
 import projects from "./projects/schema";
@@ -96,6 +106,14 @@ export default defineSchema({
   pollerState,
   projectContracts,
   projects,
+  projectMemberships,
+  playgroundSavedContracts,
+  playgroundSavedRequests,
+  playgroundRequestVersions,
+  playgroundEnvironmentVariables,
+  playgroundExecutions,
+  playgroundShares,
+  playgroundWebhookFilters,
   transactions,
   users,
   webhookDeliveries,

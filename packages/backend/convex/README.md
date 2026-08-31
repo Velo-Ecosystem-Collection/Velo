@@ -67,6 +67,15 @@ New provider callbacks persist typed summaries and digests instead of raw payloa
 
 Configure `VELO_OTEL_EXPORTER_OTLP_ENDPOINT` and optional `VELO_OTEL_EXPORTER_OTLP_AUTHORIZATION` in the Convex environment. Durable UI markers also require the same server-only `VELO_UI_TELEMETRY_INTAKE_SECRET` configured in the web environment.
 
+Project Playground execution history requires the same server-only
+`VELO_PLAYGROUND_PERSISTENCE_SECRET` in the web and Convex environments. It signs
+trusted simulation and transaction outcomes before Convex accepts them. Never expose
+it through a `NEXT_PUBLIC_*` variable.
+
+The public Playground limiter requires
+`VELO_PLAYGROUND_RATE_LIMIT_SECRET` to contain the same random server-only value in
+Convex and the web runtime. Never expose it through a `NEXT_PUBLIC_*` variable.
+
 Set `VELO_CONVEX_TELEMETRY_ENABLED=false` in the Convex deployment environment to stop new
 outbox telemetry, bounded gauge scans, and exporter claims. The switch defaults to enabled when it
 is unset. Existing outbox rows remain available for the hourly expiry worker to delete.

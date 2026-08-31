@@ -145,12 +145,34 @@ function DeliveryDetail({ delivery }: { delivery: Doc<"webhookDeliveries"> }) {
   );
 }
 
-export function ProjectWebhooks({ projectId }: { projectId: string }) {
+export function ProjectWebhooks({
+  projectId,
+  sourceExecutionId,
+  eventIndex,
+}: {
+  projectId: string;
+  sourceExecutionId?: string;
+  eventIndex?: number;
+}) {
   const wallet = useWallet();
   const typedProjectId = projectId as Id<"projects">;
   const project = useQuery(
     api.projects.query.getById,
     wallet.address ? { id: typedProjectId } : "skip",
+  );
+  const access = useQuery(
+    api.playground_projects.queries.getMyAccess,
+    wallet.address ? { projectId: typedProjectId } : "skip",
+  );
+  const sourceExecution = useQuery(
+    api.playground_projects.queries.getExecution,
+    wallet.address && sourceExecutionId
+      ? { executionId: sourceExecutionId as Id<"playgroundExecutions"> }
+      : "skip",
+  );
+  const webhookFilters = useQuery(
+    api.playground_projects.queries.listWebhookFilters,
+    wallet.address ? { projectId: typedProjectId } : "skip",
   );
   const settings = useQuery(
     api.webhook_endpoints.query.getSettings,
@@ -165,6 +187,7 @@ export function ProjectWebhooks({ projectId }: { projectId: string }) {
     wallet.address ? { projectId: typedProjectId, limit: 1 } : "skip",
   );
   const saveSettings = useMutation(api.webhook_endpoints.mutation.saveSettings);
+  const saveWebhookFilter = useMutation(api.playground_projects.mutations.saveWebhookFilter);
   const rotateSecret = useMutation(api.webhook_endpoints.mutation.rotateSecret);
   const sendTest = useAction(api.webhookDelivery.sendTest);
   const connection = useQuery(
@@ -186,6 +209,9 @@ export function ProjectWebhooks({ projectId }: { projectId: string }) {
   const [showSecret, setShowSecret] = useState(false);
   const [copiedSecret, setCopiedSecret] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
+  const [filterTopicsJson, setFilterTopicsJson] = useState("[]");
+  const [filterDataJson, setFilterDataJson] = useState("");
+  const [isSavingFilter, setIsSavingFilter] = useState(false);
 
   useEffect(() => {
     const update = () => setIsOffline(!window.navigator.onLine);
@@ -218,6 +244,15 @@ export function ProjectWebhooks({ projectId }: { projectId: string }) {
       setTestEventType(selectedTypes[0]);
     }
   }, [selectedTypes, testEventType]);
+
+  const selectedSourceEvent = sourceExecution?.eventSummaries?.[Math.max(0, eventIndex ?? 0)] as
+    | { contractId?: string; topics?: unknown[] }
+    | undefined;
+
+  useEffect(() => {
+    if (!selectedSourceEvent) return;
+    setFilterTopicsJson(JSON.stringify(selectedSourceEvent.topics ?? [], null, 2));
+  }, [selectedSourceEvent]);
 
   if (!wallet.address) {
     return (
@@ -262,14 +297,45 @@ export function ProjectWebhooks({ projectId }: { projectId: string }) {
     );
   }
 
-  const ownerMatches = wallet.address?.toUpperCase() === project.ownerAddress;
+  const canManage = access?.role === "owner" || access?.role === "editor";
   const latestEvent = activity?.events[0];
   const succeeded = deliveries?.filter((delivery) => delivery.status === "success").length ?? 0;
   const failed = deliveries?.filter((delivery) => delivery.status === "failed").length ?? 0;
   const finished = succeeded + failed;
   const successRate = finished ? Math.round((succeeded / finished) * 100) : 0;
   const privateDataLoading =
-    ownerMatches && (settings === undefined || deliveries === undefined || activity === undefined);
+    canManage && (settings === undefined || deliveries === undefined || activity === undefined);
+
+  async function saveEventFilter() {
+    if (!settings || !selectedSourceEvent?.contractId || !sourceExecution) return;
+    setIsSavingFilter(true);
+    setNotice(null);
+    try {
+      const topics = JSON.parse(filterTopicsJson) as unknown[];
+      const data = filterDataJson.trim() ? (JSON.parse(filterDataJson) as unknown) : undefined;
+      await saveWebhookFilter({
+        projectId: typedProjectId,
+        endpointId: settings._id,
+        network: sourceExecution.network,
+        contractId: selectedSourceEvent.contractId,
+        topics,
+        data,
+        sourceExecutionId: sourceExecution._id,
+        enabled: true,
+      });
+      setNotice({
+        type: "success",
+        message: "Reviewed contract-event filter saved. Future deliveries must match it.",
+      });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        message: error instanceof Error ? error.message : "Webhook filter could not be saved",
+      });
+    } finally {
+      setIsSavingFilter(false);
+    }
+  }
 
   function toggleEventType(eventType: EventType, checked: boolean) {
     setSelectedTypes((current) =>
@@ -412,16 +478,18 @@ export function ProjectWebhooks({ projectId }: { projectId: string }) {
       {!wallet.address ? (
         <Alert>
           <WalletIcon />
-          <AlertTitle>Owner wallet required</AlertTitle>
+          <AlertTitle>Project wallet required</AlertTitle>
           <AlertDescription>
             Connect {shortenAddress(project.ownerAddress)} to manage private webhook settings.
           </AlertDescription>
         </Alert>
-      ) : !ownerMatches ? (
+      ) : !canManage ? (
         <Alert variant="destructive">
           <AlertCircleIcon />
-          <AlertTitle>Connected wallet is not the owner</AlertTitle>
-          <AlertDescription>Switch to {shortenAddress(project.ownerAddress)}.</AlertDescription>
+          <AlertTitle>Editor access required</AlertTitle>
+          <AlertDescription>
+            Viewers can inspect project evidence but cannot change webhook configuration.
+          </AlertDescription>
         </Alert>
       ) : null}
 
@@ -454,6 +522,83 @@ export function ProjectWebhooks({ projectId }: { projectId: string }) {
         </Alert>
       ) : null}
 
+      {sourceExecutionId ? (
+        <div className="grid gap-4 border border-blue-200 bg-blue-50 p-5">
+          <div>
+            <h2 className="font-semibold">Review event-derived filter</h2>
+            <p className="mt-1 text-sm text-zinc-600">
+              The source execution only pre-populates this draft. Nothing is persisted until you
+              review and save it.
+            </p>
+          </div>
+          {!sourceExecution || !selectedSourceEvent?.contractId ? (
+            <Alert>
+              <AlertCircleIcon />
+              <AlertTitle>Source event unavailable</AlertTitle>
+              <AlertDescription>
+                The execution expired, the event index is invalid, or it belongs to another project.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <>
+              <div className="grid gap-2 text-sm sm:grid-cols-2">
+                <div>
+                  <Label>Network</Label>
+                  <Input value={sourceExecution.network} readOnly />
+                </div>
+                <div>
+                  <Label>Contract ID</Label>
+                  <Input value={selectedSourceEvent.contractId} readOnly className="font-mono" />
+                </div>
+              </div>
+              <Label className="grid gap-2">
+                Topic prefix JSON
+                <textarea
+                  aria-label="Webhook topic prefix JSON"
+                  value={filterTopicsJson}
+                  onChange={(event) => setFilterTopicsJson(event.target.value)}
+                  className="min-h-28 border bg-white p-3 font-mono text-xs"
+                />
+              </Label>
+              <Label className="grid gap-2">
+                Optional exact decoded data JSON
+                <textarea
+                  aria-label="Webhook decoded data JSON"
+                  value={filterDataJson}
+                  onChange={(event) => setFilterDataJson(event.target.value)}
+                  placeholder="Leave empty to match any data"
+                  className="min-h-24 border bg-white p-3 font-mono text-xs"
+                />
+              </Label>
+              <Button
+                className="w-fit"
+                onClick={() => void saveEventFilter()}
+                disabled={!canManage || !settings || isSavingFilter}
+              >
+                <SaveIcon />
+                {isSavingFilter ? "Saving filter…" : "Save reviewed filter"}
+              </Button>
+            </>
+          )}
+        </div>
+      ) : null}
+
+      {webhookFilters?.length ? (
+        <div className="grid gap-2 border border-zinc-200 bg-white p-5 text-sm">
+          <h2 className="font-semibold">Contract event filters</h2>
+          {webhookFilters.map((filter) => (
+            <div key={filter._id} className="flex flex-wrap items-center gap-2 border p-2">
+              <Badge variant={filter.enabled ? "success" : "gray"}>
+                {filter.enabled ? "Enabled" : "Disabled"}
+              </Badge>
+              <code className="min-w-0 flex-1 break-all">
+                {filter.network}:{filter.contractId} · topics {JSON.stringify(filter.topics)}
+              </code>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       {privateDataLoading ? (
         <div className="grid gap-3" aria-label="Loading private webhook data">
           <Skeleton className="h-28 w-full" />
@@ -470,10 +615,10 @@ export function ProjectWebhooks({ projectId }: { projectId: string }) {
               value={url}
               onChange={(event) => setUrl(event.target.value)}
               placeholder="https://api.example.com/webhooks/velo"
-              disabled={!ownerMatches}
+              disabled={!canManage}
             />
           </div>
-          <Button variant="outline" onClick={useTemporaryTester} disabled={!ownerMatches}>
+          <Button variant="outline" onClick={useTemporaryTester} disabled={!canManage}>
             <FlaskConicalIcon />
             Use temporary tester
           </Button>
@@ -524,7 +669,7 @@ export function ProjectWebhooks({ projectId }: { projectId: string }) {
                   variant="outline"
                   size="sm"
                   onClick={() => setIsConfirmingRotation(true)}
-                  disabled={!ownerMatches || isRotating}
+                  disabled={!canManage || isRotating}
                 >
                   <RefreshCwIcon className="h-3 w-3 mr-1" />
                   Rotate secret
@@ -573,7 +718,7 @@ export function ProjectWebhooks({ projectId }: { projectId: string }) {
             id="webhook-enabled"
             checked={enabled}
             onCheckedChange={setEnabled}
-            disabled={!ownerMatches}
+            disabled={!canManage}
           />
         </div>
 
@@ -585,7 +730,7 @@ export function ProjectWebhooks({ projectId }: { projectId: string }) {
                 <Checkbox
                   checked={selectedTypes.includes(eventType)}
                   onCheckedChange={(checked) => toggleEventType(eventType, checked === true)}
-                  disabled={!ownerMatches}
+                  disabled={!canManage}
                 />
                 <span className="font-mono text-xs">{eventType}</span>
               </Label>
@@ -596,7 +741,7 @@ export function ProjectWebhooks({ projectId }: { projectId: string }) {
         <div className="flex flex-wrap gap-2">
           <Button
             onClick={() => void save()}
-            disabled={!ownerMatches || isSaving || selectedTypes.length === 0}
+            disabled={!canManage || isSaving || selectedTypes.length === 0}
           >
             {isSaving ? <LoaderCircleIcon className="animate-spin" /> : <SaveIcon />}
             {isSaving ? "Saving..." : "Save webhook"}
@@ -615,7 +760,7 @@ export function ProjectWebhooks({ projectId }: { projectId: string }) {
           <Select
             value={testEventType}
             onValueChange={(value) => setTestEventType(value as EventType)}
-            disabled={!ownerMatches}
+            disabled={!canManage}
           >
             <SelectTrigger>
               <SelectValue />
@@ -632,14 +777,14 @@ export function ProjectWebhooks({ projectId }: { projectId: string }) {
             <Checkbox
               checked={useObservedEvent}
               onCheckedChange={(checked) => setUseObservedEvent(checked === true)}
-              disabled={testEventType !== "contract.event" || !latestEvent || !ownerMatches}
+              disabled={testEventType !== "contract.event" || !latestEvent || !canManage}
             />
             Latest observed event
           </Label>
           <Button
             onClick={() => void send()}
             disabled={
-              !ownerMatches || isSending || !settings || !selectedTypes.includes(testEventType)
+              !canManage || isSending || !settings || !selectedTypes.includes(testEventType)
             }
           >
             {isSending ? <LoaderCircleIcon className="animate-spin" /> : <SendIcon />}

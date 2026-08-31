@@ -1,14 +1,19 @@
 import { v } from "convex/values";
 
 import { internalQuery, query } from "../_generated/server";
-import { ownerProjectOrNull, requireOwnerProjectByToken, validateWebhookUrl } from "./helpers";
+import {
+  editorProjectOrNull,
+  ownerProjectOrNull,
+  requireOwnerProjectByToken,
+  validateWebhookUrl,
+} from "./helpers";
 
 export const getSettings = query({
   args: {
     projectId: v.id("projects"),
   },
   handler: async (ctx, args) => {
-    if (!(await ownerProjectOrNull(ctx, args.projectId))) {
+    if (!(await editorProjectOrNull(ctx, args.projectId))) {
       return null;
     }
 
@@ -132,6 +137,33 @@ export const getDeliveryTargetInternal = internalQuery({
 
     if (contractEvent && contractEvent.projectId !== args.projectId) {
       throw new Error("Observed event does not belong to this project");
+    }
+    if (args.eventType === "contract.event" && contractEvent) {
+      const filters = (
+        await ctx.db
+          .query("playgroundWebhookFilters")
+          .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
+          .collect()
+      ).filter((filter) => filter.enabled && filter.endpointId === endpoint._id);
+      if (filters.length) {
+        const matches = filters.some((filter) => {
+          if (
+            filter.network !== (contractEvent.network ?? "testnet") ||
+            filter.contractId !== contractEvent.contractId
+          ) {
+            return false;
+          }
+          const topicsMatch = filter.topics.every(
+            (topic, index) => JSON.stringify(topic) === JSON.stringify(contractEvent.topics[index]),
+          );
+          const dataMatch =
+            filter.data === undefined ||
+            JSON.stringify(filter.data) ===
+              JSON.stringify(contractEvent.decoded ?? contractEvent.raw);
+          return topicsMatch && dataMatch;
+        });
+        if (!matches) return null;
+      }
     }
 
     const paymentIntent = args.paymentIntentId ? await ctx.db.get(args.paymentIntentId) : undefined;

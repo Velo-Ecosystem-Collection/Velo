@@ -1,23 +1,23 @@
 {
   "schemaVersion": 2,
-  "deployedAt": "2026-07-27T03:55:08.655Z",
+  "deployedAt": "2026-08-23T15:18:35.552Z",
   "network": "testnet",
   "rpcUrl": "https://soroban-testnet.stellar.org",
   "networkPassphrase": "Test SDF Network ; September 2015",
   "stellarCliVersion": "stellar 25.2.0 (28484880988199233a7e8e87c97cb12dac323cb3)\nstellar-xdr 25.0.0 (dc9f40fcb83c3054341f70b65a2222073369b37b)\nxdr curr (0a621ec7811db000a60efae5b35f78dee3aa2533)",
-  "commitSha": "681dd77377b5c82edec0b9f964d3aa9d0a5b2edf",
+  "commitSha": "1a46b65e51a1245d20b26fc5d438811f304f0769",
   "deployerPublicKey": "GDIXHECIHT6KCWFT7K4H2NIEZCILGAUTE6IXSHPJ6EYCUWMXK6AURV2M",
   "contracts": {
     "registry": {
-      "contractId": "CBHTEI5YVWUBTHYP4CMPPORJC2WEWA5PHUPC3G7B6ZYVARZW6MH24OIF",
+      "contractId": "CDIWR3WQ7DKQORRRAZOTWFQ2AOZZOFFNA3CUTL5CJPL4JVZ2GMF27V37",
       "wasmHash": "2fcea54c1d3b4e17a4fd624faab898e05fac2cf178fe8e98fafe1b73883bbe0c",
       "wasm": "contracts/registry/target/wasm32v1-none/release/velo_registry.wasm"
     },
     "payAccess": {
-      "contractId": "CA5OAE6YBXVSNZY2SJTTHCOWR7DRIHBU4SR5EXFKWX3F62K54SWK4OM3",
+      "contractId": "CAXMXAWM7QSW57TE3MG2DQI6ZG4UQPYK3VGPMF5K7XO5ASEEJ7IXL7RH",
       "wasmHash": "2df67f711b8f2b7ee3395f138c7993a5682e839992a06852af6feecd503870bd",
       "wasm": "contracts/pay_access/target/wasm32v1-none/release/velo_pay_access.wasm",
-      "registryContractId": "CBHTEI5YVWUBTHYP4CMPPORJC2WEWA5PHUPC3G7B6ZYVARZW6MH24OIF",
+      "registryContractId": "CDIWR3WQ7DKQORRRAZOTWFQ2AOZZOFFNA3CUTL5CJPL4JVZ2GMF27V37",
       "mirrorAuthority": "GDEOFO7N74I5O7UYIT2ZC7TW6E6YFNGRCAQ64EDT4URNS5OASKPD6N2A"
     }
   }

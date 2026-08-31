@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   deterministicSample,
+  parsePlaygroundTelemetryEvent,
   parseTelemetryContext,
   projectSafeEvent,
   signUiTelemetryMarker,
@@ -10,6 +11,29 @@ import {
   validateMetricLabels,
   traceIdentifiers,
 } from "./index.ts";
+
+test("Playground telemetry projects only its privacy-safe event contract", () => {
+  const event = {
+    schemaVersion: 1,
+    event: "contract_loaded",
+    outcome: "success",
+    network: "testnet",
+    durationMs: 12,
+    sessionId: "session-00000001",
+    playgroundRequestId: "request-00000001",
+    contractId: "must-not-survive",
+    arguments: { secret: "must-not-survive" },
+  };
+  assert.deepEqual(parsePlaygroundTelemetryEvent(event), {
+    schemaVersion: 1,
+    event: "contract_loaded",
+    outcome: "success",
+    network: "testnet",
+    durationMs: 12,
+    sessionId: "session-00000001",
+    playgroundRequestId: "request-00000001",
+  });
+});
 
 test("accepts only validated correlation and W3C trace context", () => {
   assert.deepEqual(

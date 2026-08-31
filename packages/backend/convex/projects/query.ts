@@ -4,11 +4,11 @@ import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 
 import { internalQuery, query } from "../_generated/server";
+import { requireProjectRole } from "../playground_projects/helpers";
 import { activeContractsForProject } from "../project_contracts/helpers";
 import {
   METADATA_HASH_PATTERN,
   normalizeAddress,
-  ownerProjectOrNull,
   requireIdentity,
   requireOwnerProject,
   safeWebsite,
@@ -16,6 +16,7 @@ import {
 
 async function ownerProjects(ctx: QueryCtx, limit = 50) {
   const identity = await requireIdentity(ctx);
+  const walletAddress = normalizeAddress(identity.subject);
   const tokenProjects = await ctx.db
     .query("projects")
     .withIndex("by_owner_token_identifier", (q) =>
@@ -26,16 +27,29 @@ async function ownerProjects(ctx: QueryCtx, limit = 50) {
 
   const legacyProjects = await ctx.db
     .query("projects")
-    .withIndex("by_owner", (q) => q.eq("ownerAddress", normalizeAddress(identity.subject)))
+    .withIndex("by_owner", (q) => q.eq("ownerAddress", walletAddress))
     .order("desc")
     .take(limit);
 
   const tokenProjectIds = new Set(tokenProjects.map((project) => project._id));
+  const memberships = await ctx.db
+    .query("projectMemberships")
+    .withIndex("by_wallet_address", (q) => q.eq("walletAddress", walletAddress))
+    .order("desc")
+    .take(limit);
+  const memberProjects = (
+    await Promise.all(memberships.map((membership) => ctx.db.get(membership.projectId)))
+  ).filter((project): project is Doc<"projects"> => project !== null);
+  const knownProjectIds = new Set([
+    ...tokenProjects.map((project) => project._id),
+    ...legacyProjects.map((project) => project._id),
+  ]);
   return [
     ...tokenProjects,
     ...legacyProjects.filter(
       (project) => !project.ownerTokenIdentifier && !tokenProjectIds.has(project._id),
     ),
+    ...memberProjects.filter((project) => !knownProjectIds.has(project._id)),
   ].slice(0, limit);
 }
 
@@ -195,9 +209,12 @@ export const getById = query({
     id: v.id("projects"),
   },
   handler: async (ctx, args) => {
-    const project = await ownerProjectOrNull(ctx, args.id);
-
-    return project ? await projectWithLogoUrl(ctx, project) : null;
+    try {
+      const { project } = await requireProjectRole(ctx, args.id, "viewer");
+      return await projectWithLogoUrl(ctx, project);
+    } catch {
+      return null;
+    }
   },
 });
 

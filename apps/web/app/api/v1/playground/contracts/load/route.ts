@@ -5,16 +5,27 @@ import {
   playgroundErrorResponse,
 } from "@/features/playground/server/contract-loader";
 import { helloInvocationEligibility } from "@/features/playground/server/fixture";
+import { verifyPlaygroundProjectContext } from "@/features/playground/server/project-context";
+import { guardPlaygroundRequest } from "@/features/playground/server/rate-limit";
 
 export const POST = withRouteTelemetry(
   "playground.contract.load.v1",
   async (request, telemetry) => {
+    const blocked = await guardPlaygroundRequest({
+      request,
+      operation: "contract_load",
+      correlationId: telemetry.correlationId,
+      maxBytes: 4 * 1_024,
+    });
+    if (blocked) return blocked;
     try {
-      const body = await parsePlaygroundJson(request);
+      await verifyPlaygroundProjectContext(request);
+      const body = await parsePlaygroundJson(request, 4 * 1_024);
       const document = await contractSpecLoader.load(body, telemetry.correlationId);
       return Response.json(
         {
           ...document,
+          playgroundRequestId: request.headers.get("x-velo-journey-id") ?? telemetry.correlationId,
           invocation: {
             eligible: helloInvocationEligibility(
               document.network,

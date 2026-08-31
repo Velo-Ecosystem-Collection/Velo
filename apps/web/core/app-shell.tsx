@@ -284,6 +284,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (activeProject) {
       urls.push(
         `/projects/${activeProject.id}/contracts`,
+        `/projects/${activeProject.id}/playground`,
         `/projects/${activeProject.id}/events`,
         `/projects/${activeProject.id}/webhooks`,
         `/projects/${activeProject.id}/api-keys`,

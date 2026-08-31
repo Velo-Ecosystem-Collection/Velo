@@ -114,6 +114,12 @@ export function AppSidebar({
           icon: FlaskConicalIcon,
         },
         {
+          title: "Project Playground",
+          url: `${projectBaseUrl}/playground`,
+          icon: FlaskConicalIcon,
+          disabled: !activeProject,
+        },
+        {
           title: "Docs",
           url: "/docs",
           icon: BookOpenIcon,
@@ -152,6 +158,12 @@ export function AppSidebar({
           title: "Webhooks",
           url: `${projectBaseUrl}/webhooks`,
           icon: WebhookIcon,
+          disabled: !activeProject,
+        },
+        {
+          title: "Velo Logs",
+          url: activeProject ? `${projectBaseUrl}/playground#project-history` : "/playground",
+          icon: ActivityIcon,
           disabled: !activeProject,
         },
         {

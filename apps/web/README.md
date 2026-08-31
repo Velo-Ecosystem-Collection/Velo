@@ -110,6 +110,16 @@ was performed in this implementation pass. See the
 [Sprint 4 architecture](../../docs/architecture/sprint-4-playground-wallet-review-lifecycle.md)
 and [API/lifecycle reference](../../docs/references/sprint-4-playground-api-and-lifecycle.md).
 
+## Sprint 5 Playground standalone alpha
+
+Sprint 5 adds 30-day, 50-entry device-local history with secret-aware replay,
+deterministic TypeScript and Stellar CLI generation, privacy-safe funnel telemetry,
+responsive/accessibility qualification, and distributed anonymous endpoint limits.
+Configure `VELO_PLAYGROUND_RATE_LIMIT_SECRET` with the same random value in the web
+runtime and Convex before production traffic. See the
+[architecture](../../docs/architecture/sprint-5-playground-standalone-alpha.md) and
+[evidence report](../../docs/references/sprint-5-playground-alpha-evidence.md).
+
 ## Sprint 10 observability
 
 All public/provider route methods use the shared `withRouteTelemetry` boundary. Responses include `X-Correlation-Id` and the compatibility `X-Request-Id`; accepted payment intents also expose a durable journey ID. The server-only instrumentation hook exports sampled traces, unsampled metrics, and sanitized logs over OTLP without blocking request completion.

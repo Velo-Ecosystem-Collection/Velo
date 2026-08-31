@@ -11,3 +11,8 @@ export function currentBillingEnvironment(): "development" | "preview" | "produc
   if (env.VELO_DEPLOYMENT_ENVIRONMENT === "production") return "production";
   return "development";
 }
+
+export function canonicalMainnetUsdcAsset() {
+  const issuer = env.VELO_MAINNET_USDC_ISSUER?.trim().toUpperCase();
+  return issuer ? `USDC:${issuer}` : null;
+}

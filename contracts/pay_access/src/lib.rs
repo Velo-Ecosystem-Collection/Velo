@@ -6,9 +6,10 @@ mod types;
 
 pub use errors::PayAccessError;
 pub use events::{
-    CheckoutCreditConsumed, PayAccessInitialized, PaymentsActivated, PaymentsDeactivated,
+    CheckoutCreditConsumed, DisplayBalanceUpdated, MirrorAuthorityRotated, PayAccessInitialized,
+    PaymentsActivated, PaymentsDeactivated,
 };
-pub use types::{PaymentAccessRecord, PaymentAccessStatus, RegistryProject};
+pub use types::{DisplayBalance, PaymentAccessRecord, PaymentAccessStatus, RegistryProject};
 
 use soroban_sdk::{contract, contractimpl, vec, Address, Env, IntoVal, Symbol, Val, Vec};
 use types::DataKey;
@@ -22,7 +23,11 @@ pub struct VeloPayAccess;
 
 #[contractimpl]
 impl VeloPayAccess {
-    pub fn initialize(env: Env, registry_contract: Address) -> Result<(), PayAccessError> {
+    pub fn initialize(
+        env: Env,
+        registry_contract: Address,
+        mirror_authority: Address,
+    ) -> Result<(), PayAccessError> {
         if env.storage().instance().has(&DataKey::RegistryContract) {
             return Err(PayAccessError::AlreadyInitialized);
         }
@@ -30,10 +35,104 @@ impl VeloPayAccess {
         env.storage()
             .instance()
             .set(&DataKey::RegistryContract, &registry_contract);
+        env.storage()
+            .instance()
+            .set(&DataKey::MirrorAuthority, &mirror_authority);
         extend_instance_ttl(&env);
 
         PayAccessInitialized { registry_contract }.publish(&env);
 
+        Ok(())
+    }
+
+    pub fn get_mirror_authority(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::MirrorAuthority)
+            .expect("mirror authority is not initialized")
+    }
+
+    pub fn set_display_balance(
+        env: Env,
+        project_id: u64,
+        credits: i128,
+        source_version: u64,
+    ) -> Result<(), PayAccessError> {
+        if credits < 0 {
+            return Err(PayAccessError::InvalidCreditAmount);
+        }
+        require_registry_project(&env, project_id)?;
+        let authority = Self::get_mirror_authority(env.clone());
+        authority.require_auth();
+        let key = DataKey::DisplayBalance(project_id);
+        if let Some(existing) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, DisplayBalance>(&key)
+        {
+            if source_version < existing.source_version {
+                return Err(PayAccessError::StaleMirrorVersion);
+            }
+            if source_version == existing.source_version {
+                if credits == existing.credits {
+                    env.storage()
+                        .persistent()
+                        .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+                    extend_instance_ttl(&env);
+                    return Ok(());
+                }
+                return Err(PayAccessError::ConflictingMirrorVersion);
+            }
+        }
+        let display = DisplayBalance {
+            credits,
+            source_version,
+        };
+        env.storage().persistent().set(&key, &display);
+        env.storage()
+            .persistent()
+            .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+        extend_instance_ttl(&env);
+        DisplayBalanceUpdated {
+            project_id,
+            credits,
+            source_version,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
+    pub fn get_display_balance(env: Env, project_id: u64) -> DisplayBalance {
+        let key = DataKey::DisplayBalance(project_id);
+        let display = env
+            .storage()
+            .persistent()
+            .get::<DataKey, DisplayBalance>(&key)
+            .unwrap_or(DisplayBalance {
+                credits: 0,
+                source_version: 0,
+            });
+        if display.source_version > 0 {
+            env.storage()
+                .persistent()
+                .extend_ttl(&key, TTL_THRESHOLD, TTL_EXTEND_TO);
+        }
+        display
+    }
+
+    pub fn rotate_mirror_authority(env: Env, new_authority: Address) -> Result<(), PayAccessError> {
+        let old_authority = Self::get_mirror_authority(env.clone());
+        old_authority.require_auth();
+        new_authority.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::MirrorAuthority, &new_authority);
+        extend_instance_ttl(&env);
+        MirrorAuthorityRotated {
+            old_authority,
+            new_authority,
+        }
+        .publish(&env);
         Ok(())
     }
 

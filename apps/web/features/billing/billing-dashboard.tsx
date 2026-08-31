@@ -1,6 +1,9 @@
 "use client";
 
 import { env } from "@/core/config/env";
+import { stellarConfig } from "@/core/config/stellar";
+import { useWallet } from "@/core/wallet/wallet-provider";
+import { buildSetDisplayBalanceTransaction, submitSignedTransaction } from "@repo/stellar";
 import { Badge } from "@repo/ui/components/ui-customs/badge";
 import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/ui/alert";
 import { Button } from "@repo/ui/components/ui/button";
@@ -42,6 +45,7 @@ import { formatBillingOfferAsset, resolveBillingOfferAsset } from "./billing-off
 
 type BillingView = {
   organization: Doc<"organizations">;
+  billingSettings: Doc<"organizationBillingSettings"> | null;
   balance: Doc<"billingBalances">;
   topupsEnabled: boolean;
   topupsUnavailableReason: string | null;
@@ -89,7 +93,20 @@ const setOrganizationPolicy = makeFunctionReference<"mutation">(
 );
 const verifyAndGrantTrial = makeFunctionReference<"mutation">("billing/admin:verifyAndGrantTrial");
 const resolveException = makeFunctionReference<"mutation">("billing/exceptions:resolve");
+const assignBillingException = makeFunctionReference<"mutation">("billing/exceptions:assign");
 const createOffer = makeFunctionReference<"mutation">("billing/offers:create");
+const getLaunchReadiness = makeFunctionReference<"query">("billing/launch:getReadiness");
+const recordLaunchApproval = makeFunctionReference<"mutation">("billing/launch:recordApproval");
+const configureTreasury = makeFunctionReference<"mutation">("billing/launch:configureTreasury");
+const activatePlatform = makeFunctionReference<"mutation">("billing/launch:activatePlatform");
+const configureCohort = makeFunctionReference<"mutation">("billing/cohort:configure");
+const listCostPeriods = makeFunctionReference<"query">("billing/finance:listCostPeriods");
+const listFinanceReports = makeFunctionReference<"query">("billing/finance:listReports");
+const createCostPeriod = makeFunctionReference<"mutation">("billing/finance:createCostPeriod");
+const approveCostPeriod = makeFunctionReference<"mutation">("billing/finance:approveCostPeriod");
+const generateFinanceReport = makeFunctionReference<"mutation">("billing/finance:generateReport");
+const listMirrorStates = makeFunctionReference<"query">("billing/mirror:list");
+const submitMirrorAttempt = makeFunctionReference<"mutation">("billing/mirror:submit");
 
 function credits(value: bigint) {
   return value.toLocaleString();
@@ -169,7 +186,7 @@ export function BillingDashboard() {
           </p>
           <h1 className="text-3xl font-bold tracking-tight">Billing</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Prepaid sandbox credits backed by an immutable commercial ledger.
+            Prepaid credits backed by an immutable commercial ledger.
           </p>
         </div>
         <Button
@@ -197,8 +214,22 @@ export function BillingDashboard() {
           <AlertTitle>{totalAvailable === 0n ? "No credits available" : "Low balance"}</AlertTitle>
           <AlertDescription>
             {totalAvailable === 0n
-              ? "Sandbox-enforced payments cannot start until credits are granted or purchased."
+              ? "Credit-enforced payments cannot start until credits are granted or purchased."
               : `${credits(totalAvailable)} credits remain.`}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {billing.billingSettings?.cohortStage && (
+        <Alert>
+          <ShieldCheckIcon />
+          <AlertTitle>
+            Mainnet cohort: {billing.billingSettings.cohortStage.replace("_", " ")}
+          </AlertTitle>
+          <AlertDescription>
+            {billing.billingSettings.graceUntil && billing.billingSettings.graceUntil > Date.now()
+              ? `Grace remains active until ${date(billing.billingSettings.graceUntil)}.`
+              : `Activation state: ${billing.billingSettings.activationState ?? "not enrolled"}.`}
           </AlertDescription>
         </Alert>
       )}
@@ -219,7 +250,7 @@ export function BillingDashboard() {
         <BalanceCard
           title="Paid"
           value={billing.balance.paidAvailable}
-          detail="Does not expire in Sprint 2"
+          detail="Purchased credits do not expire"
           icon={<ReceiptIcon />}
         />
       </section>
@@ -549,13 +580,18 @@ function OperatorPanel() {
   const applyOrganizationPolicy = useMutation(setOrganizationPolicy);
   const approveOrganization = useMutation(verifyAndGrantTrial);
   const applyExceptionResolution = useMutation(resolveException);
+  const assignException = useMutation(assignBillingException);
   const applyOperator = useMutation(setOperator);
+  const applyCohortConfiguration = useMutation(configureCohort);
   const [walletAddress, setWalletAddress] = useState("");
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
       <PolicyControls />
       <OfferEditor />
+      <LaunchReadinessPanel />
+      <FinancePanel />
+      <MirrorPanel />
       <Card>
         <CardHeader>
           <CardTitle>Operator wallets</CardTitle>
@@ -604,9 +640,28 @@ function OperatorPanel() {
         </CardHeader>
         <CardContent className="space-y-3">
           {organizations?.map((organization) => (
-            <div
+            <form
               key={organization._id}
-              className="grid gap-3 rounded-lg border p-4 md:grid-cols-[1fr_auto_auto] md:items-center"
+              className="grid gap-3 rounded-lg border p-4 md:grid-cols-[1fr_auto_auto_auto] md:items-center"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                const form = new FormData(event.currentTarget);
+                const graceUntil = new Date(String(form.get("graceUntil"))).getTime();
+                try {
+                  await applyCohortConfiguration({
+                    organizationId: organization._id,
+                    cohortStage: "design_partner",
+                    enforcementEnabled: true,
+                    graceUntil,
+                    payAccessMirrorEnabled: true,
+                    sendMigrationNotice: true,
+                    sendLowBalanceNotice: true,
+                  });
+                  toast.success("Cohort grace and enforcement schedule saved");
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Cohort update failed");
+                }
+              }}
             >
               <div>
                 <p className="font-medium">{organization.displayName}</p>
@@ -632,6 +687,17 @@ function OperatorPanel() {
                   }
                 />
               </label>
+              <Label>
+                Grace deadline
+                <Input
+                  name="graceUntil"
+                  type="datetime-local"
+                  defaultValue={new Date(Date.now() + 7 * 24 * 60 * 60_000)
+                    .toISOString()
+                    .slice(0, 16)}
+                  required
+                />
+              </Label>
               <Button
                 variant="outline"
                 className="cursor-pointer"
@@ -647,7 +713,10 @@ function OperatorPanel() {
                 <ShieldCheckIcon />
                 Verify + grant
               </Button>
-            </div>
+              <Button type="submit" variant="outline" className="cursor-pointer">
+                Schedule cohort
+              </Button>
+            </form>
           ))}
         </CardContent>
       </Card>
@@ -669,9 +738,25 @@ function OperatorPanel() {
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{exception.summary}</p>
                 <p className="text-xs text-muted-foreground">
-                  {exception.exceptionType} · {date(exception.createdAt)}
+                  {exception.severity ?? "medium"} · {exception.exceptionType} · opened{" "}
+                  {date(exception.createdAt)} · SLA {date(exception.slaDueAt)} ·{" "}
+                  {exception.assignee ?? "unassigned"}
                 </p>
               </div>
+              {!exception.assignee && operators?.[0] && (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    assignException({
+                      exceptionId: exception._id,
+                      assignee: operators[0]!.walletAddress,
+                      note: "Assigned from billing operations",
+                    })
+                  }
+                >
+                  Assign
+                </Button>
+              )}
               <Button
                 variant="outline"
                 className="cursor-pointer"
@@ -720,6 +805,365 @@ function OperatorPanel() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function LaunchReadinessPanel() {
+  const [readinessAt] = useState(() => Date.now());
+  const readiness = useQuery(getLaunchReadiness, { now: readinessAt }) as
+    | {
+        approvals: Record<string, Doc<"billingLaunchApprovals"> | null>;
+        approvalsReady: boolean;
+        treasury: Doc<"billingTreasuries"> | null;
+        offer: Doc<"billingOffers"> | null;
+        ready: boolean;
+        blockers: string[];
+      }
+    | undefined;
+  const saveApproval = useMutation(recordLaunchApproval);
+  const saveTreasury = useMutation(configureTreasury);
+  const saveOffer = useMutation(createOffer);
+  const changeLaunch = useMutation(activatePlatform);
+  if (!readiness) return <Skeleton className="h-80 xl:col-span-2" />;
+
+  return (
+    <Card className="xl:col-span-2">
+      <CardHeader>
+        <CardTitle>Mainnet launch readiness</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-6 lg:grid-cols-2">
+        <div className="space-y-4">
+          <Alert variant={readiness.ready ? "default" : "destructive"}>
+            <ShieldCheckIcon />
+            <AlertTitle>
+              {readiness.ready ? "All launch gates passed" : "Launch disabled"}
+            </AlertTitle>
+            <AlertDescription>
+              {readiness.ready
+                ? "Mainnet can be armed behind the global kill switch."
+                : "Mainnet remains disabled until every launch gate passes."}
+            </AlertDescription>
+          </Alert>
+          <div>
+            <p className="mb-2 text-sm font-medium">Required approvals</p>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(readiness.approvals).map(([area, approval]) => (
+                <Badge key={area} variant={approval?.status === "approved" ? "success" : "outline"}>
+                  {area}: {approval?.status ?? "missing"}
+                </Badge>
+              ))}
+            </div>
+          </div>
+          <form
+            className="grid gap-3 rounded-lg border p-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const form = new FormData(event.currentTarget);
+              await saveApproval({
+                area: String(form.get("area")) as
+                  | "product"
+                  | "finance"
+                  | "legal"
+                  | "tax"
+                  | "compliance"
+                  | "security"
+                  | "operations",
+                status: "approved",
+                evidenceReference: String(form.get("evidenceReference")),
+                notes: String(form.get("notes")),
+                policyDigest: String(form.get("policyDigest")),
+              });
+              toast.success("Append-only approval recorded");
+            }}
+          >
+            <NativeSelect name="area" defaultValue="product">
+              {["product", "finance", "legal", "tax", "compliance", "security", "operations"].map(
+                (area) => (
+                  <NativeSelectOption key={area} value={area}>
+                    {area}
+                  </NativeSelectOption>
+                ),
+              )}
+            </NativeSelect>
+            <Input name="evidenceReference" placeholder="Evidence reference" required />
+            <Input name="notes" placeholder="Approval notes" required />
+            <Input name="policyDigest" placeholder="sha256:..." required />
+            <Button type="submit" variant="outline" className="cursor-pointer">
+              Record approval
+            </Button>
+          </form>
+          <div className="space-y-2 text-sm text-muted-foreground">
+            {readiness.blockers.map((blocker) => (
+              <p key={blocker}>• {blocker}</p>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              disabled={!readiness.ready}
+              onClick={() => changeLaunch({ action: "arm_mainnet" })}
+            >
+              Arm behind kill switch
+            </Button>
+            <Button
+              disabled={!readiness.ready}
+              onClick={() => changeLaunch({ action: "activate_mainnet" })}
+            >
+              Activate controlled Mainnet
+            </Button>
+            <Button variant="destructive" onClick={() => changeLaunch({ action: "rollback" })}>
+              Roll back
+            </Button>
+          </div>
+        </div>
+        <div className="space-y-4">
+          <form
+            className="grid gap-3 rounded-lg border p-3"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              const form = new FormData(event.currentTarget);
+              const address = String(form.get("address"));
+              const asset = String(form.get("asset"));
+              await saveTreasury({
+                network: "public",
+                address,
+                asset,
+                verificationEvidenceReference: String(form.get("verificationEvidenceReference")),
+                signerPolicyReference: String(form.get("signerPolicyReference")),
+                withdrawalPolicyReference: String(form.get("withdrawalPolicyReference")),
+                monitoringOwner: String(form.get("monitoringOwner")),
+                reconciliationOwner: String(form.get("reconciliationOwner")),
+                incidentProcedureReference: String(form.get("incidentProcedureReference")),
+                active: true,
+              });
+              toast.success("Production treasury configuration recorded");
+            }}
+          >
+            <p className="font-medium">Production treasury readiness</p>
+            <Input name="address" placeholder="Mainnet treasury G..." required />
+            <Input name="asset" placeholder="USDC:GISSUER" required />
+            <Input
+              name="verificationEvidenceReference"
+              placeholder="Verification-access evidence"
+              required
+            />
+            <Input name="signerPolicyReference" placeholder="Signer policy" required />
+            <Input name="withdrawalPolicyReference" placeholder="Withdrawal controls" required />
+            <Input name="monitoringOwner" placeholder="Monitoring owner" required />
+            <Input name="reconciliationOwner" placeholder="Reconciliation owner" required />
+            <Input name="incidentProcedureReference" placeholder="Incident runbook" required />
+            <Button type="submit" variant="outline">
+              Save dedicated treasury
+            </Button>
+          </form>
+          {readiness.treasury && (
+            <form
+              className="grid gap-3 rounded-lg border p-3"
+              onSubmit={async (event) => {
+                event.preventDefault();
+                await saveOffer({
+                  sku: "credits-100",
+                  creditQuantity: 100n,
+                  priceAmount: "20",
+                  asset: readiness.treasury!.asset,
+                  network: "public",
+                  treasuryAddress: readiness.treasury!.address,
+                  treasuryId: readiness.treasury!._id,
+                  activeFrom: Date.now(),
+                  refundPolicy:
+                    "Top-ups are prepaid. Verified Velo billing errors receive auditable adjustments.",
+                  activate: true,
+                });
+                toast.success("Controlled Mainnet offer activated behind launch gates");
+              }}
+            >
+              <p className="font-medium">Mainnet 100-credit / 20-USDC SKU</p>
+              <p className="text-xs text-muted-foreground">
+                {readiness.treasury.asset} → {shortHash(readiness.treasury.address)}
+              </p>
+              <Button type="submit" variant="outline">
+                Create Mainnet offer
+              </Button>
+            </form>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function FinancePanel() {
+  const periods = useQuery(listCostPeriods, {}) as Doc<"billingCostPeriods">[] | undefined;
+  const reports = useQuery(listFinanceReports, {}) as Doc<"billingFinanceReports">[] | undefined;
+  const createPeriod = useMutation(createCostPeriod);
+  const approvePeriod = useMutation(approveCostPeriod);
+  const generateReport = useMutation(generateFinanceReport);
+  return (
+    <Card className="xl:col-span-2">
+      <CardHeader>
+        <CardTitle>Finance and margin reporting</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-4 lg:grid-cols-2">
+        <form
+          className="grid gap-3 rounded-lg border p-3"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            const form = new FormData(event.currentTarget);
+            await createPeriod({
+              periodStart: new Date(String(form.get("periodStart"))).getTime(),
+              periodEnd: new Date(String(form.get("periodEnd"))).getTime(),
+              infrastructureCostUsd: String(form.get("infrastructureCostUsd")),
+              fullyLoadedCostUsd: String(form.get("fullyLoadedCostUsd")),
+              evidenceReference: String(form.get("evidenceReference")),
+            });
+            toast.success("Draft cost period created");
+          }}
+        >
+          <Label>
+            UTC period start
+            <Input name="periodStart" type="datetime-local" required />
+          </Label>
+          <Label>
+            UTC period end
+            <Input name="periodEnd" type="datetime-local" required />
+          </Label>
+          <Input name="infrastructureCostUsd" placeholder="Infrastructure cost USD" required />
+          <Input name="fullyLoadedCostUsd" placeholder="Fully loaded cost USD" required />
+          <Input name="evidenceReference" placeholder="Approved cost evidence" required />
+          <Button type="submit" variant="outline">
+            Create cost period
+          </Button>
+        </form>
+        <div className="space-y-3">
+          {periods?.map((period) => (
+            <div
+              key={period._id}
+              className="flex flex-wrap items-center gap-2 rounded-lg border p-3"
+            >
+              <div className="min-w-0 flex-1 text-sm">
+                <p className="font-medium">
+                  {date(period.periodStart)} – {date(period.periodEnd)}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  ${period.infrastructureCostUsd} infrastructure · ${period.fullyLoadedCostUsd}{" "}
+                  fully loaded · {period.status}
+                </p>
+              </div>
+              {period.status === "draft" ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    approvePeriod({
+                      periodId: period._id,
+                      note: "Approved from billing operations",
+                    })
+                  }
+                >
+                  Approve
+                </Button>
+              ) : (
+                <Button size="sm" onClick={() => generateReport({ periodId: period._id })}>
+                  Generate report
+                </Button>
+              )}
+            </div>
+          ))}
+          {reports?.slice(0, 3).map((report) => (
+            <div key={report._id} className="rounded-lg border p-3 text-sm">
+              <p className="font-medium">
+                ${report.netRevenueUsd} net revenue · {report.successfulPayments} successes
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Infrastructure margin{" "}
+                {report.infrastructureMarginBps === undefined
+                  ? "—"
+                  : `${(report.infrastructureMarginBps / 100).toFixed(2)}%`}{" "}
+                · fully loaded{" "}
+                {report.fullyLoadedMarginBps === undefined
+                  ? "—"
+                  : `${(report.fullyLoadedMarginBps / 100).toFixed(2)}%`}
+              </p>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MirrorPanel() {
+  const wallet = useWallet();
+  const states = useQuery(listMirrorStates, {}) as Doc<"payAccessMirrorStates">[] | undefined;
+  const submitAttempt = useMutation(submitMirrorAttempt);
+  const [signingId, setSigningId] = useState<Id<"payAccessMirrorStates"> | null>(null);
+  const sign = async (state: Doc<"payAccessMirrorStates">) => {
+    if (!wallet.address || !stellarConfig.payAccessContractId) {
+      toast.error("Connect the configured external mirror-authority wallet");
+      return;
+    }
+    setSigningId(state._id);
+    try {
+      const xdr = await buildSetDisplayBalanceTransaction({
+        rpcUrl: stellarConfig.rpcUrl,
+        networkPassphrase: stellarConfig.networkPassphrase,
+        payAccessContractId: stellarConfig.payAccessContractId,
+        sourcePublicKey: wallet.address,
+        registryProjectId: state.registryProjectId,
+        credits: state.desiredCredits,
+        sourceVersion: state.desiredVersion,
+      });
+      const signedXdr = await wallet.signTransaction(xdr);
+      const transactionHash = await submitSignedTransaction({
+        rpcUrl: stellarConfig.rpcUrl,
+        networkPassphrase: stellarConfig.networkPassphrase,
+        signedXdr,
+      });
+      await submitAttempt({
+        mirrorStateId: state._id,
+        desiredCredits: state.desiredCredits,
+        desiredVersion: state.desiredVersion,
+        transactionHash,
+      });
+      toast.success("PayAccess display mirror submitted for independent verification");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Mirror submission failed");
+    } finally {
+      setSigningId(null);
+    }
+  };
+  return (
+    <Card className="xl:col-span-2">
+      <CardHeader>
+        <CardTitle>PayAccess display mirror</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          The connected external authority signs display-only balances. Convex entitlements never
+          read this contract state.
+        </p>
+        {states?.map((state) => (
+          <div key={state._id} className="flex flex-wrap items-center gap-3 rounded-lg border p-3">
+            <div className="min-w-0 flex-1">
+              <p className="font-medium">
+                Project {state.registryProjectId} · {credits(state.desiredCredits)} credits
+              </p>
+              <p className="text-xs text-muted-foreground">
+                version {state.desiredVersion} · {state.status}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              disabled={signingId === state._id || state.status === "confirmed"}
+              onClick={() => sign(state)}
+            >
+              {signingId === state._id && <Loader2Icon className="animate-spin" />}
+              Sign latest mirror
+            </Button>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -790,7 +1234,7 @@ function PolicyControls() {
           OFF.
         </p>
         <p className="text-xs text-muted-foreground">
-          Mainnet enforcement is locked off during Sprint 2.
+          Mainnet enforcement and kill-switch release use the guarded launch-readiness workflow.
         </p>
       </CardContent>
     </Card>

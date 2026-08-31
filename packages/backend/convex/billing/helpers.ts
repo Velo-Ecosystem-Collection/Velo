@@ -158,6 +158,39 @@ export async function moveBalance(
     version: balance.version + 1,
     updatedAt: now,
   });
+  if (balance.book === "commercial") {
+    const settings = await ctx.db
+      .query("organizationBillingSettings")
+      .withIndex("by_organization_id", (q) => q.eq("organizationId", balance.organizationId))
+      .unique();
+    if (settings?.payAccessMirrorEnabled) {
+      const desiredCredits =
+        (creditClass === "promotional" ? available : balance.promoAvailable) +
+        (creditClass === "paid" ? available : balance.paidAvailable);
+      const projects = await ctx.db
+        .query("projects")
+        .withIndex("by_organization_id", (q) => q.eq("organizationId", balance.organizationId))
+        .take(100);
+      for (const project of projects) {
+        if (!project.registryProjectId) continue;
+        const state = await ctx.db
+          .query("payAccessMirrorStates")
+          .withIndex("by_project_id", (q) => q.eq("projectId", project._id))
+          .unique();
+        const values = {
+          projectId: project._id,
+          organizationId: balance.organizationId,
+          registryProjectId: project.registryProjectId,
+          desiredCredits,
+          desiredVersion: balance.version + 1,
+          status: "pending" as const,
+          updatedAt: now,
+        };
+        if (state) await ctx.db.patch(state._id, values);
+        else await ctx.db.insert("payAccessMirrorStates", values);
+      }
+    }
+  }
 }
 
 export async function selectCreditLot(

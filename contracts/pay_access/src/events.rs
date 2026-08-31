@@ -22,3 +22,16 @@ pub struct CheckoutCreditConsumed {
     pub amount: i128,
     pub remaining: i128,
 }
+
+#[contractevent(topics = ["pay", "display"])]
+pub struct DisplayBalanceUpdated {
+    pub project_id: u64,
+    pub credits: i128,
+    pub source_version: u64,
+}
+
+#[contractevent(topics = ["pay", "mirror_auth"])]
+pub struct MirrorAuthorityRotated {
+    pub old_authority: soroban_sdk::Address,
+    pub new_authority: soroban_sdk::Address,
+}

@@ -14,13 +14,21 @@ const payAccessId = `C${"B".repeat(55)}`;
 const deployerPublicKey = `G${"C".repeat(55)}`;
 
 test("parses a testnet deployment with safe defaults", () => {
-  const options = parseDeploymentArgs(["--network", "testnet", "--source", "deployer"]);
+  const options = parseDeploymentArgs([
+    "--network",
+    "testnet",
+    "--source",
+    "deployer",
+    "--mirror-authority",
+    deployerPublicKey,
+  ]);
 
   assert.deepEqual(options, {
     confirmMainnet: false,
     dryRun: false,
     help: false,
     network: "testnet",
+    mirrorAuthority: deployerPublicKey,
     networkPassphrase: TESTNET_PASSPHRASE,
     output: "deployments/testnet.json",
     rpcUrl: "https://soroban-testnet.stellar.org",
@@ -38,7 +46,13 @@ test("rejects unsupported networks and secret keys passed on the command line", 
   assert.throws(
     () =>
       validateDeploymentOptions({
-        ...parseDeploymentArgs(["--network", "testnet", "--dry-run"]),
+        ...parseDeploymentArgs([
+          "--network",
+          "testnet",
+          "--mirror-authority",
+          deployerPublicKey,
+          "--dry-run",
+        ]),
         dryRun: false,
         source: `S${"A".repeat(55)}`,
       }),
@@ -47,11 +61,32 @@ test("rejects unsupported networks and secret keys passed on the command line", 
 });
 
 test("requires an explicit mainnet readiness confirmation for live deployments", () => {
-  const options = parseDeploymentArgs(["--network", "mainnet", "--source", "production-deployer"]);
+  const options = parseDeploymentArgs([
+    "--network",
+    "mainnet",
+    "--source",
+    "production-deployer",
+    "--mirror-authority",
+    deployerPublicKey,
+  ]);
 
   assert.equal(options.networkPassphrase, MAINNET_PASSPHRASE);
   assert.throws(() => validateDeploymentOptions(options), /--confirm-mainnet/);
   assert.doesNotThrow(() => validateDeploymentOptions({ ...options, confirmMainnet: true }));
+});
+
+test("requires the dedicated mirror authority for live and dry-run plans", () => {
+  assert.throws(
+    () =>
+      validateDeploymentOptions(
+        parseDeploymentArgs(["--network", "testnet", "--source", "deployer"]),
+      ),
+    /mirror-authority/,
+  );
+  assert.throws(
+    () => validateDeploymentOptions(parseDeploymentArgs(["--network", "testnet", "--dry-run"])),
+    /mirror-authority/,
+  );
 });
 
 test("tests, builds, uploads, deploys, initializes, verifies, and records both contracts", async () => {
@@ -81,7 +116,14 @@ test("tests, builds, uploads, deploys, initializes, verifies, and records both c
   };
 
   const result = await deployContracts(
-    parseDeploymentArgs(["--network", "testnet", "--source", "deployer"]),
+    parseDeploymentArgs([
+      "--network",
+      "testnet",
+      "--source",
+      "deployer",
+      "--mirror-authority",
+      deployerPublicKey,
+    ]),
     {
       exec,
       now: () => new Date("2026-07-15T00:00:00.000Z"),
@@ -97,6 +139,7 @@ test("tests, builds, uploads, deploys, initializes, verifies, and records both c
   assert.equal(writtenManifest.deployerPublicKey, deployerPublicKey);
   assert.equal(writtenManifest.contracts.registry.wasmHash, "1".repeat(64));
   assert.equal(writtenManifest.contracts.payAccess.wasmHash, "2".repeat(64));
+  assert.equal(writtenManifest.contracts.payAccess.mirrorAuthority, deployerPublicKey);
 
   assert.deepEqual(calls.slice(0, 7), [
     ["stellar", "--version"],
@@ -142,6 +185,8 @@ test("tests, builds, uploads, deploys, initializes, verifies, and records both c
   assert.ok(initialize);
   assert.ok(initialize.includes(payAccessId));
   assert.ok(initialize.includes(registryId));
+  assert.ok(initialize.includes("--mirror_authority"));
+  assert.ok(initialize.includes(deployerPublicKey));
 
   const verificationCalls = calls.filter(
     (call) => call[1] === "contract" && call[2] === "invoke" && call.includes("--send"),
@@ -158,16 +203,25 @@ test("tests, builds, uploads, deploys, initializes, verifies, and records both c
 test("dry-run performs no external commands or writes", async () => {
   let executions = 0;
   let writes = 0;
-  const result = await deployContracts(parseDeploymentArgs(["--network", "mainnet", "--dry-run"]), {
-    exec: async () => {
-      executions += 1;
-      return { stdout: "" };
+  const result = await deployContracts(
+    parseDeploymentArgs([
+      "--network",
+      "mainnet",
+      "--mirror-authority",
+      deployerPublicKey,
+      "--dry-run",
+    ]),
+    {
+      exec: async () => {
+        executions += 1;
+        return { stdout: "" };
+      },
+      log: () => {},
+      writeManifest: async () => {
+        writes += 1;
+      },
     },
-    log: () => {},
-    writeManifest: async () => {
-      writes += 1;
-    },
-  });
+  );
 
   assert.equal(result.dryRun, true);
   assert.equal(executions, 0);

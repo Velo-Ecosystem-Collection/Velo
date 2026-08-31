@@ -59,6 +59,7 @@ docs/architecture/*
 !docs/architecture/sprint-2-playground-dynamic-argument-system.md
 !docs/architecture/sprint-3-playground-simulation-preflight.md
 !docs/architecture/sprint-4-playground-wallet-review-lifecycle.md
+!docs/architecture/sprint-6-playground-project-integration.md
 !docs/architecture/sprint-8-durable-financial-reliability.md
 !docs/architecture/sprint-9-real-lifecycle-benchmark-architecture.md
 !docs/architecture/sprint-10-end-to-end-observability-and-redaction.md
@@ -72,6 +73,8 @@ docs/operations/
 !docs/release-notes/*
 docs/operations/*
 !docs/operations/sprint-1-measurement-and-slo-lock.md
+!docs/operations/sprint-3-controlled-paid-cohort-launch.md
+!docs/operations/sprint-3-billing-incident-runbook.md
 !docs/operations/sprint-5-scale-competitive-proof-release.md
 !docs/operations/sprint-6-benchmark-evidence-operator-runbook.md
 !docs/operations/sprint-8-durable-financial-reliability-runbook.md
@@ -82,6 +85,7 @@ docs/references/
 !docs/references/
 docs/references/*
 !docs/references/benchmark-contract-slo-report-reference.md
+!docs/references/sprint-6-playground-evidence.md
 !docs/references/sprint-9-benchmark-evidence-and-closure.md
 !docs/references/sprint-10-observability-redaction-and-overhead-report.md
 !docs/references/sprint-11-comparative-throughput-qualification-report.md
@@ -90,9 +94,15 @@ docs/references/*
 !docs/references/sprint-1-playground-api-and-type-support.md
 !docs/references/sprint-1-playground-evidence.md
 !docs/references/sprint-4-playground-api-and-lifecycle.md
+!docs/architecture/sprint-5-playground-standalone-alpha.md
+!docs/references/sprint-5-playground-alpha-evidence.md
 !docs/plans/
 docs/plans/*
 !docs/plans/velo-playground-sprint-plan.md
+
+# Local Playwright artifacts
+apps/web/test-results/
+apps/web/playwright-report/
 
 # Sprint 9 keeps compact evidence metadata in Git. Raw captures remain ignored/external.
 .stellar/
@@ -117,3 +127,46 @@ docs/branding/velo-brand-positioning.md
 !docs/prds/
 docs/prds/*
 !docs/prds/velo-wallets-one-sprint-plan.md
+
+# Obsidian knowledge vault: keep portable config, ignore machine-specific workspace state.
+!docs/obsidian/
+docs/obsidian/*
+!docs/obsidian/*.md
+!docs/obsidian/architecture/
+docs/obsidian/architecture/*
+!docs/obsidian/architecture/*.md
+!docs/obsidian/modules/
+docs/obsidian/modules/*
+!docs/obsidian/modules/*.md
+!docs/obsidian/data/
+docs/obsidian/data/*
+!docs/obsidian/data/*.md
+!docs/obsidian/contracts/
+docs/obsidian/contracts/*
+!docs/obsidian/contracts/*.md
+!docs/obsidian/frontend/
+docs/obsidian/frontend/*
+!docs/obsidian/frontend/*.md
+!docs/obsidian/backend/
+docs/obsidian/backend/*
+!docs/obsidian/backend/*.md
+!docs/obsidian/stellar/
+docs/obsidian/stellar/*
+!docs/obsidian/stellar/*.md
+!docs/obsidian/operations/
+docs/obsidian/operations/*
+!docs/obsidian/operations/*.md
+!docs/obsidian/decisions/
+docs/obsidian/decisions/*
+!docs/obsidian/decisions/*.md
+!docs/obsidian/workflows/
+docs/obsidian/workflows/*
+!docs/obsidian/workflows/*.md
+!docs/obsidian/changelog/
+docs/obsidian/changelog/*
+!docs/obsidian/changelog/*.md
+!docs/obsidian/.obsidian/
+docs/obsidian/.obsidian/*
+!docs/obsidian/.obsidian/app.json
+docs/obsidian/.obsidian/workspace.json
+docs/obsidian/.obsidian/workspace-mobile.json

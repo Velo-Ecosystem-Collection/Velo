@@ -4,6 +4,7 @@ import { query } from "../_generated/server";
 import { findOrganizationForIdentity } from "../organizations/helpers";
 import { isBillingOperator } from "./access";
 import { topupAvailability } from "./availability";
+import { currentBillingNetwork } from "./config";
 import { emptyBalance } from "./helpers";
 import { activeOffer } from "./offers";
 
@@ -18,7 +19,25 @@ export const get = query({
       .query("billingPolicies")
       .withIndex("by_key", (q) => q.eq("key", "global"))
       .unique();
+    const billingSettings = await ctx.db
+      .query("organizationBillingSettings")
+      .withIndex("by_organization_id", (q) => q.eq("organizationId", organization._id))
+      .unique();
     const topups = topupAvailability(policy);
+    const network = currentBillingNetwork();
+    const cohortTopupsAllowed =
+      network !== "public" ||
+      (organization.verificationStatus === "verified" &&
+        billingSettings?.cohortStage !== undefined &&
+        billingSettings?.enforcementEnabled === true &&
+        billingSettings?.activationState !== "paused" &&
+        billingSettings?.graceUntil !== undefined);
+    const effectiveTopups = cohortTopupsAllowed
+      ? topups
+      : {
+          enabled: false,
+          reason: "Mainnet top-ups are limited to enabled cohort organizations",
+        };
     const balance =
       (await ctx.db
         .query("billingBalances")
@@ -92,10 +111,11 @@ export const get = query({
     }
     return {
       organization,
+      billingSettings,
       balance,
-      topupsEnabled: topups.enabled,
-      topupsUnavailableReason: topups.reason,
-      activeOffer: await activeOffer(ctx),
+      topupsEnabled: effectiveTopups.enabled,
+      topupsUnavailableReason: effectiveTopups.reason,
+      activeOffer: await activeOffer(ctx, Date.now(), network),
       topups: recentTopups,
       receipts,
       ledger,

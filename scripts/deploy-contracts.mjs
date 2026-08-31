@@ -33,11 +33,12 @@ const contracts = {
 const usage = `Deploy all Velo smart contracts to Stellar Testnet or Mainnet.
 
 Usage:
-  node scripts/deploy-contracts.mjs --network <testnet|mainnet> --source <identity> [options]
+  node scripts/deploy-contracts.mjs --network <testnet|mainnet> --source <identity> --mirror-authority <G...> [options]
 
 Required:
   --network <network>       Stellar network to deploy to
   --source <identity>       Stellar CLI identity name (never pass a secret key)
+  --mirror-authority <G...> Dedicated external signer public key for display mirrors
 
 Options:
   --rpc-url <url>           Override the public RPC URL; passphrase remains network-locked
@@ -49,9 +50,9 @@ Options:
   --help                    Show this help
 
 Examples:
-  pnpm contracts:deploy --network testnet --source deployer
-  pnpm contracts:deploy --network mainnet --source production-deployer --confirm-mainnet
-  pnpm contracts:deploy --network mainnet --dry-run
+  pnpm contracts:deploy --network testnet --source deployer --mirror-authority G...
+  pnpm contracts:deploy --network mainnet --source production-deployer --mirror-authority G... --confirm-mainnet
+  pnpm contracts:deploy --network mainnet --mirror-authority G... --dry-run
 `;
 
 export function parseDeploymentArgs(values) {
@@ -60,6 +61,7 @@ export function parseDeploymentArgs(values) {
     dryRun: false,
     help: false,
     network: undefined,
+    mirrorAuthority: undefined,
     output: undefined,
     rpcUrl: undefined,
     skipBuild: false,
@@ -67,7 +69,7 @@ export function parseDeploymentArgs(values) {
     source: undefined,
   };
 
-  const valueOptions = new Set(["network", "source", "rpc-url", "output"]);
+  const valueOptions = new Set(["network", "source", "mirror-authority", "rpc-url", "output"]);
   const booleanOptions = new Set([
     "confirm-mainnet",
     "dry-run",
@@ -109,6 +111,9 @@ export function parseDeploymentArgs(values) {
 
 export function validateDeploymentOptions(options) {
   if (!networkConfig[options.network]) throw new Error("--network must be testnet or mainnet");
+  if (!options.mirrorAuthority || !/^G[A-Z2-7]{55}$/.test(options.mirrorAuthority)) {
+    throw new Error("--mirror-authority must be a valid Stellar G-address");
+  }
   if (options.dryRun) return;
   if (!options.source) throw new Error("--source must name a configured Stellar CLI identity");
   if (
@@ -192,6 +197,8 @@ export async function deployContracts(options, dependencies = {}) {
       "initialize",
       "--registry_contract",
       registryContractId,
+      "--mirror_authority",
+      options.mirrorAuthority,
     ]),
   );
   await run(
@@ -217,7 +224,7 @@ export async function deployContracts(options, dependencies = {}) {
 
   const now = dependencies.now ?? (() => new Date());
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     deployedAt: now().toISOString(),
     network: options.network,
     rpcUrl: options.rpcUrl,
@@ -236,6 +243,7 @@ export async function deployContracts(options, dependencies = {}) {
         wasmHash: payAccessWasmHash,
         wasm: contracts.payAccess.wasm,
         registryContractId,
+        mirrorAuthority: options.mirrorAuthority,
       },
     },
   };
@@ -245,6 +253,7 @@ export async function deployContracts(options, dependencies = {}) {
   log(`NEXT_PUBLIC_VELO_REGISTRY_CONTRACT_ID=${registryContractId}`);
   log(`NEXT_PUBLIC_VELO_PAY_ACCESS_CONTRACT_ID=${payAccessContractId}`);
   log(`VELO_PAY_ACCESS_CONTRACT_ID=${payAccessContractId}`);
+  log(`VELO_PAY_ACCESS_MIRROR_AUTHORITY=${options.mirrorAuthority}`);
 
   return {
     manifest,
@@ -298,7 +307,11 @@ function networkArgs(options) {
 }
 
 function createDryRunCommands(options) {
-  const dryOptions = { ...options, source: options.source ?? "<stellar-cli-identity>" };
+  const dryOptions = {
+    ...options,
+    source: options.source ?? "<stellar-cli-identity>",
+    mirrorAuthority: options.mirrorAuthority ?? "<mirror-authority-public-key>",
+  };
   const commands = [];
   if (!options.skipTests) {
     for (const contract of Object.values(contracts)) {
@@ -332,6 +345,8 @@ function createDryRunCommands(options) {
         "initialize",
         "--registry_contract",
         "<registry-contract-id>",
+        "--mirror_authority",
+        dryOptions.mirrorAuthority,
       ]),
     ),
   );

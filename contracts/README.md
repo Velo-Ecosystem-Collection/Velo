@@ -6,7 +6,7 @@ Velo's deployment script handles both Soroban contracts as one ordered release:
 2. Test and build `velo_pay_access`.
 3. Upload and deploy the registry.
 4. Upload and deploy pay access.
-5. Initialize pay access with the deployed registry contract ID.
+5. Initialize pay access with the deployed registry contract ID and dedicated mirror authority.
 6. Run read-only smoke calls and write a deployment manifest.
 
 The script always supplies the RPC URL and canonical network passphrase explicitly. It does not
@@ -33,13 +33,13 @@ documented deployer/key-rotation policy are strongly recommended.
 Inspect the exact plan without sending transactions:
 
 ```bash
-pnpm contracts:deploy --network testnet --dry-run
+pnpm contracts:deploy --network testnet --mirror-authority <PUBLIC_KEY> --dry-run
 ```
 
 Deploy both contracts:
 
 ```bash
-pnpm contracts:deploy --network testnet --source deployer
+pnpm contracts:deploy --network testnet --source deployer --mirror-authority <PUBLIC_KEY>
 ```
 
 The command runs both Rust test suites and builds optimized, locked WASM artifacts by default. Use
@@ -61,7 +61,7 @@ Before Mainnet deployment, verify all of the following:
 Preview the Mainnet plan:
 
 ```bash
-pnpm contracts:deploy --network mainnet --dry-run
+pnpm contracts:deploy --network mainnet --mirror-authority <PUBLIC_KEY> --dry-run
 ```
 
 After the checklist is complete, deploy with the explicit safety acknowledgement:
@@ -70,6 +70,7 @@ After the checklist is complete, deploy with the explicit safety acknowledgement
 pnpm contracts:deploy \
   --network mainnet \
   --source production-deployer \
+  --mirror-authority <PUBLIC_KEY> \
   --confirm-mainnet
 ```
 
@@ -84,7 +85,7 @@ Successful deployments write `deployments/<network>.json` by default. The manife
 - UTC deployment time and Git commit;
 - Stellar CLI version and deployer public key;
 - registry/pay-access contract IDs and uploaded WASM hashes;
-- the registry ID used to initialize pay access.
+- the registry ID and mirror-authority public key used to initialize pay access.
 
 Use `--output <path>` to select a different manifest location. The command also prints the web and
 backend environment variables that must be updated after deployment.

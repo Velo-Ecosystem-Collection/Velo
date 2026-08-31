@@ -55,6 +55,16 @@ export const METRIC_NAMES = [
   "velo_billing_pdax_cost_variance",
   "velo_billing_topup_settlement_total",
   "velo_billing_reconciliation_exception_total",
+  "velo_billing_daily_replay_total",
+  "velo_billing_overdue_exception_total",
+  "velo_billing_unmatched_receipt_total",
+  "velo_billing_unmatched_consumption_total",
+  "velo_billing_launch_gate_change_total",
+  "velo_billing_cohort_activation_total",
+  "velo_billing_net_revenue_usd",
+  "velo_billing_contribution_margin_bps",
+  "velo_billing_dispute_total",
+  "velo_billing_support_minutes",
 ] as const;
 
 export const DEPENDENCIES = ["convex", "pdax", "stellar_rpc", "horizon", "merchant"] as const;
@@ -78,6 +88,19 @@ export const UI_TELEMETRY_MARKERS = [
   "payment_verified_rendered",
 ] as const;
 
+export const PLAYGROUND_TELEMETRY_EVENTS = [
+  "contract_loaded",
+  "function_selected",
+  "form_valid",
+  "simulation_finished",
+  "wallet_connection",
+  "signature_finished",
+  "submission_finished",
+  "final_status",
+  "history_replayed",
+  "code_copied",
+] as const;
+
 export type SpanName = (typeof SPAN_NAMES)[number];
 export type TelemetryStage = (typeof TELEMETRY_STAGES)[number];
 export type MetricName = (typeof METRIC_NAMES)[number];
@@ -85,6 +108,17 @@ export type Dependency = (typeof DEPENDENCIES)[number];
 export type TelemetryOutcome = (typeof OUTCOMES)[number];
 export type TelemetryErrorCode = (typeof ERROR_CODES)[number];
 export type UiTelemetryMarker = (typeof UI_TELEMETRY_MARKERS)[number];
+export type PlaygroundTelemetryEventName = (typeof PLAYGROUND_TELEMETRY_EVENTS)[number];
+export type PlaygroundTelemetryEvent = {
+  schemaVersion: 1;
+  event: PlaygroundTelemetryEventName;
+  outcome: "success" | "error" | "rejected";
+  network: "testnet" | "mainnet";
+  durationMs?: number;
+  errorCategory?: string;
+  sessionId: string;
+  playgroundRequestId: string;
+};
 
 export type UiTelemetryMarkerEnvelope = {
   paymentIntentId: string;
@@ -167,6 +201,47 @@ export function parseTelemetryContext(value: unknown): TelemetryContext | null {
       ? { journeyCorrelationId: source.journeyCorrelationId }
       : {}),
     ...(typeof source.traceparent === "string" ? { traceparent: source.traceparent } : {}),
+  };
+}
+
+export function parsePlaygroundTelemetryEvent(value: unknown): PlaygroundTelemetryEvent | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const source = value as Record<string, unknown>;
+  if (
+    source.schemaVersion !== 1 ||
+    !PLAYGROUND_TELEMETRY_EVENTS.includes(source.event as PlaygroundTelemetryEventName) ||
+    !["success", "error", "rejected"].includes(String(source.outcome)) ||
+    !["testnet", "mainnet"].includes(String(source.network)) ||
+    !isCorrelationId(source.sessionId) ||
+    !isCorrelationId(source.playgroundRequestId)
+  ) {
+    return null;
+  }
+  if (
+    source.durationMs !== undefined &&
+    (typeof source.durationMs !== "number" ||
+      !Number.isFinite(source.durationMs) ||
+      source.durationMs < 0 ||
+      source.durationMs > 3_600_000)
+  ) {
+    return null;
+  }
+  if (
+    source.errorCategory !== undefined &&
+    (typeof source.errorCategory !== "string" ||
+      !/^[a-z][a-z0-9_]{0,63}$/.test(source.errorCategory))
+  ) {
+    return null;
+  }
+  return {
+    schemaVersion: 1,
+    event: source.event as PlaygroundTelemetryEventName,
+    outcome: source.outcome as PlaygroundTelemetryEvent["outcome"],
+    network: source.network as PlaygroundTelemetryEvent["network"],
+    sessionId: source.sessionId,
+    playgroundRequestId: source.playgroundRequestId,
+    ...(typeof source.durationMs === "number" ? { durationMs: source.durationMs } : {}),
+    ...(typeof source.errorCategory === "string" ? { errorCategory: source.errorCategory } : {}),
   };
 }
 

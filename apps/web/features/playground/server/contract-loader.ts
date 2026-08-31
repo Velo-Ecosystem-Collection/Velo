@@ -42,10 +42,19 @@ function correlationId() {
   return crypto.randomUUID();
 }
 
-export async function parsePlaygroundJson(request: Request) {
+export async function parsePlaygroundJson(request: Request, maxBytes = 512 * 1_024) {
   try {
-    return await request.json();
+    const body = await request.text();
+    if (new TextEncoder().encode(body).byteLength > maxBytes) {
+      throw new ContractSpecError(
+        "PAYLOAD_TOO_LARGE",
+        "validate",
+        "The Playground request payload is too large.",
+      );
+    }
+    return JSON.parse(body);
   } catch (error) {
+    if (error instanceof ContractSpecError) throw error;
     throw new ContractSpecError(
       "INVALID_REQUEST",
       "validate",
@@ -111,6 +120,9 @@ export function playgroundErrorResponse(error: unknown, id = correlationId()) {
 }
 
 export function contractLoadErrorStatus(code: string) {
+  if (code === "RATE_LIMITED") return 429;
+  if (code === "PAYLOAD_TOO_LARGE") return 413;
+  if (code === "RATE_LIMIT_UNAVAILABLE") return 503;
   if (
     code === "INVALID_REQUEST" ||
     code === "INVALID_NETWORK" ||

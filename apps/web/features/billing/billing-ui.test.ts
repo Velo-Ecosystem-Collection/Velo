@@ -56,3 +56,12 @@ test("insufficient billing credits return a structured payment-required response
   assert.match(paymentIntentRouteSource, /status: 402/);
   assert.match(paymentIntentRouteSource, /insufficient_billing_credits/);
 });
+
+test("Sprint 3 operations expose gated Mainnet readiness, cohort grace, finance, and mirror state", () => {
+  assert.match(source, /Mainnet launch readiness/);
+  assert.match(source, /Required approvals/);
+  assert.match(source, /Grace deadline/);
+  assert.match(source, /Finance and margin reporting/);
+  assert.match(source, /PayAccess display mirror/);
+  assert.match(source, /Mainnet remains disabled until every launch gate passes/);
+});

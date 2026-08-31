@@ -3,6 +3,7 @@ import { v } from "convex/values";
 
 import { mutation, query } from "../_generated/server";
 import { requireBillingOperator } from "./access";
+import { currentBillingNetwork } from "./config";
 
 const updatePolicyRef = makeFunctionReference<"mutation">("billing/mutations:updatePolicy");
 const initializePolicyRef = makeFunctionReference<"mutation">("billing/mutations:initializePolicy");
@@ -67,13 +68,33 @@ export const updatePolicy = mutation({
   },
   handler: async (ctx, args) => {
     const operator = await requireBillingOperator(ctx);
-    if (args.mainnetCreditEnforcement) {
-      throw new Error("Mainnet credit enforcement remains disabled during Sprint 2");
+    const existing = await ctx.db
+      .query("billingPolicies")
+      .withIndex("by_key", (q) => q.eq("key", "global"))
+      .unique();
+    if (
+      args.mainnetCreditEnforcement ||
+      (currentBillingNetwork() === "public" && !args.billingKillSwitch)
+    ) {
+      throw new Error("Use the guarded Mainnet launch workflow for production activation");
     }
-    return await ctx.runMutation(updatePolicyRef, {
+    const policyId = await ctx.runMutation(updatePolicyRef, {
       ...args,
       actor: `operator:${operator.walletAddress}`,
     });
+    if (existing && existing.billingKillSwitch !== args.billingKillSwitch) {
+      await ctx.db.insert("billingOperationalEvents", {
+        eventType: "kill_switch_changed",
+        actor: operator.walletAddress,
+        evidenceJson: JSON.stringify({
+          previous: existing.billingKillSwitch,
+          next: args.billingKillSwitch,
+          previousPolicyVersion: existing.version,
+        }),
+        occurredAt: Date.now(),
+      });
+    }
+    return policyId;
   },
 });
 

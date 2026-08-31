@@ -5,6 +5,7 @@ export default defineTable({
   eventKey: v.string(),
   eventId: v.string(),
   projectId: v.id("projects"),
+  network: v.optional(v.union(v.literal("testnet"), v.literal("mainnet"))),
   contractId: v.string(),
   transactionHash: v.string(),
   ledger: v.number(),
@@ -14,6 +15,7 @@ export default defineTable({
   type: v.string(),
   raw: v.any(),
   decoded: v.optional(v.any()),
+  journeyCorrelationId: v.optional(v.string()),
   observedAt: v.number(),
 })
   .index("by_event_key", ["eventKey"])

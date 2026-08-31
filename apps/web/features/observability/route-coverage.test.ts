@@ -26,7 +26,7 @@ test("every public route method uses the shared telemetry boundary", () => {
       `${file} lacks route telemetry`,
     );
   }
-  assert.equal(methods, 21);
+  assert.equal(methods, 22);
   const convexIngress = readFileSync("../../packages/backend/convex/http.ts", "utf8");
   assert.match(convexIngress, /path: "\/api\/webhooks\/pdax\/v1"/);
   assert.match(convexIngress, /X-Correlation-Id/);

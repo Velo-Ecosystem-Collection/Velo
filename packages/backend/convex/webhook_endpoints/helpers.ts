@@ -1,11 +1,7 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { ProjectId } from "../projects/types";
 
-import {
-  projectOwnerOrNull,
-  requireProjectOwner,
-  requireProjectOwnerByToken,
-} from "../projects/helpers";
+import { requireProjectRole, requireProjectRoleByToken } from "../playground_projects/helpers";
 import { WEBHOOK_EVENT_TYPES, type WebhookEventType } from "./types";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -60,7 +56,7 @@ export function validateWebhookUrl(value: string) {
 }
 
 export async function requireOwnerProject(ctx: QueryCtx | MutationCtx, projectId: ProjectId) {
-  return await requireProjectOwner(ctx, projectId);
+  return (await requireProjectRole(ctx, projectId, "editor")).project;
 }
 
 export async function requireOwnerProjectByToken(
@@ -69,11 +65,25 @@ export async function requireOwnerProjectByToken(
   ownerTokenIdentifier: string,
   ownerSubject: string,
 ) {
-  return await requireProjectOwnerByToken(ctx, projectId, ownerTokenIdentifier, ownerSubject);
+  return (
+    await requireProjectRoleByToken(ctx, projectId, ownerTokenIdentifier, ownerSubject, "editor")
+  ).project;
 }
 
 export async function ownerProjectOrNull(ctx: QueryCtx | MutationCtx, projectId: ProjectId) {
-  return await projectOwnerOrNull(ctx, projectId);
+  try {
+    return (await requireProjectRole(ctx, projectId, "viewer")).project;
+  } catch {
+    return null;
+  }
+}
+
+export async function editorProjectOrNull(ctx: QueryCtx | MutationCtx, projectId: ProjectId) {
+  try {
+    return (await requireProjectRole(ctx, projectId, "editor")).project;
+  } catch {
+    return null;
+  }
 }
 
 export async function hasEnabledWebhookForEvent(

@@ -1,4 +1,11 @@
-import { BASE_FEE, Contract, rpc, TransactionBuilder, xdr } from "@stellar/stellar-sdk";
+import {
+  BASE_FEE,
+  Contract,
+  nativeToScVal,
+  rpc,
+  TransactionBuilder,
+  xdr,
+} from "@stellar/stellar-sdk";
 
 import {
   assertValidContractId,
@@ -17,6 +24,11 @@ export type ActivatePaymentsTransactionInput = {
 export type ConfirmActivatePaymentsInput = {
   rpcUrl: string;
   transactionHash: string;
+};
+
+export type SetDisplayBalanceTransactionInput = ActivatePaymentsTransactionInput & {
+  credits: bigint;
+  sourceVersion: number;
 };
 
 export type PayAccessConfirmation =
@@ -67,6 +79,32 @@ export async function buildActivatePaymentsTransaction(input: ActivatePaymentsTr
 
   const prepared = await server.prepareTransaction(transaction);
   return prepared.toXDR();
+}
+
+export async function buildSetDisplayBalanceTransaction(input: SetDisplayBalanceTransactionInput) {
+  const sourcePublicKey = assertValidPublicKey(input.sourcePublicKey);
+  assertValidContractId(input.payAccessContractId);
+  if (input.credits < 0n) throw new Error("Display credits cannot be negative");
+  if (!Number.isSafeInteger(input.sourceVersion) || input.sourceVersion < 0) {
+    throw new Error("Display source version must be a non-negative safe integer");
+  }
+  const server = payAccessClient(input.rpcUrl);
+  const sourceAccount = await server.getAccount(sourcePublicKey);
+  const contract = new Contract(input.payAccessContractId);
+  const operation = contract.call(
+    "set_display_balance",
+    projectIdToScVal(input.registryProjectId),
+    nativeToScVal(input.credits, { type: "i128" }),
+    nativeToScVal(BigInt(input.sourceVersion), { type: "u64" }),
+  );
+  const transaction = new TransactionBuilder(sourceAccount, {
+    fee: BASE_FEE,
+    networkPassphrase: input.networkPassphrase,
+  })
+    .addOperation(operation)
+    .setTimeout(300)
+    .build();
+  return (await server.prepareTransaction(transaction)).toXDR();
 }
 
 export async function confirmActivatePayments(

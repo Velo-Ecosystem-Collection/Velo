@@ -12,25 +12,31 @@ import type * as authConfig from "../authConfig.js";
 import type * as billing_access from "../billing/access.js";
 import type * as billing_admin from "../billing/admin.js";
 import type * as billing_availability from "../billing/availability.js";
+import type * as billing_cohort from "../billing/cohort.js";
 import type * as billing_commercial from "../billing/commercial.js";
 import type * as billing_config from "../billing/config.js";
 import type * as billing_constants from "../billing/constants.js";
 import type * as billing_exceptions from "../billing/exceptions.js";
+import type * as billing_finance from "../billing/finance.js";
 import type * as billing_helpers from "../billing/helpers.js";
+import type * as billing_launch from "../billing/launch.js";
 import type * as billing_merchant from "../billing/merchant.js";
+import type * as billing_mirror from "../billing/mirror.js";
+import type * as billing_mirrorActions from "../billing/mirrorActions.js";
 import type * as billing_mutations from "../billing/mutations.js";
 import type * as billing_notifications from "../billing/notifications.js";
 import type * as billing_offers from "../billing/offers.js";
 import type * as billing_operators from "../billing/operators.js";
 import type * as billing_queries from "../billing/queries.js";
 import type * as billing_reconciliation from "../billing/reconciliation.js";
+import type * as billing_scorecard from "../billing/scorecard.js";
 import type * as billing_shadow from "../billing/shadow.js";
 import type * as billing_topups from "../billing/topups.js";
-import type * as contractEventPolling from "../contractEventPolling.js";
 import type * as contract_events_helpers from "../contract_events/helpers.js";
 import type * as contract_events_mutation from "../contract_events/mutation.js";
 import type * as contract_events_query from "../contract_events/query.js";
 import type * as contract_events_types from "../contract_events/types.js";
+import type * as contractEventPolling from "../contractEventPolling.js";
 import type * as crons from "../crons.js";
 import type * as feedback_mutation from "../feedback/mutation.js";
 import type * as feedback_query from "../feedback/query.js";
@@ -51,6 +57,9 @@ import type * as payment_intents_scanner from "../payment_intents/scanner.js";
 import type * as payment_intents_verification from "../payment_intents/verification.js";
 import type * as payment_reconciliation_jobs_actions from "../payment_reconciliation_jobs/actions.js";
 import type * as payment_reconciliation_jobs_mutations from "../payment_reconciliation_jobs/mutations.js";
+import type * as playground_projects_helpers from "../playground_projects/helpers.js";
+import type * as playground_projects_mutations from "../playground_projects/mutations.js";
+import type * as playground_projects_queries from "../playground_projects/queries.js";
 import type * as poller_state_helpers from "../poller_state/helpers.js";
 import type * as poller_state_mutation from "../poller_state/mutation.js";
 import type * as poller_state_query from "../poller_state/query.js";
@@ -99,7 +108,6 @@ import type * as wallet_configs_helpers from "../wallet_configs/helpers.js";
 import type * as wallet_configs_mutation from "../wallet_configs/mutation.js";
 import type * as wallet_configs_query from "../wallet_configs/query.js";
 import type * as wallet_configs_validators from "../wallet_configs/validators.js";
-import type * as webhookDelivery from "../webhookDelivery.js";
 import type * as webhook_deliveries_constants from "../webhook_deliveries/constants.js";
 import type * as webhook_deliveries_helpers from "../webhook_deliveries/helpers.js";
 import type * as webhook_deliveries_mutation from "../webhook_deliveries/mutation.js";
@@ -109,30 +117,32 @@ import type * as webhook_endpoints_helpers from "../webhook_endpoints/helpers.js
 import type * as webhook_endpoints_mutation from "../webhook_endpoints/mutation.js";
 import type * as webhook_endpoints_query from "../webhook_endpoints/query.js";
 import type * as webhook_endpoints_types from "../webhook_endpoints/types.js";
-
-import type {
-  ApiFromModules,
-  FilterApi,
-  FunctionReference,
-} from "convex/server";
+import type * as webhookDelivery from "../webhookDelivery.js";
+import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
   authConfig: typeof authConfig;
   "billing/access": typeof billing_access;
   "billing/admin": typeof billing_admin;
   "billing/availability": typeof billing_availability;
+  "billing/cohort": typeof billing_cohort;
   "billing/commercial": typeof billing_commercial;
   "billing/config": typeof billing_config;
   "billing/constants": typeof billing_constants;
   "billing/exceptions": typeof billing_exceptions;
+  "billing/finance": typeof billing_finance;
   "billing/helpers": typeof billing_helpers;
+  "billing/launch": typeof billing_launch;
   "billing/merchant": typeof billing_merchant;
+  "billing/mirror": typeof billing_mirror;
+  "billing/mirrorActions": typeof billing_mirrorActions;
   "billing/mutations": typeof billing_mutations;
   "billing/notifications": typeof billing_notifications;
   "billing/offers": typeof billing_offers;
   "billing/operators": typeof billing_operators;
   "billing/queries": typeof billing_queries;
   "billing/reconciliation": typeof billing_reconciliation;
+  "billing/scorecard": typeof billing_scorecard;
   "billing/shadow": typeof billing_shadow;
   "billing/topups": typeof billing_topups;
   contractEventPolling: typeof contractEventPolling;
@@ -160,6 +170,9 @@ declare const fullApi: ApiFromModules<{
   "payment_intents/verification": typeof payment_intents_verification;
   "payment_reconciliation_jobs/actions": typeof payment_reconciliation_jobs_actions;
   "payment_reconciliation_jobs/mutations": typeof payment_reconciliation_jobs_mutations;
+  "playground_projects/helpers": typeof playground_projects_helpers;
+  "playground_projects/mutations": typeof playground_projects_mutations;
+  "playground_projects/queries": typeof playground_projects_queries;
   "poller_state/helpers": typeof poller_state_helpers;
   "poller_state/mutation": typeof poller_state_mutation;
   "poller_state/query": typeof poller_state_query;
@@ -228,10 +241,7 @@ declare const fullApi: ApiFromModules<{
  * const myFunctionReference = api.myModule.myFunction;
  * ```
  */
-export declare const api: FilterApi<
-  typeof fullApi,
-  FunctionReference<any, "public">
->;
+export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "public">>;
 
 /**
  * A utility for referencing Convex functions in your app's internal API.
@@ -241,10 +251,7 @@ export declare const api: FilterApi<
  * const myFunctionReference = internal.myModule.myFunction;
  * ```
  */
-export declare const internal: FilterApi<
-  typeof fullApi,
-  FunctionReference<any, "internal">
->;
+export declare const internal: FilterApi<typeof fullApi, FunctionReference<any, "internal">>;
 
 export declare const components: {
   migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;

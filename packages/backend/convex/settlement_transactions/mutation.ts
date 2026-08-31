@@ -144,6 +144,43 @@ export const updateStatus = internalMutation({
         idempotencyKey: `shadow:${args.status.toLowerCase()}:${existing._id}`,
         settlementTransactionId: existing._id,
       });
+      const project = await ctx.db.get(existing.projectId);
+      if (project?.organizationId) {
+        const idempotencyKey = `pdax-economics:${existing._id}:${args.status}`;
+        const priorEconomics = await ctx.db
+          .query("billingPdaxEconomics")
+          .withIndex("by_idempotency_key", (q) => q.eq("idempotencyKey", idempotencyKey))
+          .unique();
+        if (!priorEconomics) {
+          const quote = existing.quoteId
+            ? await ctx.db
+                .query("settlementQuotes")
+                .withIndex("by_quote_id", (q) => q.eq("quoteId", existing.quoteId!))
+                .unique()
+            : null;
+          const withdrawal = args.withdrawalDetails ?? existing.withdrawalDetails;
+          const actualCost = withdrawal?.fee ?? 0;
+          const quotedCost = quote?.totalAmount ?? 0;
+          const spread =
+            (args.tradeDetails ?? existing.tradeDetails) && quote
+              ? (args.tradeDetails ?? existing.tradeDetails)!.amount - quote.totalAmount
+              : 0;
+          await ctx.db.insert("billingPdaxEconomics", {
+            organizationId: project.organizationId,
+            paymentIntentId: existing.paymentIntentId,
+            settlementTransactionId: existing._id,
+            quotedCost: String(Math.max(0, quotedCost)),
+            actualCost: String(Math.max(0, actualCost)),
+            passThroughAmount: String(Math.max(0, actualCost)),
+            spread: String(spread),
+            failureCost: String(args.status === "PAYOUT_FAILED" ? Math.max(0, actualCost) : 0),
+            subsidy: "0",
+            currency: quote?.baseCurrency?.toUpperCase() ?? "PHP",
+            idempotencyKey,
+            recordedAt: Date.now(),
+          });
+        }
+      }
     }
     return existing._id;
   },

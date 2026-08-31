@@ -11,4 +11,6 @@ pub enum PayAccessError {
     InvalidCreditAmount = 5,
     PaymentAccessInactive = 6,
     InsufficientCheckoutCredits = 7,
+    StaleMirrorVersion = 8,
+    ConflictingMirrorVersion = 9,
 }

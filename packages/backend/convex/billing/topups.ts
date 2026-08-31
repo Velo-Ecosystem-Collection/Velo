@@ -33,10 +33,26 @@ export const create = mutation({
       .unique();
     const availability = topupAvailability(policy);
     if (!availability.enabled) throw new Error(availability.reason);
-    const offer = await activeOffer(ctx);
+    const network = currentBillingNetwork();
+    const offer = await activeOffer(ctx, Date.now(), network);
     if (!offer) throw new Error("No active billing offer");
-    if (offer.network !== currentBillingNetwork()) {
+    if (offer.network !== network) {
       throw new Error("Active billing offer does not match the configured Stellar network");
+    }
+    if (network === "public") {
+      const settings = await ctx.db
+        .query("organizationBillingSettings")
+        .withIndex("by_organization_id", (q) => q.eq("organizationId", organization._id))
+        .unique();
+      if (
+        organization.verificationStatus !== "verified" ||
+        !settings?.enforcementEnabled ||
+        !settings.cohortStage ||
+        !settings.graceUntil ||
+        settings.activationState === "paused"
+      ) {
+        throw new Error("Mainnet top-ups are limited to enabled cohort organizations");
+      }
     }
     const project = (
       await ctx.db

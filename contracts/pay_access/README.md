@@ -4,14 +4,23 @@ Soroban contract for activating Velo Pay access against an existing Velo registr
 
 ## Public Interface
 
-- `initialize(registry_contract)`
+- `initialize(registry_contract, mirror_authority)`
 - `activate_payments(project_id)`
 - `deactivate_payments(project_id)`
 - `consume_checkout_credit(project_id, amount)`
 - `get_payment_access_status(project_id) -> PaymentAccessStatus`
 - `get_checkout_credits(project_id) -> i128`
+- `set_display_balance(project_id, credits, source_version)`
+- `get_display_balance(project_id) -> DisplayBalance`
+- `rotate_mirror_authority(new_authority)`
 
 `activate_payments`, `deactivate_payments`, and `consume_checkout_credit` load the project from `VeloRegistry.get_project(project_id)` and require the registry project owner to authorize the mutation. Activation rejects missing or inactive registry projects.
+
+Display balances are stored separately from legacy checkout credits. Only the dedicated mirror
+authority may update them, source versions must increase monotonically, and an identical replay is
+idempotent. Authority rotation requires authorization from both the old and new authorities. These
+values are a non-authoritative compatibility display; Convex commercial ledgers remain the sole
+entitlement source.
 
 ## Test
 
@@ -72,7 +81,8 @@ stellar contract invoke \
   --source-account <SOURCE_ACCOUNT> \
   --network testnet \
   -- initialize \
-  --registry_contract <VELO_REGISTRY_CONTRACT_ID>
+  --registry_contract <VELO_REGISTRY_CONTRACT_ID> \
+  --mirror_authority <MIRROR_AUTHORITY_PUBLIC_KEY>
 ```
 
 After deployment, copy the returned contract ID into the web app environment:

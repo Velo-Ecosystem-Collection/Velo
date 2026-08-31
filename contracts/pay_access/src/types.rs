@@ -21,6 +21,13 @@ pub struct PaymentAccessRecord {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DisplayBalance {
+    pub credits: i128,
+    pub source_version: u64,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PaymentAccessStatus {
     Active,
     Inactive,
@@ -30,5 +37,7 @@ pub enum PaymentAccessStatus {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     RegistryContract,
+    MirrorAuthority,
     Access(u64),
+    DisplayBalance(u64),
 }

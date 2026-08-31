@@ -4,6 +4,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 import { mutation, query } from "../_generated/server";
 import { requireBillingOperator } from "./access";
+import { currentBillingNetwork } from "./config";
 import { billingNetworkValidator } from "./schema";
 
 function normalizeAmount(value: string) {
@@ -27,12 +28,24 @@ function normalizeBillingAsset(value: string) {
   return asset;
 }
 
-export async function activeOffer(ctx: QueryCtx | MutationCtx, now = Date.now()) {
-  const candidates = await ctx.db
-    .query("billingOffers")
-    .withIndex("by_active_and_active_from", (q) => q.eq("active", true).lte("activeFrom", now))
-    .order("desc")
-    .take(50);
+export async function activeOffer(
+  ctx: QueryCtx | MutationCtx,
+  now = Date.now(),
+  network?: "testnet" | "public",
+) {
+  const candidates = network
+    ? await ctx.db
+        .query("billingOffers")
+        .withIndex("by_network_and_active_and_active_from", (q) =>
+          q.eq("network", network).eq("active", true).lte("activeFrom", now),
+        )
+        .order("desc")
+        .take(50)
+    : await ctx.db
+        .query("billingOffers")
+        .withIndex("by_active_and_active_from", (q) => q.eq("active", true).lte("activeFrom", now))
+        .order("desc")
+        .take(50);
   return (
     candidates.find((offer) => offer.activeUntil === undefined || offer.activeUntil > now) ?? null
   );
@@ -40,7 +53,7 @@ export async function activeOffer(ctx: QueryCtx | MutationCtx, now = Date.now())
 
 export const getActive = query({
   args: {},
-  handler: async (ctx) => await activeOffer(ctx),
+  handler: async (ctx) => await activeOffer(ctx, Date.now(), currentBillingNetwork()),
 });
 
 export const list = query({
@@ -60,6 +73,7 @@ export const create = mutation({
     asset: v.string(),
     network: billingNetworkValidator,
     treasuryAddress: v.string(),
+    treasuryId: v.optional(v.id("billingTreasuries")),
     activeFrom: v.number(),
     activeUntil: v.optional(v.number()),
     refundPolicy: v.string(),
@@ -74,14 +88,25 @@ export const create = mutation({
     if (!sku || args.creditQuantity <= 0n || !asset || !treasuryAddress || !refundPolicy) {
       throw new Error("Offer fields are required");
     }
-    if (args.network !== "testnet") {
-      throw new Error("Sprint 2 billing offers are limited to Stellar Testnet");
-    }
     if (!/^G[A-Z0-9]{3,}$/.test(treasuryAddress)) {
       throw new Error("Offer treasury must be a Stellar account");
     }
     if (args.activeUntil !== undefined && args.activeUntil <= args.activeFrom) {
       throw new Error("Offer activeUntil must follow activeFrom");
+    }
+    if (args.network === "public") {
+      if (!args.treasuryId) throw new Error("Mainnet offers require a production treasury");
+      const treasury = await ctx.db.get(args.treasuryId);
+      if (
+        !treasury ||
+        !treasury.active ||
+        treasury.network !== "public" ||
+        treasury.address !== treasuryAddress ||
+        treasury.asset !== asset
+      ) {
+        throw new Error("Mainnet offer must match an active production treasury");
+      }
+      if (!asset.startsWith("USDC:")) throw new Error("Mainnet offers require USDC");
     }
     const prior = await ctx.db
       .query("billingOffers")
@@ -93,7 +118,9 @@ export const create = mutation({
     if (args.activate) {
       const active = await ctx.db
         .query("billingOffers")
-        .withIndex("by_active_and_active_from", (q) => q.eq("active", true))
+        .withIndex("by_network_and_active_and_active_from", (q) =>
+          q.eq("network", args.network).eq("active", true),
+        )
         .take(100);
       for (const offer of active) {
         await ctx.db.patch(offer._id, { active: false });
@@ -107,6 +134,7 @@ export const create = mutation({
       asset,
       network: args.network,
       treasuryAddress,
+      ...(args.treasuryId ? { treasuryId: args.treasuryId } : {}),
       refundPolicy,
       active: args.activate,
       activeFrom: args.activeFrom,

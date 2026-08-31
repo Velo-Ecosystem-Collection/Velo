@@ -79,7 +79,24 @@ export const backfillProjectOrganizations = migrations.define({
   },
 });
 
+export const backfillBillingExceptionOperations = migrations.define({
+  table: "billingExceptions",
+  migrateOne: (_ctx, exception) =>
+    exception.severity === undefined ||
+    exception.slaDueAt === undefined ||
+    exception.investigationStatus === undefined ||
+    exception.assignee === undefined
+      ? {
+          severity: exception.severity ?? ("medium" as const),
+          slaDueAt: exception.slaDueAt ?? exception.createdAt + 24 * 60 * 60_000,
+          investigationStatus: exception.investigationStatus ?? ("investigating" as const),
+          assignee: exception.assignee ?? "billing-operations",
+        }
+      : undefined,
+});
+
 export const runAll = migrations.runner([
   internal.migrations.backfillProjectRateLimitBackend,
   internal.migrations.backfillProjectOrganizations,
+  internal.migrations.backfillBillingExceptionOperations,
 ]);

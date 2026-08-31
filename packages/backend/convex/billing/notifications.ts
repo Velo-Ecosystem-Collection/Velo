@@ -16,7 +16,9 @@ export async function notifyOrganization(
       | "promotional_expiry"
       | "reservation_recovery"
       | "topup_success"
-      | "topup_failure";
+      | "topup_failure"
+      | "migration_notice"
+      | "enforcement_scheduled";
     dedupeKey: string;
     title: string;
     message: string;

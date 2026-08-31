@@ -9,7 +9,8 @@
     "lint:fix": "oxlint --fix . && oxfmt --write . && next typegen && tsc --noEmit",
     "prebuild": "pnpm --filter @carts1024/velo-wallets build && node ../../scripts/stage-wallet-bundle.mjs",
     "start": "next start",
-    "test": "node --experimental-strip-types --test features/**/*.test.ts"
+    "test": "node --experimental-strip-types --test features/**/*.test.ts",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@carts1024/velo-sdk": "workspace:*",
@@ -36,6 +37,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.51.1",
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^22.15.3",
     "@types/react": "19.2.13",

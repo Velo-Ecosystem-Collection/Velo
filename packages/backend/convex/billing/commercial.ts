@@ -27,9 +27,16 @@ export async function commercialEnforcementEnabled(
       .unique(),
   ]);
   if (!policy?.billingLedgerWrite || policy.billingKillSwitch || !settings) return false;
-  return network === "testnet"
-    ? settings.sandboxEnforcementEnabled === true
-    : policy.mainnetCreditEnforcement && settings.enforcementEnabled;
+  if (network === "testnet") return settings.sandboxEnforcementEnabled === true;
+  if (
+    !settings.cohortStage ||
+    !settings.graceUntil ||
+    settings.graceUntil > Date.now() ||
+    settings.activationState === "paused"
+  ) {
+    return false;
+  }
+  return policy.mainnetCreditEnforcement && settings.enforcementEnabled;
 }
 
 export async function reserveCommercialCredit(

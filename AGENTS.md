@@ -31,3 +31,53 @@ Recent history uses short imperative subjects, often with Conventional Commit-st
 ## Agent-Specific Instructions
 
 Before editing Convex code in `packages/backend/convex`, read `packages/backend/AGENTS.md` and `packages/backend/convex/_generated/ai/guidelines.md`. Do not edit generated files in `convex/_generated` unless the relevant tool regenerated them.
+
+## Velo Knowledge Vault
+
+The repository contains an Obsidian-compatible knowledge vault at:
+
+`docs/obsidian/`
+
+### Before exploring source code
+
+For any non-trivial task:
+
+1. Read `docs/obsidian/Home.md`.
+2. Read `docs/obsidian/Repository Map.md`.
+3. Read the vault notes relevant to the requested feature.
+4. Use those notes to identify likely source files.
+5. Inspect only the relevant source files first.
+
+Do not recursively read the entire repository unless the task genuinely requires repository-wide analysis. Exclude dependencies, build outputs, generated Convex files, Rust targets, lockfiles, binaries, and unrelated temporary files during targeted exploration.
+
+### After making changes
+
+Update the relevant notes under `docs/obsidian/` whenever the change materially affects:
+
+- architecture;
+- module responsibilities;
+- important data flows;
+- schemas;
+- API contracts;
+- Convex queries, mutations, or actions;
+- Soroban contracts;
+- Stellar integration;
+- environment configuration;
+- development workflows; or
+- important dependencies.
+
+If you discover useful architectural information that was missing from the vault, document it. Update `last_updated` only on notes whose knowledge changed, and add significant context changes to `docs/obsidian/changelog/Knowledge Changelog.md`.
+
+### Documentation reliability
+
+The source code is authoritative.
+
+If vault documentation conflicts with implementation:
+
+1. Verify the implementation.
+2. Follow the implementation unless the task explicitly requires changing it.
+3. Correct the stale vault documentation.
+
+### Documentation style
+
+Keep notes concise and optimized for repository navigation. Prefer important file paths, responsibilities, relationships, entry points, flows, and gotchas. Avoid copying large source files into documentation.

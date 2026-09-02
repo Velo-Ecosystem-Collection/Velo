@@ -2,7 +2,7 @@
 type: reference
 area: repository
 status: current
-last_updated: 2026-08-31
+last_updated: 2026-09-01
 source_of_truth: repository
 ---
 
@@ -39,7 +39,7 @@ Functional repository capabilities include:
 
 ## Planned / Not Implemented
 
-- Managed Testnet Gas Station fee sponsorship: Convex policy/API, relayer signer, SDK/dashboard integration, and reviewer evidence package. No gas or relayer implementation is present in the current source; the three-day Deliverable 1 plan is [[../instawards/Velo-Instawards-Deliverable-1-Sprint-Plan]].
+- Managed Testnet Gas Station fee sponsorship: Convex policy/API, relayer signer, SDK/dashboard integration, and reviewer evidence package. No gas or relayer implementation is present in the current source; the four-day Deliverable 1 plan is [[../instawards/Velo-Instawards-Deliverable-1-Sprint-Plan]].
 - General Mainnet payment/checkout support and production settlement/compliance flows.
 - Full RPC gateway and broad analytics/indexing products.
 - Broader SEP-10 infrastructure and confirmed SEP-31/SEP-24 production anchor integrations.

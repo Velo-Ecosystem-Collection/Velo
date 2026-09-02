@@ -10,6 +10,7 @@ source_of_truth: repository
 
 ## 2026-09-03
 
+- Completed Gas Station Sub-sprint 2.1: added `gas/authorization.ts` with a typed console capability guard backed by the existing wallet-JWT project-role helper and a fail-closed, minimal-result API-key verifier for server-provided SHA-256 hashes. Stored API-key records derive both key and project scope; payment-access activation is intentionally independent. Focused tests cover role boundaries, identity/project isolation, invalid-key cases, duplicate hashes, exact result shapes, and absent/false `paymentAccessActive`. Policy evaluation, console CRUD, admission, and API runtime remain unimplemented.
 - Completed Gas Station Sub-sprint 1.5: added typed, field-by-field safe projections for policies, decisions/logs, and relayer metadata, plus deterministic boundary tests for stroop/int64 limits, Stellar normalization, Testnet guards, allowlists, Convex schema validation, decimal-string conversion, and secret/XDR redaction. No Gas runtime, authorization, API, relayer, SDK, UI, or Soroban behavior was added.
 - Added the reusable Gas validation boundary in `packages/backend/convex/gas/validation.ts` and `types.ts`: canonical int64 stroop parsing and checked addition, checksum-backed Stellar identifier normalization, exact Testnet enforcement, and bounded, validated, deduplicated contract allowlists. Authorization, admission, policy evaluation, APIs, and relaying remain unimplemented.
 

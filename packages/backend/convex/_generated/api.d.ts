@@ -41,6 +41,7 @@ import type * as crons from "../crons.js";
 import type * as feedback_mutation from "../feedback/mutation.js";
 import type * as feedback_query from "../feedback/query.js";
 import type * as gas_types from "../gas/types.js";
+import type * as gas_validation from "../gas/validation.js";
 import type * as http from "../http.js";
 import type * as journey_stages_mutations from "../journey_stages/mutations.js";
 import type * as migrations from "../migrations.js";
@@ -156,6 +157,7 @@ declare const fullApi: ApiFromModules<{
   "feedback/mutation": typeof feedback_mutation;
   "feedback/query": typeof feedback_query;
   "gas/types": typeof gas_types;
+  "gas/validation": typeof gas_validation;
   http: typeof http;
   "journey_stages/mutations": typeof journey_stages_mutations;
   migrations: typeof migrations;

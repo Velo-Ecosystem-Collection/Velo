@@ -2,7 +2,7 @@
 type: reference
 area: repository
 status: current
-last_updated: 2026-09-02
+last_updated: 2026-09-03
 source_of_truth: repository
 ---
 
@@ -39,7 +39,7 @@ Functional repository capabilities include:
 
 ## Partial Foundation
 
-- The deterministic Gas Station vocabulary, Testnet-only fixture scaffold, and partial D1 Convex schema now exist under `packages/backend/convex/gas/` and `packages/backend/convex/tests/gas/`. The schema composes `gasPolicies`, `gasLogs`, and `relayerAccounts` with bounded validators and lookup indexes for policy, audit, reservation, retention, and relayer metadata. It does not implement authorization, policy evaluation, admission, API routes, cleanup, or runtime gas sponsorship.
+- The deterministic Gas Station vocabulary, exact-value stroop arithmetic, checksum-backed Stellar normalization and bounded allowlist helpers, Testnet-only fixture scaffold, and partial D1 Convex schema now exist under `packages/backend/convex/gas/` and `packages/backend/convex/tests/gas/`. The schema composes `gasPolicies`, `gasLogs`, and `relayerAccounts` with bounded validators and lookup indexes for policy, audit, reservation, retention, and relayer metadata. It does not implement authorization, policy evaluation, admission, APIs, relaying, cleanup, or runtime gas sponsorship.
 
 ## Planned / Not Implemented
 

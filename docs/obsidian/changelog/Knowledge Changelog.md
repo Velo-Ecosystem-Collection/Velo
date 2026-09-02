@@ -2,11 +2,15 @@
 type: reference
 area: changelog
 status: current
-last_updated: 2026-09-02
+last_updated: 2026-09-03
 source_of_truth: repository
 ---
 
 # Knowledge Changelog
+
+## 2026-09-03
+
+- Added the reusable Gas validation boundary in `packages/backend/convex/gas/validation.ts` and `types.ts`: canonical int64 stroop parsing and checked addition, checksum-backed Stellar identifier normalization, exact Testnet enforcement, and bounded, validated, deduplicated contract allowlists. Authorization, admission, policy evaluation, APIs, and relaying remain unimplemented.
 
 ## 2026-09-02
 

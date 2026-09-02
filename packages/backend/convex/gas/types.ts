@@ -2,6 +2,13 @@
 export const GAS_NETWORK = "testnet" as const;
 export type GasNetwork = typeof GAS_NETWORK;
 
+/** Inclusive stroop bounds supported by Convex's signed int64 values. */
+export const GAS_MIN_STROOPS = 0n;
+export const GAS_MAX_STROOPS = 2n ** 63n - 1n;
+
+/** Maximum number of contract IDs accepted in a Gas Station allowlist. */
+export const GAS_MAX_ALLOWED_CONTRACT_IDS = 20;
+
 /** The only operation shape admitted by the initial Gas Station boundary. */
 export const GAS_SUPPORTED_OPERATION = "invokeHostFunction" as const;
 export type GasSupportedOperation = typeof GAS_SUPPORTED_OPERATION;

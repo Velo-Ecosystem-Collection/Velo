@@ -6,6 +6,9 @@ export type GasNetwork = typeof GAS_NETWORK;
 export const GAS_MIN_STROOPS = 0n;
 export const GAS_MAX_STROOPS = 2n ** 63n - 1n;
 
+/** D1 reservation overhead added to the inner transaction maximum fee. */
+export const GAS_FEE_OVERHEAD_STROOPS = 100n;
+
 /** Maximum number of contract IDs accepted in a Gas Station allowlist. */
 export const GAS_MAX_ALLOWED_CONTRACT_IDS = 20;
 

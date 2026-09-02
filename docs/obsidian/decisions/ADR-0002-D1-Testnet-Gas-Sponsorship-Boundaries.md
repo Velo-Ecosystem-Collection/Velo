@@ -2,7 +2,7 @@
 type: decision
 area: gas-station
 status: accepted
-last_updated: 2026-09-02
+last_updated: 2026-09-03
 source_of_truth: repository
 ---
 
@@ -33,7 +33,7 @@ The complete decision and HTTP outcome matrix is maintained in the [[../../insta
 
 ## Implementation status
 
-This is an accepted design decision, not an implementation claim. Gas Station Convex schema, API routes, relayer code, generated files, SDK helpers, dashboard UI, and contracts remain planned work under Deliverable 1 and later deliverables. The existing system-state note remains unchanged because this ADR does not add functionality.
+This is an accepted design decision, not a claim that the complete Gas Station runtime exists. The schema, validation, authorization, safe projections, and pure policy evaluator are implemented as D1 groundwork. Console CRUD, durable admission, API routes, cleanup, relayer code, generated files, SDK helpers, dashboard UI, and contracts remain planned work under Deliverable 1 and later deliverables.
 
 ## Consequences
 

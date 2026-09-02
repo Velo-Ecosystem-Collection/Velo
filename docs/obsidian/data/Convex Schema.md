@@ -27,9 +27,10 @@ The schema is assembled in `packages/backend/convex/schema.ts` from domain-local
 - `relayerAccounts` stores project-scoped Testnet relayer public-key and balance metadata with active/disabled status; it contains no signing or custody state.
 - `gas/projections.ts` provides field-by-field safe projections for the three Gas tables. It converts stroops to decimal strings, keeps only policy/decision/lifecycle/public-key/balance/timestamp fields, and excludes Convex IDs, unnecessary project IDs, idempotency/request hashes, retention internals, raw XDR, signatures, credentials, and custody material.
 - `gas/authorization.ts` provides the reusable console role guard (`read` viewer+, `updatePolicy` editor+, `updateRelayer` owner) and the server-boundary API-key verifier. API-key scope comes only from the stored `apiKeys` record; missing, malformed, unknown, revoked, orphaned, or ambiguous hashes fail uniformly. Gas authorization does not check the project's `paymentAccessActive` field.
+- `gas/policy.ts` provides the pure `evaluateGasPolicy` helper and structural snapshot/input/result types. It derives the checked D1 reservation (`innerMaxFeeStroops + 100` stroops), applies deterministic network/operation/allowlist/cap/quota precedence, and returns bounded reason data without Convex reads, writes, or registration.
 - Gas-log indexes support project/time, project/source-wallet/time, project/transaction hash, project/idempotency hash, project/request ID, lifecycle/expiry, and retention expiry. Convex indexes do not enforce uniqueness; authorized writes must use indexed `.unique()` lookups.
 - `packages/backend/convex/tests/gas/` covers Convex insertion/validator boundaries, int64 transport limits, canonical normalization, allowlist bounds, exact projection shapes, decimal-string amounts, and malicious-field redaction.
-- This is schema and authorization groundwork. Policy evaluation, console CRUD functions, admission, API routes, cleanup, and relayer execution remain later work.
+- This is schema, validation, authorization, and pure policy-evaluation groundwork. Console CRUD functions, admission, API routes, cleanup, and relayer execution remain later work.
 
 ## Stellar and Polling
 

@@ -32,6 +32,7 @@ import {
 } from "./billing/schema";
 import contractEvents from "./contract_events/schema";
 import feedback from "./feedback/schema";
+import { gasLogs, gasPolicies, relayerAccounts } from "./gas/schema";
 import journeyStages from "./journey_stages/schema";
 import organizations from "./organizations/schema";
 import paymentIntentIdempotencyKeys from "./payment_intent_idempotency_keys/schema";
@@ -92,6 +93,8 @@ export default defineSchema({
   creditReservations,
   contractEvents,
   feedback,
+  gasLogs,
+  gasPolicies,
   journeyStages,
   organizations,
   organizationBillingSettings,
@@ -128,6 +131,7 @@ export default defineSchema({
   providerEvents,
   providerOperations,
   rateLimitBuckets,
+  relayerAccounts,
   webhookDomainEvents,
   walletConfigs,
   walletConfigPublications,

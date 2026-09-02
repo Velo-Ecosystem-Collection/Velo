@@ -2,11 +2,7 @@
 type: reference
 area: repository
 status: current
-<<<<<<< Updated upstream
-last_updated: 2026-09-01
-=======
 last_updated: 2026-09-02
->>>>>>> Stashed changes
 source_of_truth: repository
 ---
 
@@ -43,11 +39,11 @@ Functional repository capabilities include:
 
 ## Partial Foundation
 
-- The deterministic Gas Station domain vocabulary and Testnet-only fixture scaffold now exist under `packages/backend/convex/gas/` and `packages/backend/convex/tests/gas/`. This foundation covers the locked D1 network, supported operation, lifecycle vocabulary, and fixture inputs only; it does not implement runtime gas sponsorship.
+- The deterministic Gas Station vocabulary, Testnet-only fixture scaffold, and partial D1 Convex schema now exist under `packages/backend/convex/gas/` and `packages/backend/convex/tests/gas/`. The schema composes `gasPolicies`, `gasLogs`, and `relayerAccounts` with bounded validators and lookup indexes for policy, audit, reservation, retention, and relayer metadata. It does not implement authorization, policy evaluation, admission, API routes, cleanup, or runtime gas sponsorship.
 
 ## Planned / Not Implemented
 
-- Managed Testnet Gas Station fee sponsorship: Convex policy/API, relayer signer, SDK/dashboard integration, and reviewer evidence package. No gas or relayer implementation is present in the current source; the four-day Deliverable 1 plan is [[../instawards/Velo-Instawards-Deliverable-1-Sprint-Plan]].
+- Managed Testnet Gas Station fee sponsorship runtime: Convex authorization/policy/API, relayer signer, SDK/dashboard integration, cleanup, and reviewer evidence package. The four-day Deliverable 1 plan is [[../instawards/Velo-Instawards-Deliverable-1-Sprint-Plan]].
 - General Mainnet payment/checkout support and production settlement/compliance flows.
 - Full RPC gateway and broad analytics/indexing products.
 - Broader SEP-10 infrastructure and confirmed SEP-31/SEP-24 production anchor integrations.

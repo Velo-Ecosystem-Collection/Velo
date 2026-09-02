@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 import {
   evaluateGasPolicy,
   type GasPolicyEvaluationInput,
+  type GasPolicyEvaluationResult,
   type GasPolicySnapshot,
 } from "../../gas/policy.ts";
 import {
@@ -15,19 +16,60 @@ import {
   GAS_REJECTION_CODES,
   GAS_SUPPORTED_OPERATION,
 } from "../../gas/types.ts";
-import { gasEnvelopeFixtures } from "./fixtures.ts";
+import { gasEnvelopeFixtures, gasPolicyFixtures } from "./fixtures.ts";
 
-const targetContractId = gasEnvelopeFixtures[0].metadata.expectedTarget;
-const otherContractId = "CA7QYNF7SOWQ3LLQ6ZMPD6PTQVVBYV3R6DR2ICR6UBZMWRXZPPTD3FVO";
+type GasPolicyFixture = (typeof gasPolicyFixtures)[number];
+type GasPolicyBoundary = GasPolicyFixture["boundary"];
+type ExpectedPolicyOutcome = {
+  decisionCode: (typeof GAS_DECISION_CODES)[keyof typeof GAS_DECISION_CODES];
+  rejectionCode: (typeof GAS_REJECTION_CODES)[keyof typeof GAS_REJECTION_CODES] | null;
+};
 
-const basePolicy: GasPolicySnapshot = Object.freeze({
-  enabled: true,
-  network: GAS_NETWORK,
-  dailyCapStroops: 1_000n,
-  dailyReservedStroops: 0n,
-  walletHourlyLimit: 3,
-  allowedContractIds: Object.freeze([targetContractId]),
-});
+function envelopeFixtureById(id: string) {
+  const fixture = gasEnvelopeFixtures.find((candidate) => candidate.id === id);
+  if (!fixture) {
+    throw new Error(`Missing gas envelope fixture: ${id}`);
+  }
+
+  return fixture;
+}
+
+function policyFixtureByBoundary(boundary: GasPolicyBoundary): GasPolicyFixture {
+  const fixture = gasPolicyFixtures.find((candidate) => candidate.boundary === boundary);
+  if (!fixture) {
+    throw new Error(`Missing gas policy fixture: ${boundary}`);
+  }
+
+  return fixture;
+}
+
+function onlyContractId(fixture: GasPolicyFixture): string {
+  const [contractId] = fixture.allowedContractIds;
+  if (contractId === undefined) {
+    throw new Error(`Gas policy fixture has no contract ID: ${fixture.id}`);
+  }
+
+  return contractId;
+}
+
+const validEnvelopeFixture = envelopeFixtureById("gas-envelope-valid-testnet-soroban");
+const targetContractId = validEnvelopeFixture.metadata.expectedTarget;
+const otherContractId = onlyContractId(policyFixtureByBoundary("allowlist-disallowed"));
+
+const basePolicyFixture = policyFixtureByBoundary("enabled");
+
+function policySnapshot(fixture: GasPolicyFixture): GasPolicySnapshot {
+  return Object.freeze({
+    enabled: fixture.enabled,
+    network: fixture.network,
+    dailyCapStroops: BigInt(fixture.dailyCapStroops),
+    dailyReservedStroops: BigInt(fixture.dailyReservedStroops),
+    walletHourlyLimit: fixture.walletHourlyLimit,
+    allowedContractIds: fixture.allowedContractIds,
+  });
+}
+
+const basePolicy = policySnapshot(basePolicyFixture);
 
 function input(overrides: Partial<GasPolicyEvaluationInput> = {}): GasPolicyEvaluationInput {
   return {
@@ -42,10 +84,128 @@ function input(overrides: Partial<GasPolicyEvaluationInput> = {}): GasPolicyEval
   };
 }
 
+/**
+ * Policy fixtures store the complete requested reservation. Convert that
+ * boundary value back to the evaluator's inner maximum fee input so the
+ * under/at/over cases remain exact after the D1 overhead is applied.
+ */
+function inputForPolicyFixture(
+  fixture: GasPolicyFixture,
+  overrides: Partial<GasPolicyEvaluationInput> = {},
+): GasPolicyEvaluationInput {
+  return input({
+    policy: policySnapshot(fixture),
+    network: fixture.network,
+    innerMaxFeeStroops: BigInt(fixture.requestedReservationStroops) - GAS_FEE_OVERHEAD_STROOPS,
+    walletHourlyUsage: fixture.walletHourlyUsed,
+    requestedQuotaUnits: fixture.requestedWalletUnits,
+    ...overrides,
+  });
+}
+
+const expectedPolicyOutcomes = {
+  enabled: {
+    decisionCode: GAS_DECISION_CODES.reserved,
+    rejectionCode: null,
+  },
+  disabled: {
+    decisionCode: GAS_DECISION_CODES.rejected,
+    rejectionCode: GAS_REJECTION_CODES.policyDisabled,
+  },
+  "daily-cap-under": {
+    decisionCode: GAS_DECISION_CODES.reserved,
+    rejectionCode: null,
+  },
+  "daily-cap-at": {
+    decisionCode: GAS_DECISION_CODES.reserved,
+    rejectionCode: null,
+  },
+  "daily-cap-over": {
+    decisionCode: GAS_DECISION_CODES.rejected,
+    rejectionCode: GAS_REJECTION_CODES.dailyCapExceeded,
+  },
+  "wallet-quota-under": {
+    decisionCode: GAS_DECISION_CODES.reserved,
+    rejectionCode: null,
+  },
+  "wallet-quota-at": {
+    decisionCode: GAS_DECISION_CODES.reserved,
+    rejectionCode: null,
+  },
+  "wallet-quota-over": {
+    decisionCode: GAS_DECISION_CODES.rejected,
+    rejectionCode: GAS_REJECTION_CODES.walletRateLimited,
+  },
+  "allowlist-empty": {
+    decisionCode: GAS_DECISION_CODES.rejected,
+    rejectionCode: GAS_REJECTION_CODES.contractNotWhitelisted,
+  },
+  "allowlist-allowed": {
+    decisionCode: GAS_DECISION_CODES.reserved,
+    rejectionCode: null,
+  },
+  "allowlist-disallowed": {
+    decisionCode: GAS_DECISION_CODES.rejected,
+    rejectionCode: GAS_REJECTION_CODES.contractNotWhitelisted,
+  },
+  "payment-access-independent": {
+    decisionCode: GAS_DECISION_CODES.reserved,
+    rejectionCode: null,
+  },
+} satisfies Record<GasPolicyBoundary, ExpectedPolicyOutcome>;
+
+function expectedPolicyReason(
+  fixture: GasPolicyFixture,
+  rejectionCode: ExpectedPolicyOutcome["rejectionCode"],
+): GasPolicyEvaluationResult["reason"] {
+  switch (rejectionCode) {
+    case null:
+      return {
+        nextDailyReservedStroops:
+          BigInt(fixture.dailyReservedStroops) + BigInt(fixture.requestedReservationStroops),
+        remainingWalletUnits:
+          fixture.walletHourlyLimit - fixture.walletHourlyUsed - fixture.requestedWalletUnits,
+      };
+    case GAS_REJECTION_CODES.policyDisabled:
+      return null;
+    case GAS_REJECTION_CODES.contractNotWhitelisted:
+      return { targetContractId };
+    case GAS_REJECTION_CODES.dailyCapExceeded:
+      return {
+        dailyCapStroops: BigInt(fixture.dailyCapStroops),
+        dailyReservedStroops: BigInt(fixture.dailyReservedStroops),
+      };
+    case GAS_REJECTION_CODES.walletRateLimited:
+      return {
+        walletHourlyLimit: fixture.walletHourlyLimit,
+        walletHourlyUsage: fixture.walletHourlyUsed,
+      };
+    default:
+      throw new Error(`Unexpected policy fixture rejection: ${rejectionCode}`);
+  }
+}
+
+test.each(gasPolicyFixtures.map((fixture) => [fixture.id, fixture] as const))(
+  "returns the complete typed result for %s",
+  (_id, fixture) => {
+    const innerMaxFeeStroops =
+      BigInt(fixture.requestedReservationStroops) - GAS_FEE_OVERHEAD_STROOPS;
+    const expectedOutcome = expectedPolicyOutcomes[fixture.boundary];
+    const result = evaluateGasPolicy(inputForPolicyFixture(fixture));
+
+    expect(result).toEqual({
+      ...expectedOutcome,
+      requiredReservationStroops: innerMaxFeeStroops + GAS_FEE_OVERHEAD_STROOPS,
+      reason: expectedPolicyReason(fixture, expectedOutcome.rejectionCode),
+    });
+  },
+);
+
 test("reserves the exact inner maximum fee plus the named D1 overhead", () => {
+  const innerMaxFeeStroops = BigInt(validEnvelopeFixture.metadata.expectedFeeStroops);
   const result = evaluateGasPolicy(
     input({
-      innerMaxFeeStroops: 900n,
+      innerMaxFeeStroops,
       walletHourlyUsage: 2,
     }),
   );
@@ -54,100 +214,108 @@ test("reserves the exact inner maximum fee plus the named D1 overhead", () => {
   expect(result).toEqual({
     decisionCode: GAS_DECISION_CODES.reserved,
     rejectionCode: null,
-    requiredReservationStroops: 1_000n,
+    requiredReservationStroops: innerMaxFeeStroops + GAS_FEE_OVERHEAD_STROOPS,
     reason: {
-      nextDailyReservedStroops: 1_000n,
+      nextDailyReservedStroops: innerMaxFeeStroops + GAS_FEE_OVERHEAD_STROOPS,
       remainingWalletUnits: 0,
     },
   });
 });
 
-test("allows reservations exactly at the daily cap and wallet quota", () => {
-  const result = evaluateGasPolicy(
-    input({
-      innerMaxFeeStroops: 400n,
-      walletHourlyUsage: 2,
-      requestedQuotaUnits: 1,
-      policy: Object.freeze({
-        ...basePolicy,
-        dailyReservedStroops: 500n,
+const classicPaymentEnvelope = envelopeFixtureById("gas-envelope-classic-payment");
+const mixedOperationEnvelope = envelopeFixtureById("gas-envelope-mixed-soroban-payment");
+const multiOperationEnvelope = envelopeFixtureById("gas-envelope-multi-soroban");
+const feeBumpEnvelope = envelopeFixtureById("gas-envelope-fee-bump-soroban");
+
+const unsupportedOperationCases = [
+  {
+    label: "classic payment operation",
+    fixture: classicPaymentEnvelope,
+    operation: classicPaymentEnvelope.metadata.expectedOperation,
+    targetContractIds: [classicPaymentEnvelope.metadata.expectedTarget],
+    observedTargetCount: 1,
+  },
+  {
+    label: "mixed operation",
+    fixture: mixedOperationEnvelope,
+    operation: mixedOperationEnvelope.metadata.expectedOperation,
+    targetContractIds: [mixedOperationEnvelope.metadata.expectedTarget],
+    observedTargetCount: 1,
+  },
+  {
+    label: "FeeBump operation",
+    fixture: feeBumpEnvelope,
+    operation: feeBumpEnvelope.metadata.expectedOperation,
+    targetContractIds: [feeBumpEnvelope.metadata.expectedTarget],
+    observedTargetCount: 1,
+  },
+  {
+    label: "missing target",
+    fixture: validEnvelopeFixture,
+    operation: validEnvelopeFixture.metadata.expectedOperation,
+    targetContractIds: [],
+    observedTargetCount: 0,
+  },
+  {
+    label: "multiple targets",
+    fixture: multiOperationEnvelope,
+    operation: multiOperationEnvelope.metadata.expectedOperation,
+    targetContractIds: [targetContractId, targetContractId],
+    observedTargetCount: 2,
+  },
+] as const;
+
+test.each(unsupportedOperationCases.map((scenario) => [scenario.label, scenario] as const))(
+  "rejects %s with the unsupported-transaction result",
+  (_label, scenario) => {
+    const innerMaxFeeStroops = BigInt(scenario.fixture.metadata.expectedFeeStroops);
+    const result = evaluateGasPolicy(
+      input({
+        innerMaxFeeStroops,
+        operation: scenario.operation,
+        targetContractIds: scenario.targetContractIds,
       }),
-    }),
-  );
+    );
 
-  expect(result.decisionCode).toBe(GAS_DECISION_CODES.reserved);
-  expect(result.rejectionCode).toBeNull();
-  expect(result.reason).toEqual({
-    nextDailyReservedStroops: 1_000n,
-    remainingWalletUnits: 0,
-  });
-});
+    expect(result).toEqual({
+      decisionCode: GAS_DECISION_CODES.rejected,
+      rejectionCode: GAS_REJECTION_CODES.unsupportedTransaction,
+      requiredReservationStroops: innerMaxFeeStroops + GAS_FEE_OVERHEAD_STROOPS,
+      reason: {
+        expectedOperation: GAS_SUPPORTED_OPERATION,
+        observedTargetCount: scenario.observedTargetCount,
+      },
+    });
+  },
+);
 
-test.each([
-  ["missing policy", input({ policy: null }), GAS_REJECTION_CODES.policyDisabled, null],
-  [
-    "disabled policy",
-    input({ policy: Object.freeze({ ...basePolicy, enabled: false }) }),
-    GAS_REJECTION_CODES.policyDisabled,
-    null,
-  ],
-  [
-    "wrong network",
-    input({ network: "mainnet" }),
-    GAS_REJECTION_CODES.wrongNetwork,
-    { expectedNetwork: GAS_NETWORK },
-  ],
-  [
-    "unsupported operation",
-    input({ operation: "payment" }),
-    GAS_REJECTION_CODES.unsupportedTransaction,
-    { expectedOperation: GAS_SUPPORTED_OPERATION, observedTargetCount: 1 },
-  ],
-  [
-    "wrong target cardinality",
-    input({ targetContractIds: [] }),
-    GAS_REJECTION_CODES.unsupportedTransaction,
-    { expectedOperation: GAS_SUPPORTED_OPERATION, observedTargetCount: 0 },
-  ],
-  [
-    "non-whitelisted contract",
-    input({ targetContractIds: [otherContractId] }),
-    GAS_REJECTION_CODES.contractNotWhitelisted,
-    { targetContractId: otherContractId },
-  ],
-  [
-    "daily cap",
-    input({
-      policy: Object.freeze({ ...basePolicy, dailyReservedStroops: 901n }),
-    }),
-    GAS_REJECTION_CODES.dailyCapExceeded,
-    { dailyCapStroops: 1_000n, dailyReservedStroops: 901n },
-  ],
-  [
-    "wallet quota",
-    input({ walletHourlyUsage: 3 }),
-    GAS_REJECTION_CODES.walletRateLimited,
-    { walletHourlyLimit: 3, walletHourlyUsage: 3 },
-  ],
-] as const)("returns bounded data for %s", (_name, request, rejectionCode, reason) => {
-  const result = evaluateGasPolicy(request);
+test("rejects a missing policy with a stable, bounded result", () => {
+  const result = evaluateGasPolicy(input({ policy: null }));
 
   expect(result).toEqual({
     decisionCode: GAS_DECISION_CODES.rejected,
-    rejectionCode,
+    rejectionCode: GAS_REJECTION_CODES.policyDisabled,
     requiredReservationStroops: 200n,
-    reason,
+    reason: null,
   });
 });
 
-test("fails closed for an empty allowlist", () => {
+test("rejects a non-Testnet policy or request before policy target checks", () => {
+  const mainnetEnvelope = envelopeFixtureById("gas-envelope-mainnet-signed-soroban");
+  const innerMaxFeeStroops = BigInt(mainnetEnvelope.metadata.expectedFeeStroops);
   const result = evaluateGasPolicy(
-    input({ policy: Object.freeze({ ...basePolicy, allowedContractIds: [] }) }),
+    input({
+      network: mainnetEnvelope.metadata.expectedNetworkOutcome,
+      innerMaxFeeStroops,
+    }),
   );
 
-  expect(result.decisionCode).toBe(GAS_DECISION_CODES.rejected);
-  expect(result.rejectionCode).toBe(GAS_REJECTION_CODES.contractNotWhitelisted);
-  expect(result.reason).toEqual({ targetContractId });
+  expect(result).toEqual({
+    decisionCode: GAS_DECISION_CODES.rejected,
+    rejectionCode: GAS_REJECTION_CODES.wrongNetwork,
+    requiredReservationStroops: innerMaxFeeStroops + GAS_FEE_OVERHEAD_STROOPS,
+    reason: { expectedNetwork: GAS_NETWORK },
+  });
 });
 
 test("applies the security-first rejection precedence", () => {

@@ -1,1 +1,14 @@
-pnpm lint:fix && pnpm build
+#!/usr/bin/env sh
+set -e
+
+repo_root="$(git rev-parse --show-toplevel)"
+pnpm_bin="$(sh "$repo_root/scripts/resolve-pnpm.sh" \
+  /opt/homebrew/bin/pnpm \
+  /usr/local/bin/pnpm)"
+pnpm_bin_dir="${pnpm_bin%/*}"
+case ":${PATH:-}:" in
+  *":$pnpm_bin_dir:"*) ;;
+  *) PATH="$pnpm_bin_dir${PATH:+:$PATH}"; export PATH ;;
+esac
+
+"$pnpm_bin" lint:fix && "$pnpm_bin" build

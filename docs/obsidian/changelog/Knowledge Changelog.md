@@ -20,4 +20,11 @@ source_of_truth: repository
 - Added freshness warnings for stale contract IDs in older docs and the retired unversioned PDAX callback path.
 - Added the agent workflow and root instruction integration so future agents consult and maintain the vault.
 
+<<<<<<< Updated upstream
+=======
+## 2026-09-02
+
+- Documented the pre-commit hook's pnpm PATH resolution for Git clients and macOS Homebrew environments.
+
+>>>>>>> Stashed changes
 Future entries should capture architectural/context changes rather than every code commit.

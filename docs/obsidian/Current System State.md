@@ -2,7 +2,11 @@
 type: reference
 area: repository
 status: current
+<<<<<<< Updated upstream
 last_updated: 2026-09-01
+=======
+last_updated: 2026-09-02
+>>>>>>> Stashed changes
 source_of_truth: repository
 ---
 
@@ -36,6 +40,10 @@ Functional repository capabilities include:
 - Mainnet Playground contract loading/simulation is inspection-only; invocation/signing/submission is disabled.
 - Benchmark and release-gate scripts under `scripts/` and local OpenTelemetry/Grafana assets under `observability/` support qualification but are not product runtime features.
 - Upstash rate limiting is supported by code, while projects are initialized with the Convex backend and `migrating` intentionally fails closed.
+
+## Partial Foundation
+
+- The deterministic Gas Station domain vocabulary and Testnet-only fixture scaffold now exist under `packages/backend/convex/gas/` and `packages/backend/convex/tests/gas/`. This foundation covers the locked D1 network, supported operation, lifecycle vocabulary, and fixture inputs only; it does not implement runtime gas sponsorship.
 
 ## Planned / Not Implemented
 

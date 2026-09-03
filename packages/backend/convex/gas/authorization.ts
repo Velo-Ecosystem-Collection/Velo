@@ -34,6 +34,12 @@ export const gasApiKeyAuthorizationResultValidator = v.union(
   v.object({ authorized: v.literal(false) }),
 );
 
+type GasApiKeyScope = Readonly<{
+  apiKeyId: Id<"apiKeys">;
+  apiKeyHash: string;
+  projectId: Id<"projects">;
+}>;
+
 /**
  * Requires the authenticated caller's minimum role for a Gas console capability.
  * Identity and membership are always resolved by the shared project-role helper.
@@ -86,4 +92,39 @@ export async function verifyApiKeyForGas(
     apiKeyId: apiKey._id,
     projectId: apiKey.projectId,
   };
+}
+
+/**
+ * Revalidates the exact API-key/project scope immediately before a mutation writes.
+ * The action-level lookup is not sufficient because the key may be revoked or the
+ * supplied scope may be altered between the orchestration and write boundaries.
+ */
+export async function revalidateGasApiKeyScope(
+  ctx: MutationCtx,
+  args: GasApiKeyScope,
+): Promise<boolean> {
+  if (!GAS_API_KEY_HASH_PATTERN.test(args.apiKeyHash)) return false;
+
+  let keyedApiKey;
+  try {
+    keyedApiKey = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_key_hash", (q) => q.eq("keyHash", args.apiKeyHash))
+      .unique();
+  } catch {
+    return false;
+  }
+
+  const apiKey = await ctx.db.get(args.apiKeyId);
+  const project = await ctx.db.get(args.projectId);
+
+  return Boolean(
+    keyedApiKey &&
+    apiKey &&
+    project &&
+    keyedApiKey._id === apiKey._id &&
+    apiKey.keyHash === args.apiKeyHash &&
+    apiKey.projectId === args.projectId &&
+    !apiKey.revoked,
+  );
 }

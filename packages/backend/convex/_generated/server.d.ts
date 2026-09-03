@@ -19,7 +19,6 @@ import {
   GenericDatabaseReader,
   GenericDatabaseWriter,
 } from "convex/server";
-
 import type { DataModel } from "./dataModel.js";
 
 /**
@@ -29,7 +28,11 @@ type Env = {
   readonly UPSTASH_REDIS_REST_TOKEN: string | undefined;
   readonly UPSTASH_REDIS_REST_URL: string | undefined;
   readonly VELO_CONVEX_TELEMETRY_ENABLED: string | undefined;
-  readonly VELO_DEPLOYMENT_ENVIRONMENT: "development" | "preview" | "production" | undefined;
+  readonly VELO_DEPLOYMENT_ENVIRONMENT:
+    | "development"
+    | "preview"
+    | "production"
+    | undefined;
   readonly VELO_ENABLE_RATE_LIMIT_BENCHMARK: string | undefined;
   readonly VELO_MAINNET_USDC_ISSUER: string | undefined;
   readonly VELO_PLAYGROUND_PERSISTENCE_SECRET: string | undefined;

@@ -16,6 +16,7 @@ import {
 const CANONICAL_UNSIGNED_DECIMAL = /^(?:0|[1-9][0-9]*)$/;
 const MAX_STROOP_DIGITS = GAS_MAX_STROOPS.toString().length;
 export const GAS_MAX_TIME_SECONDS = Math.floor(Number.MAX_SAFE_INTEGER / 1_000);
+export const GAS_MAX_REQUEST_ID_BYTES = 128;
 
 const INVALID_STROOP_AMOUNT = "Invalid stroop amount";
 const INVALID_STROOP_VALUE = "Invalid stroop value";
@@ -37,6 +38,23 @@ export function assertNonNegativeSafeInteger(value: number, label: string): numb
   }
 
   return value;
+}
+
+/** Normalize and bound the opaque server-issued reservation/request identifier. */
+export function normalizeGasRequestId(value: string): string {
+  if (typeof value !== "string") {
+    throw new Error("Invalid Gas request ID");
+  }
+
+  const normalized = value.trim();
+  if (
+    normalized.length === 0 ||
+    new TextEncoder().encode(normalized).byteLength > GAS_MAX_REQUEST_ID_BYTES
+  ) {
+    throw new Error("Invalid Gas request ID");
+  }
+
+  return normalized;
 }
 
 /** Validate a transaction maxTime that will later cross Convex as milliseconds. */

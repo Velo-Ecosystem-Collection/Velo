@@ -8,12 +8,14 @@ import { v } from "convex/values";
 
 import type { ActionCtx } from "../_generated/server";
 import type { GasAdmissionResult } from "./admission";
+import type { GasSubmitResult as GasSubmitMutationResult } from "./submit";
 
 import { internal } from "../_generated/api";
 import { action } from "../_generated/server";
 import { deriveGasTransactionFacts } from "./envelope";
 import { gasLogProjectionValidator, type GasLogProjection } from "./projections";
 import { gasRejectionCodeValidator } from "./schema";
+import { normalizeGasRequestId, normalizeTransactionHash } from "./validation";
 
 export type GasSponsorResult =
   | {
@@ -31,6 +33,15 @@ export type GasSponsorResult =
   | { status: TestnetTransactionEnvelopeErrorCode }
   | { status: "idempotency_key_conflict" }
   | { status: "duplicate_transaction" }
+  | { status: "internal_error" };
+
+export type GasSubmitResult =
+  | { status: "handoff_unavailable" }
+  | { status: "reservation_expired" }
+  | { status: "invalid_lifecycle" }
+  | { status: "resource_not_found" }
+  | { status: "unauthorized" }
+  | { status: "invalid_request" }
   | { status: "internal_error" };
 
 const gasSponsorSuccessValidator = v.object({
@@ -56,6 +67,16 @@ export const gasSponsorResultValidator = v.union(
   v.object({ status: v.literal("unsupported_transaction") }),
   v.object({ status: v.literal("idempotency_key_conflict") }),
   v.object({ status: v.literal("duplicate_transaction") }),
+  v.object({ status: v.literal("internal_error") }),
+);
+
+export const gasSubmitResultValidator = v.union(
+  v.object({ status: v.literal("handoff_unavailable") }),
+  v.object({ status: v.literal("reservation_expired") }),
+  v.object({ status: v.literal("invalid_lifecycle") }),
+  v.object({ status: v.literal("resource_not_found") }),
+  v.object({ status: v.literal("unauthorized") }),
+  v.object({ status: v.literal("invalid_request") }),
   v.object({ status: v.literal("internal_error") }),
 );
 
@@ -102,6 +123,23 @@ function mapAdmissionResult(result: GasAdmissionResult): GasSponsorResult {
         rejectionCode: result.log.rejectionCode,
         decision: result.log,
       };
+  }
+}
+
+function mapSubmitResult(result: GasSubmitMutationResult): GasSubmitResult {
+  switch (result.status) {
+    case "unauthorized":
+      return { status: "unauthorized" };
+    case "invalid_internal_input":
+      return { status: "internal_error" };
+    case "resource_not_found":
+      return { status: "resource_not_found" };
+    case "invalid_lifecycle":
+      return { status: "invalid_lifecycle" };
+    case "reservation_expired":
+      return { status: "reservation_expired" };
+    case "handoff_unavailable":
+      return { status: "handoff_unavailable" };
   }
 }
 
@@ -176,5 +214,50 @@ export const sponsor = action({
     }
 
     return mapAdmissionResult(admission);
+  },
+});
+
+/** Public Convex orchestration seam for the D1 Gas relayer handoff boundary. */
+export const submit = action({
+  args: {
+    apiKeyHash: v.string(),
+    requestId: v.string(),
+    transactionHash: v.string(),
+  },
+  returns: gasSubmitResultValidator,
+  handler: async (ctx, args): Promise<GasSubmitResult> => {
+    let scope;
+    try {
+      // Keep submit authorization in the same order and scope as sponsor admission.
+      scope = await authorize(ctx, args.apiKeyHash);
+    } catch {
+      return { status: "internal_error" };
+    }
+
+    if (!scope.authorized) return { status: "unauthorized" };
+
+    let requestId: string;
+    let transactionHash: string;
+    try {
+      requestId = normalizeGasRequestId(args.requestId);
+      transactionHash = normalizeTransactionHash(args.transactionHash);
+    } catch {
+      return { status: "invalid_request" };
+    }
+
+    let result: GasSubmitMutationResult;
+    try {
+      result = await ctx.runMutation(internal.gas.submit.submit, {
+        apiKeyId: scope.apiKeyId,
+        projectId: scope.projectId,
+        apiKeyHash: args.apiKeyHash,
+        requestId,
+        transactionHash,
+      });
+    } catch {
+      return { status: "internal_error" };
+    }
+
+    return mapSubmitResult(result);
   },
 });

@@ -34,7 +34,7 @@ source_of_truth: repository
 - Wallet auth: `/api/auth/wallet/challenge`, `/verify`, `/jwks`.
 - Payments: `/api/v1/payment-intents`, `/api/v1/payment-intents/[id]`, and corresponding `/api/v2` routes.
 - Merchant reads: `/api/v1/events`, `/api/v1/transactions/[hash]`, `/api/v1/webhooks/deliveries`.
-- Gas Station: `POST /api/gas/sponsor` is the unversioned Testnet-only sponsor reservation boundary; it accepts a bounded `transactionXdr` body and required `Idempotency-Key`.
+- Gas Station: `POST /api/gas/sponsor` is the unversioned Testnet-only sponsor reservation boundary; it accepts a bounded `transactionXdr` body and required `Idempotency-Key`. `POST /api/gas/submit` is the unversioned D1 reservation/lifecycle handoff seam; it accepts only bounded `requestId` and transaction-hash correlation, expires overdue reservations safely, and returns `503 handoff_unavailable` for active reservations without claiming relayer or network work.
 - Playground: `/api/v1/playground/contracts/load`, `/simulations`, `/transactions/submit`, `/transactions/[hash]`.
 - Wallet config and telemetry: `/api/v1/wallet-config/[publicKey]`, `/api/telemetry/playground`, `/api/telemetry/ui`.
 - Webhook utilities: `/api/webhook-tester`; `/api/webhooks/pdax` is retired with 410.

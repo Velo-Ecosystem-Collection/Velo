@@ -1,4 +1,5 @@
 import { api } from "@repo/backend/convex/_generated/api.js";
+import { assertValidTransactionHash } from "@repo/stellar/validation";
 
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import type { NextRequest } from "next/server";
@@ -11,16 +12,28 @@ const API_KEY_PATTERN = /^tk_live_[a-f0-9]{32}$/;
 const CANONICAL_DECIMAL_PATTERN = /^(?:0|[1-9][0-9]*)$/;
 
 /** Maximum raw request size accepted by the sponsor HTTP boundary. */
-export const GAS_SPONSOR_MAX_BODY_BYTES = 64 * 1_024;
+const GAS_MAX_BODY_BYTES = 64 * 1_024;
+export const GAS_SPONSOR_MAX_BODY_BYTES = GAS_MAX_BODY_BYTES;
 const GAS_SPONSOR_MAX_IDEMPOTENCY_KEY_BYTES = 255;
+export const GAS_SUBMIT_MAX_BODY_BYTES = GAS_MAX_BODY_BYTES;
+export const GAS_SUBMIT_MAX_REQUEST_ID_BYTES = 128;
 
 type SponsorFunction = typeof api.gas.public_api.sponsor;
 type SponsorArgs = FunctionArgs<SponsorFunction>;
 export type GasSponsorResult = FunctionReturnType<SponsorFunction>;
 
+type SubmitFunction = typeof api.gas.public_api.submit;
+type SubmitArgs = FunctionArgs<SubmitFunction>;
+export type GasSubmitResult = FunctionReturnType<SubmitFunction>;
+
 /** Narrow Convex action seam used by production and injected route tests. */
 export type GasSponsorCaller = {
   action: (reference: SponsorFunction, args: SponsorArgs) => Promise<GasSponsorResult>;
+};
+
+/** Narrow Convex submit seam used by production and injected route tests. */
+export type GasSubmitCaller = {
+  action: (reference: SubmitFunction, args: SubmitArgs) => Promise<GasSubmitResult>;
 };
 
 type GasSponsorReservationDto = {
@@ -57,6 +70,11 @@ type ParsedSponsorBody = {
   transactionXdr: string;
 };
 
+type ParsedSubmitBody = {
+  requestId: string;
+  transactionHash: string;
+};
+
 /** Build the shared Gas sponsor handler around an injectable Convex caller. */
 export function createGasSponsorHandler(convex: GasSponsorCaller) {
   return async function gasSponsorHandler(
@@ -85,7 +103,7 @@ export function createGasSponsorHandler(convex: GasSponsorCaller) {
         });
       }
 
-      const rawBody = await readRawBody(request);
+      const rawBody = await readRawBody(request, GAS_SPONSOR_MAX_BODY_BYTES);
       if (!rawBody.ok) {
         return gasError(telemetry, {
           status: rawBody.reason === "too_large" ? 413 : 400,
@@ -141,6 +159,79 @@ export function createGasSponsorHandler(convex: GasSponsorCaller) {
   };
 }
 
+/** Build the shared Gas submit handler around an injectable Convex caller. */
+export function createGasSubmitHandler(convex: GasSubmitCaller) {
+  return async function gasSubmitHandler(
+    request: Request,
+    telemetry: RouteTelemetry,
+  ): Promise<Response> {
+    try {
+      const apiKey = getApiKeyFromRequest(request as NextRequest);
+      if (!apiKey || !API_KEY_PATTERN.test(apiKey)) {
+        return gasError(telemetry, {
+          status: 401,
+          type: "auth_error",
+          code: "invalid_api_key",
+          message: "Missing or invalid API key.",
+        });
+      }
+
+      const rawBody = await readRawBody(request, GAS_SUBMIT_MAX_BODY_BYTES);
+      if (!rawBody.ok) {
+        return gasError(telemetry, {
+          status: rawBody.reason === "too_large" ? 413 : 400,
+          type: "validation_error",
+          code: "invalid_request",
+          message:
+            rawBody.reason === "too_large"
+              ? "Request body is too large."
+              : "Request body could not be read.",
+        });
+      }
+
+      const parsedBody = parseSubmitBody(rawBody.bytes);
+      if (!parsedBody.ok) {
+        return gasError(telemetry, {
+          status: 400,
+          type: "validation_error",
+          code: "invalid_request",
+          message: parsedBody.message,
+          param: parsedBody.param,
+        });
+      }
+
+      const args: SubmitArgs = {
+        apiKeyHash: hashApiKey(apiKey),
+        requestId: parsedBody.value.requestId,
+        transactionHash: parsedBody.value.transactionHash,
+      };
+
+      let result: GasSubmitResult;
+      try {
+        result = await measureTelemetryStage(telemetry, "convex.action", () =>
+          convex.action(api.gas.public_api.submit, args),
+        );
+      } catch {
+        return gasError(telemetry, {
+          status: 503,
+          type: "api_error",
+          code: "dependency_unavailable",
+          message: "Gas submission is temporarily unavailable.",
+        });
+      }
+
+      return mapGasSubmitResult(result, telemetry);
+    } catch {
+      return gasError(telemetry, {
+        status: 500,
+        type: "api_error",
+        code: "internal_error",
+        message: "Internal server error.",
+      });
+    }
+  };
+}
+
 function parseIdempotencyKey(request: Request) {
   const value = request.headers.get("idempotency-key")?.trim();
   if (!value) {
@@ -155,11 +246,11 @@ function parseIdempotencyKey(request: Request) {
   return { ok: true as const, value };
 }
 
-async function readRawBody(request: Request): Promise<BodyReadResult> {
+async function readRawBody(request: Request, maxBytes: number): Promise<BodyReadResult> {
   const declaredLength = parseDeclaredContentLength(request.headers.get("content-length"));
   if (declaredLength === "invalid") return { ok: false, reason: "invalid" };
   if (declaredLength === "too_large") return { ok: false, reason: "too_large" };
-  if (declaredLength !== null && declaredLength > GAS_SPONSOR_MAX_BODY_BYTES) {
+  if (declaredLength !== null && declaredLength > maxBytes) {
     return { ok: false, reason: "too_large" };
   }
 
@@ -179,7 +270,7 @@ async function readRawBody(request: Request): Promise<BodyReadResult> {
       if (done) break;
       if (!(value instanceof Uint8Array)) return { ok: false, reason: "invalid" };
       totalBytes += value.byteLength;
-      if (totalBytes > GAS_SPONSOR_MAX_BODY_BYTES) {
+      if (totalBytes > maxBytes) {
         return { ok: false, reason: "too_large" };
       }
       chunks.push(value);
@@ -252,6 +343,85 @@ function parseSponsorBody(
   return { ok: true, value: { transactionXdr: normalizedXdr } };
 }
 
+function parseSubmitBody(
+  bytes: Uint8Array,
+):
+  | { ok: true; value: ParsedSubmitBody }
+  | { ok: false; message: string; param: "requestId" | "transactionHash" } {
+  let decoded: string;
+  try {
+    decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return {
+      ok: false,
+      message: "Request body must be valid UTF-8 JSON.",
+      param: "requestId",
+    };
+  }
+
+  let body: unknown;
+  try {
+    body = JSON.parse(decoded);
+  } catch {
+    return {
+      ok: false,
+      message: "Request body must be valid JSON.",
+      param: "requestId",
+    };
+  }
+
+  if (!isRecord(body)) {
+    return {
+      ok: false,
+      message: "Request body must be a JSON object.",
+      param: "requestId",
+    };
+  }
+
+  const requestId = body.requestId;
+  if (typeof requestId !== "string" || requestId.trim() === "") {
+    return {
+      ok: false,
+      message: "requestId is required and must be a non-empty string.",
+      param: "requestId",
+    };
+  }
+
+  const normalizedRequestId = requestId.trim();
+  if (new TextEncoder().encode(normalizedRequestId).byteLength > GAS_SUBMIT_MAX_REQUEST_ID_BYTES) {
+    return {
+      ok: false,
+      message: "requestId must be at most 128 UTF-8 bytes.",
+      param: "requestId",
+    };
+  }
+
+  const transactionHash = body.transactionHash;
+  if (typeof transactionHash !== "string" || transactionHash.trim() === "") {
+    return {
+      ok: false,
+      message: "transactionHash is required and must be a 64-character hex string.",
+      param: "transactionHash",
+    };
+  }
+
+  let normalizedTransactionHash: string;
+  try {
+    normalizedTransactionHash = assertValidTransactionHash(transactionHash);
+  } catch {
+    return {
+      ok: false,
+      message: "transactionHash must be a 64-character hex string.",
+      param: "transactionHash",
+    };
+  }
+
+  return {
+    ok: true,
+    value: { requestId: normalizedRequestId, transactionHash: normalizedTransactionHash },
+  };
+}
+
 function mapGasSponsorResult(result: GasSponsorResult, telemetry: RouteTelemetry): Response {
   if (!isRecord(result) || typeof result.status !== "string") {
     return internalError(telemetry);
@@ -317,6 +487,61 @@ function mapGasSponsorResult(result: GasSponsorResult, telemetry: RouteTelemetry
         type: "api_error",
         code: "duplicate_transaction",
         message: "The transaction has already been reserved.",
+      });
+    case "internal_error":
+      return internalError(telemetry);
+    default:
+      return internalError(telemetry);
+  }
+}
+
+function mapGasSubmitResult(result: GasSubmitResult, telemetry: RouteTelemetry): Response {
+  if (!isRecord(result) || typeof result.status !== "string") {
+    return internalError(telemetry);
+  }
+
+  switch (result.status) {
+    case "handoff_unavailable":
+      return gasError(telemetry, {
+        status: 503,
+        type: "api_error",
+        code: "handoff_unavailable",
+        message: "Gas handoff is unavailable.",
+      });
+    case "reservation_expired":
+      return gasError(telemetry, {
+        status: 409,
+        type: "api_error",
+        code: "reservation_expired",
+        message: "The Gas reservation has expired.",
+      });
+    case "invalid_lifecycle":
+      return gasError(telemetry, {
+        status: 409,
+        type: "api_error",
+        code: "invalid_lifecycle",
+        message: "The Gas reservation cannot be submitted in its current lifecycle.",
+      });
+    case "resource_not_found":
+      return gasError(telemetry, {
+        status: 404,
+        type: "not_found_error",
+        code: "resource_not_found",
+        message: "The Gas reservation was not found.",
+      });
+    case "unauthorized":
+      return gasError(telemetry, {
+        status: 401,
+        type: "auth_error",
+        code: "invalid_api_key",
+        message: "Invalid API key.",
+      });
+    case "invalid_request":
+      return gasError(telemetry, {
+        status: 400,
+        type: "validation_error",
+        code: "invalid_request",
+        message: "The submit request is invalid.",
       });
     case "internal_error":
       return internalError(telemetry);

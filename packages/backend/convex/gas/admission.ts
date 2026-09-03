@@ -4,6 +4,7 @@ import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
 import { internalMutation } from "../_generated/server";
+import { revalidateGasApiKeyScope } from "./authorization";
 import { evaluateGasPolicy } from "./policy";
 import { gasLogProjectionValidator, projectGasLog, type GasLogProjection } from "./projections";
 import {
@@ -72,36 +73,6 @@ function utcHourKey(timestamp: number): string {
 
 function gasWalletBucketScopeKey(projectId: Doc<"projects">["_id"], sourceWallet: string): string {
   return `gas:${projectId}:wallet:${sourceWallet}`;
-}
-
-async function revalidateApiKey(
-  ctx: MutationCtx,
-  args: { apiKeyId: Doc<"apiKeys">["_id"]; apiKeyHash: string; projectId: Doc<"projects">["_id"] },
-): Promise<boolean> {
-  if (!isSha256Hash(args.apiKeyHash)) return false;
-
-  let keyedApiKey: Doc<"apiKeys"> | null;
-  try {
-    keyedApiKey = await ctx.db
-      .query("apiKeys")
-      .withIndex("by_key_hash", (q) => q.eq("keyHash", args.apiKeyHash))
-      .unique();
-  } catch {
-    return false;
-  }
-
-  const apiKey = await ctx.db.get(args.apiKeyId);
-  const project = await ctx.db.get(args.projectId);
-
-  return Boolean(
-    keyedApiKey &&
-    apiKey &&
-    project &&
-    keyedApiKey._id === apiKey._id &&
-    apiKey.keyHash === args.apiKeyHash &&
-    apiKey.projectId === args.projectId &&
-    !apiKey.revoked,
-  );
 }
 
 function normalizeMaxTime(maxTime: number | undefined): number | null {
@@ -235,7 +206,7 @@ export const reserve = internalMutation({
   returns: gasAdmissionResultValidator,
   handler: async (ctx, args): Promise<GasAdmissionResult> => {
     if (
-      !(await revalidateApiKey(ctx, {
+      !(await revalidateGasApiKeyScope(ctx, {
         apiKeyId: args.apiKeyId,
         apiKeyHash: args.apiKeyHash,
         projectId: args.projectId,

@@ -15,6 +15,7 @@ import {
 
 const CANONICAL_UNSIGNED_DECIMAL = /^(?:0|[1-9][0-9]*)$/;
 const MAX_STROOP_DIGITS = GAS_MAX_STROOPS.toString().length;
+export const GAS_MAX_TIME_SECONDS = Math.floor(Number.MAX_SAFE_INTEGER / 1_000);
 
 const INVALID_STROOP_AMOUNT = "Invalid stroop amount";
 const INVALID_STROOP_VALUE = "Invalid stroop value";
@@ -33,6 +34,15 @@ const INVALID_NON_NEGATIVE_SAFE_INTEGER = "Invalid non-negative safe integer";
 export function assertNonNegativeSafeInteger(value: number, label: string): number {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new Error(`${INVALID_NON_NEGATIVE_SAFE_INTEGER}: ${label}`);
+  }
+
+  return value;
+}
+
+/** Validate a transaction maxTime that will later cross Convex as milliseconds. */
+export function assertValidInnerMaxTime(value: number): number {
+  if (!Number.isSafeInteger(value) || value <= 0 || value > GAS_MAX_TIME_SECONDS) {
+    throw new Error("Invalid inner max time");
   }
 
   return value;

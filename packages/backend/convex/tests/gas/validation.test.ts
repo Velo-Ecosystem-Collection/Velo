@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 import { GAS_MAX_ALLOWED_CONTRACT_IDS, GAS_MAX_STROOPS, GAS_NETWORK } from "../../gas/types.ts";
 import {
   addStroopValues,
+  assertValidInnerMaxTime,
   assertValidStroopValue,
   normalizeContractAllowlist,
   normalizeContractId,
@@ -75,6 +76,15 @@ test("stroop addition accepts the maximum boundary and rejects overflow", () => 
   expect(addStroopValues(GAS_MAX_STROOPS, 0n)).toBe(GAS_MAX_STROOPS);
   expect(() => addStroopValues(GAS_MAX_STROOPS, 1n)).toThrow();
   expect(() => addStroopValues(GAS_MAX_STROOPS, GAS_MAX_STROOPS)).toThrow();
+});
+
+test("inner maxTime accepts Convex-safe seconds and rejects unsafe values", () => {
+  expect(assertValidInnerMaxTime(1)).toBe(1);
+  expect(assertValidInnerMaxTime(9_007_199_254_740)).toBe(9_007_199_254_740);
+
+  for (const value of [0, -1, 9_007_199_254_741, Number.MAX_SAFE_INTEGER, Number.NaN]) {
+    expect(() => assertValidInnerMaxTime(value), String(value)).toThrow();
+  }
 });
 
 test("Stellar wallet, contract, and transaction hash normalization is canonical", () => {

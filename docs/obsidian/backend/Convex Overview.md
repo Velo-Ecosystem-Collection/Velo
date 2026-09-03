@@ -18,13 +18,13 @@ The Convex application lives in `packages/backend/convex`. `schema.ts` composes 
 - `settlement`, `provider_*`, `payment_intent_route_jobs`, `pdax_route_cache`: PDAX operations and route enrichment.
 - `webhook_*`: event snapshots, delivery transport, signatures, retries, and replay.
 - `contract_events`, `poller_state`, `payAccessSync`, `contractEventPolling`: Soroban event ingestion.
-- `gas`: Testnet-only Gas policy, relayer metadata, safe projections, console authorization, policy evaluation, and the internal atomic admission/reservation boundary.
+- `gas`: Testnet-only Gas policy, relayer metadata, safe projections, console/API-key authorization, policy evaluation, the public `api.gas.public_api.sponsor` Node action, and the internal atomic admission/reservation boundary. The Next.js HTTP route remains planned.
 - `playground_projects`, `wallet_configs`: project-integrated developer tools and published wallet runtime configuration.
 - `telemetry_outbox`, `journey_stages`, `rate_limits`: diagnostics, lifecycle visibility, and admission control.
 
 ## Authorization Pattern
 
-Authenticated Convex functions call project/organization helpers. Gas console functions use the shared project role guard (`viewer` reads, `editor` policy updates, `owner` relayer updates) and return field-by-field projections. Public merchant actions use hashed API-key lookup and project payment-access checks. Internal workers use `internal` references and must still validate ownership/state when crossing boundaries.
+Authenticated Convex functions call project/organization helpers. Gas console functions use the shared project role guard (`viewer` reads, `editor` policy updates, `owner` relayer updates) and return field-by-field projections. Public merchant actions use hashed API-key lookup and project payment-access checks. The Gas sponsor action uses its independent API-key query and does not consult `paymentAccessActive`. Internal workers use `internal` references and must still validate ownership/state when crossing boundaries.
 
 ## Backend Rules
 

@@ -5,7 +5,7 @@ import {
 } from "@repo/stellar/transaction-envelope";
 
 import { GAS_NETWORK, GAS_SUPPORTED_OPERATION } from "./types.ts";
-import { assertValidStroopValue } from "./validation.ts";
+import { assertValidInnerMaxTime, assertValidStroopValue } from "./validation.ts";
 
 export type GasTransactionFacts = Readonly<{
   network: typeof GAS_NETWORK;
@@ -14,6 +14,7 @@ export type GasTransactionFacts = Readonly<{
   transactionHash: string;
   innerMaxFeeStroops: bigint;
   targetContractIds: readonly [string];
+  innerMaxTime?: number;
 }>;
 
 function validateGasFee(facts: TestnetSorobanTransactionFacts): bigint {
@@ -24,9 +25,20 @@ function validateGasFee(facts: TestnetSorobanTransactionFacts): bigint {
   }
 }
 
+function validateGasMaxTime(facts: TestnetSorobanTransactionFacts): number | undefined {
+  if (facts.innerMaxTime === undefined) return undefined;
+
+  try {
+    return assertValidInnerMaxTime(facts.innerMaxTime);
+  } catch {
+    throw new TestnetTransactionEnvelopeError("invalid_request");
+  }
+}
+
 /** Derives the policy facts admitted by the Gas Station Testnet boundary. */
 export function deriveGasTransactionFacts(transactionXdr: string): GasTransactionFacts {
   const facts = parseTestnetSorobanTransactionEnvelope(transactionXdr);
+  const innerMaxTime = validateGasMaxTime(facts);
 
   return Object.freeze({
     network: GAS_NETWORK,
@@ -35,5 +47,6 @@ export function deriveGasTransactionFacts(transactionXdr: string): GasTransactio
     transactionHash: facts.transactionHash,
     innerMaxFeeStroops: validateGasFee(facts),
     targetContractIds: facts.targetContractIds,
+    ...(innerMaxTime === undefined ? {} : { innerMaxTime }),
   });
 }

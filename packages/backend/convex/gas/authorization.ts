@@ -1,3 +1,5 @@
+import { v } from "convex/values";
+
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { ProjectRole } from "../playground_projects/helpers";
@@ -22,6 +24,15 @@ export type GasApiKeyAuthorizationResult =
       projectId: Id<"projects">;
     }
   | { authorized: false };
+
+export const gasApiKeyAuthorizationResultValidator = v.union(
+  v.object({
+    authorized: v.literal(true),
+    apiKeyId: v.id("apiKeys"),
+    projectId: v.id("projects"),
+  }),
+  v.object({ authorized: v.literal(false) }),
+);
 
 /**
  * Requires the authenticated caller's minimum role for a Gas console capability.

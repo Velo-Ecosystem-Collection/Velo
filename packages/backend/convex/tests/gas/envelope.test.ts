@@ -7,7 +7,11 @@ import {
 import { expect, test } from "vitest";
 
 import { deriveGasTransactionFacts } from "../../gas/envelope.ts";
-import { gasEnvelopeFixtures, gasMalformedInputFixtures } from "./fixtures.ts";
+import {
+  gasEnvelopeFixtures,
+  gasMalformedInputFixtures,
+  gasMaxTimeEnvelopeFixtures,
+} from "./fixtures.ts";
 
 function envelopeFixtureById(id: string) {
   const fixture = gasEnvelopeFixtures.find((candidate) => candidate.id === id);
@@ -41,7 +45,22 @@ test("derives the exact Gas facts and locked literals from the valid fixture", (
     transactionHash: "a4d98992d858b947bc3e76e42f8ff2aae3d5734ddcb0cd2ace094055eb93f1ed",
     innerMaxFeeStroops: 100n,
     targetContractIds: [fixture.metadata.expectedTarget],
+    innerMaxTime: 1788362232,
   });
+});
+
+test("maps unbounded, earlier, later, and expired maxTime values into Gas facts", () => {
+  expect(deriveGasTransactionFacts(gasMaxTimeEnvelopeFixtures.unbounded)).not.toHaveProperty(
+    "innerMaxTime",
+  );
+  expect(deriveGasTransactionFacts(gasMaxTimeEnvelopeFixtures.alreadyExpired).innerMaxTime).toBe(1);
+  expect(deriveGasTransactionFacts(gasMaxTimeEnvelopeFixtures.earlier).innerMaxTime).toBe(
+    4102444800,
+  );
+  expect(deriveGasTransactionFacts(gasMaxTimeEnvelopeFixtures.later).innerMaxTime).toBe(4102444801);
+  expect(() => deriveGasTransactionFacts(gasMaxTimeEnvelopeFixtures.unsafe)).toThrow(
+    TestnetTransactionEnvelopeError,
+  );
 });
 
 test("maps signed Gas envelope fixture failures to API-safe codes", () => {

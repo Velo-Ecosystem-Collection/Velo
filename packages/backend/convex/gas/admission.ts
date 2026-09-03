@@ -14,6 +14,7 @@ import {
 } from "./types";
 import {
   addStroopValues,
+  assertValidInnerMaxTime,
   assertValidStroopValue,
   normalizeContractId,
   normalizeTransactionHash,
@@ -23,9 +24,8 @@ import {
 const SHA256_HASH_PATTERN = /^[a-f0-9]{64}$/;
 const RESERVATION_TTL_MS = 15 * 60 * 1_000;
 const RETENTION_PERIOD_MS = 30 * 24 * 60 * 60 * 1_000;
-const MAX_TIME_SECONDS = Math.floor(Number.MAX_SAFE_INTEGER / 1_000);
 
-type GasAdmissionResult =
+export type GasAdmissionResult =
   | { status: "unauthorized" }
   | { status: "invalid_internal_input" }
   | { status: "idempotency_key_conflict" }
@@ -105,12 +105,9 @@ async function revalidateApiKey(
 }
 
 function normalizeMaxTime(maxTime: number | undefined): number | null {
-  if (maxTime === undefined) return null;
-  if (!Number.isSafeInteger(maxTime) || maxTime <= 0 || maxTime > MAX_TIME_SECONDS) {
-    throw new Error("Invalid inner max time");
-  }
+  if (maxTime === undefined || maxTime === 0) return null;
 
-  return maxTime * 1_000;
+  return assertValidInnerMaxTime(maxTime) * 1_000;
 }
 
 function normalizeAdmissionInput(args: {

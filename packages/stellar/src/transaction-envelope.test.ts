@@ -7,7 +7,9 @@ import {
   Keypair,
   Networks,
   Operation,
+  Transaction,
   TransactionBuilder,
+  TimeoutInfinite,
   xdr,
 } from "@stellar/stellar-sdk";
 
@@ -59,17 +61,68 @@ function tamperedSignatureXdr(transactionXdr: string): string {
   ).toXDR("base64");
 }
 
-function signedTransactionXdr(operation: xdr.Operation): string {
+function signedTransactionXdr(operation: xdr.Operation, maxTime: number = 300): string {
   const transaction = new TransactionBuilder(new Account(CONSTRUCTED_SOURCE.publicKey(), "1"), {
     fee: "100",
     networkPassphrase: Networks.TESTNET,
   })
     .addOperation(operation)
-    .setTimeout(300)
+    .setTimebounds(0, maxTime)
     .build();
 
   transaction.sign(CONSTRUCTED_SOURCE);
   return transaction.toXDR();
+}
+
+function signedTransactionWithRawMaxTime(maxTime: string): string {
+  const base = xdr.TransactionEnvelope.fromXDR(
+    signedTransactionXdr(invokeContractOperation(new Address(CONTRACT_ID))),
+    "base64",
+  );
+  const transaction = base.v1().tx();
+  const alteredTransaction = new xdr.Transaction({
+    sourceAccount: transaction.sourceAccount(),
+    fee: transaction.fee(),
+    seqNum: transaction.seqNum(),
+    cond: xdr.Preconditions.precondTime(
+      new xdr.TimeBounds({
+        minTime: xdr.Uint64.fromString("0"),
+        maxTime: xdr.Uint64.fromString(maxTime),
+      }),
+    ),
+    memo: transaction.memo(),
+    operations: transaction.operations(),
+    ext: transaction.ext(),
+  });
+  const unsigned = xdr.TransactionEnvelope.envelopeTypeTx(
+    new xdr.TransactionV1Envelope({ tx: alteredTransaction, signatures: [] }),
+  ).toXDR("base64");
+  const signed = new Transaction(unsigned, Networks.TESTNET);
+  signed.sign(CONSTRUCTED_SOURCE);
+  return signed.toXDR();
+}
+
+function signedTransactionWithoutTimeBounds(): string {
+  const base = xdr.TransactionEnvelope.fromXDR(
+    signedTransactionXdr(invokeContractOperation(new Address(CONTRACT_ID))),
+    "base64",
+  );
+  const transaction = base.v1().tx();
+  const alteredTransaction = new xdr.Transaction({
+    sourceAccount: transaction.sourceAccount(),
+    fee: transaction.fee(),
+    seqNum: transaction.seqNum(),
+    cond: xdr.Preconditions.precondNone(),
+    memo: transaction.memo(),
+    operations: transaction.operations(),
+    ext: transaction.ext(),
+  });
+  const unsigned = xdr.TransactionEnvelope.envelopeTypeTx(
+    new xdr.TransactionV1Envelope({ tx: alteredTransaction, signatures: [] }),
+  ).toXDR("base64");
+  const signed = new Transaction(unsigned, Networks.TESTNET);
+  signed.sign(CONSTRUCTED_SOURCE);
+  return signed.toXDR();
 }
 
 function invokeContractOperation(address: Address): xdr.Operation {
@@ -90,7 +143,30 @@ test("derives authoritative facts from a signed Testnet contract invocation", ()
     transactionHash: "a4d98992d858b947bc3e76e42f8ff2aae3d5734ddcb0cd2ace094055eb93f1ed",
     innerMaxFeeStroops: 100n,
     targetContractIds: [CONTRACT_ID],
+    innerMaxTime: 1788362232,
   });
+});
+
+test("derives maxTime, treats zero as unbounded, and preserves already-expired bounds", () => {
+  const operation = invokeContractOperation(new Address(CONTRACT_ID));
+
+  const unbounded = parseTestnetSorobanTransactionEnvelope(
+    signedTransactionXdr(operation, TimeoutInfinite),
+  );
+  assert.equal("innerMaxTime" in unbounded, false);
+
+  const absent = parseTestnetSorobanTransactionEnvelope(signedTransactionWithoutTimeBounds());
+  assert.equal("innerMaxTime" in absent, false);
+
+  const alreadyExpired = parseTestnetSorobanTransactionEnvelope(signedTransactionXdr(operation, 1));
+  assert.equal(alreadyExpired.innerMaxTime, 1);
+
+  const later = parseTestnetSorobanTransactionEnvelope(signedTransactionXdr(operation, 4102444800));
+  assert.equal(later.innerMaxTime, 4102444800);
+});
+
+test("rejects a maxTime that cannot safely cross the Convex millisecond boundary", () => {
+  expectError(signedTransactionWithRawMaxTime("9007199254741"), "invalid_request");
 });
 
 test("rejects unsigned and tampered envelopes as invalid signatures", () => {

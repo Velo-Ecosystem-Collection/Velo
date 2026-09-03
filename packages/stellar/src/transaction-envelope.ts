@@ -48,9 +48,11 @@ export type TestnetSorobanTransactionFacts = Readonly<{
   transactionHash: string;
   innerMaxFeeStroops: bigint;
   targetContractIds: readonly [string];
+  innerMaxTime?: number;
 }>;
 
 const MAX_SIGNED_INT64 = 2n ** 63n - 1n;
+const MAX_CONVEX_TIMESTAMP_SECONDS = BigInt(Math.floor(Number.MAX_SAFE_INTEGER / 1_000));
 
 function reject(code: TestnetTransactionEnvelopeErrorCode): never {
   throw new TestnetTransactionEnvelopeError(code);
@@ -141,6 +143,26 @@ function innerMaximumFee(transaction: Transaction): bigint {
   }
 }
 
+function innerMaximumTime(transaction: Transaction): number | undefined {
+  const maxTime = transaction.timeBounds?.maxTime;
+  if (maxTime === undefined || maxTime === "0") return undefined;
+  if (!/^(?:0|[1-9][0-9]*)$/.test(maxTime)) {
+    return reject("invalid_request");
+  }
+
+  try {
+    const parsedMaxTime = BigInt(maxTime);
+    if (parsedMaxTime === 0n) return undefined;
+    if (parsedMaxTime > MAX_CONVEX_TIMESTAMP_SECONDS) {
+      return reject("invalid_request");
+    }
+
+    return Number(parsedMaxTime);
+  } catch {
+    return reject("invalid_request");
+  }
+}
+
 function transactionHash(transaction: Transaction): string {
   try {
     return assertValidTransactionHash(transaction.hash().toString("hex"));
@@ -207,6 +229,7 @@ export function parseTestnetSorobanTransactionEnvelope(
   const targetContractId = contractTarget(parsedEnvelope);
   const source = sourceWallet(parsedEnvelope);
   const fee = innerMaximumFee(parsedEnvelope);
+  const maxTime = innerMaximumTime(parsedEnvelope);
   const hash = transactionHash(parsedEnvelope);
 
   if (!hasValidSourceSignature(parsedEnvelope, source)) {
@@ -222,5 +245,6 @@ export function parseTestnetSorobanTransactionEnvelope(
     transactionHash: hash,
     innerMaxFeeStroops: fee,
     targetContractIds: Object.freeze([targetContractId] as const),
+    ...(maxTime === undefined ? {} : { innerMaxTime: maxTime }),
   });
 }

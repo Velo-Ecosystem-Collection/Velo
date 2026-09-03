@@ -410,6 +410,38 @@ test("reservation expiry uses the earlier inner maxTime and rejects expired boun
   });
 });
 
+test("reservation expiry ignores later and zero maxTime values in favor of the 15-minute bound", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t);
+    await createPolicy(t, scope.projectId);
+
+    const later = await t.mutation(
+      internal.gas.admission.reserve,
+      admissionArgs(scope, {
+        innerMaxTime: Math.floor((NOW + 20 * 60_000) / 1_000),
+      }),
+    );
+    const zero = await t.mutation(
+      internal.gas.admission.reserve,
+      admissionArgs(scope, {
+        idempotencyKeyHash: SECOND_IDEMPOTENCY_HASH,
+        requestFingerprint: SECOND_FINGERPRINT,
+        transactionHash: SECOND_TRANSACTION_HASH,
+        innerMaxTime: 0,
+      }),
+    );
+
+    expect(later).toMatchObject({ status: "decision" });
+    expect(zero).toMatchObject({ status: "decision" });
+    if (later.status !== "decision" || zero.status !== "decision") {
+      throw new Error("Expected maxTime decisions");
+    }
+    expect(later.log.expiresAt).toBe(NOW + 15 * 60_000);
+    expect(zero.log.expiresAt).toBe(NOW + 15 * 60_000);
+  });
+});
+
 test("revoked keys and project-scope mismatches are rejected without an audit record", async () => {
   await withFixedTime(async () => {
     const t = convexTest(schema, modules);

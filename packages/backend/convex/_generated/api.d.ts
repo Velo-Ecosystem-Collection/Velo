@@ -32,11 +32,11 @@ import type * as billing_reconciliation from "../billing/reconciliation.js";
 import type * as billing_scorecard from "../billing/scorecard.js";
 import type * as billing_shadow from "../billing/shadow.js";
 import type * as billing_topups from "../billing/topups.js";
+import type * as contractEventPolling from "../contractEventPolling.js";
 import type * as contract_events_helpers from "../contract_events/helpers.js";
 import type * as contract_events_mutation from "../contract_events/mutation.js";
 import type * as contract_events_query from "../contract_events/query.js";
 import type * as contract_events_types from "../contract_events/types.js";
-import type * as contractEventPolling from "../contractEventPolling.js";
 import type * as crons from "../crons.js";
 import type * as feedback_mutation from "../feedback/mutation.js";
 import type * as feedback_query from "../feedback/query.js";
@@ -46,6 +46,8 @@ import type * as gas_envelope from "../gas/envelope.js";
 import type * as gas_mutations from "../gas/mutations.js";
 import type * as gas_policy from "../gas/policy.js";
 import type * as gas_projections from "../gas/projections.js";
+import type * as gas_public_api from "../gas/public_api.js";
+import type * as gas_public_api_internal from "../gas/public_api_internal.js";
 import type * as gas_queries from "../gas/queries.js";
 import type * as gas_types from "../gas/types.js";
 import type * as gas_validation from "../gas/validation.js";
@@ -118,6 +120,7 @@ import type * as wallet_configs_helpers from "../wallet_configs/helpers.js";
 import type * as wallet_configs_mutation from "../wallet_configs/mutation.js";
 import type * as wallet_configs_query from "../wallet_configs/query.js";
 import type * as wallet_configs_validators from "../wallet_configs/validators.js";
+import type * as webhookDelivery from "../webhookDelivery.js";
 import type * as webhook_deliveries_constants from "../webhook_deliveries/constants.js";
 import type * as webhook_deliveries_helpers from "../webhook_deliveries/helpers.js";
 import type * as webhook_deliveries_mutation from "../webhook_deliveries/mutation.js";
@@ -127,8 +130,12 @@ import type * as webhook_endpoints_helpers from "../webhook_endpoints/helpers.js
 import type * as webhook_endpoints_mutation from "../webhook_endpoints/mutation.js";
 import type * as webhook_endpoints_query from "../webhook_endpoints/query.js";
 import type * as webhook_endpoints_types from "../webhook_endpoints/types.js";
-import type * as webhookDelivery from "../webhookDelivery.js";
-import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
+
+import type {
+  ApiFromModules,
+  FilterApi,
+  FunctionReference,
+} from "convex/server";
 
 declare const fullApi: ApiFromModules<{
   authConfig: typeof authConfig;
@@ -169,6 +176,8 @@ declare const fullApi: ApiFromModules<{
   "gas/mutations": typeof gas_mutations;
   "gas/policy": typeof gas_policy;
   "gas/projections": typeof gas_projections;
+  "gas/public_api": typeof gas_public_api;
+  "gas/public_api_internal": typeof gas_public_api_internal;
   "gas/queries": typeof gas_queries;
   "gas/types": typeof gas_types;
   "gas/validation": typeof gas_validation;
@@ -261,7 +270,10 @@ declare const fullApi: ApiFromModules<{
  * const myFunctionReference = api.myModule.myFunction;
  * ```
  */
-export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "public">>;
+export declare const api: FilterApi<
+  typeof fullApi,
+  FunctionReference<any, "public">
+>;
 
 /**
  * A utility for referencing Convex functions in your app's internal API.
@@ -271,7 +283,10 @@ export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "publ
  * const myFunctionReference = internal.myModule.myFunction;
  * ```
  */
-export declare const internal: FilterApi<typeof fullApi, FunctionReference<any, "internal">>;
+export declare const internal: FilterApi<
+  typeof fullApi,
+  FunctionReference<any, "internal">
+>;
 
 export declare const components: {
   migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;

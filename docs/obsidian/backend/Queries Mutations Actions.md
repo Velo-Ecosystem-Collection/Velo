@@ -41,6 +41,7 @@ This is a domain-level index of high-value Convex entry points, not an exhaustiv
 - `payment_reconciliation_jobs/actions.ts`, `provider_operations/actions.ts`, `provider_events/processing.ts`: durable workers.
 - `webhookDelivery.ts`: signed outbound delivery.
 - `telemetry_outbox/actions.ts`: bounded OTLP export.
+- `gas/public_api.ts`: public Node-runtime sponsor orchestration that hashes normalized inputs, derives signed Testnet envelope facts, and delegates one atomic reservation call. The future Next.js HTTP route remains outside Convex.
 
 ## HTTP
 

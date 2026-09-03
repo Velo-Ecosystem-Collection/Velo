@@ -11,6 +11,7 @@ source_of_truth: repository
 ## 2026-09-04
 
 - Hardened the D1 Gas Station public and HTTP boundaries: Convex actions now enforce XDR/idempotency limits and return typed dependency/payload outcomes; route bodies cancel oversized streams and sanitize dependency failures and malformed reservation projections; shared correlation IDs reject API-key, Stellar-seed, and JWT-shaped values.
+- Published the scoped D1 Gas evidence and D2 handoff package with reviewer checklists, schema/index rationale, policy and lifecycle matrices, redacted HTTP examples, local validation reporting, known limits, and trusted relayer handoff requirements; relayer runtime and consolidated D4 evidence remain planned.
 - Replaced broad uniqueness-error swallowing with bounded fail-closed reads across Gas authorization, admission, submit, console, and projections. Policy updates now roll stale counters into the current UTC day and reject same-day cap reductions below existing reservations atomically.
 - Tightened Stellar envelope admission to one correctly hinted source signature, no alternate operation source, and a 64 KiB parser bound. Signed-XDR fixtures now use deterministic runtime builders derived from public labels; no encoded envelopes or signing secrets are checked in.
 

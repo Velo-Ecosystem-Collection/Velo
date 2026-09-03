@@ -43,7 +43,7 @@ Functional repository capabilities include:
 
 ## Planned / Not Implemented
 
-- Managed Testnet Gas Station fee sponsorship runtime: D2 relayer signer, FeeBump submission, SDK/dashboard integration, and reviewer evidence package. The D1 Convex sponsor/submit orchestration, internal atomic reservation and lifecycle boundaries, authenticated policy, relayer metadata CRUD, bounded retention cleanup, and sponsor/submit HTTP boundaries are implemented; the four-day Deliverable 1 plan is [[../instawards/Velo-Instawards-Deliverable-1-Sprint-Plan]].
+- Managed Testnet Gas Station fee sponsorship runtime remains planned: D2 relayer signer, FeeBump submission, SDK/dashboard integration, and the consolidated D4 reviewer evidence package. The scoped D1 evidence and D2 handoff now exists at [[../instawards/Velo-Instawards-Deliverable-1-Evidence-and-D2-Handoff]], alongside the implemented D1 Convex sponsor/submit orchestration, internal atomic reservation and lifecycle boundaries, authenticated policy, relayer metadata CRUD, bounded retention cleanup, and sponsor/submit HTTP boundaries. The four-day plan remains [[../instawards/Velo-Instawards-Deliverable-1-Sprint-Plan]].
 - General Mainnet payment/checkout support and production settlement/compliance flows.
 - Full RPC gateway and broad analytics/indexing products.
 - Broader SEP-10 infrastructure and confirmed SEP-31/SEP-24 production anchor integrations.

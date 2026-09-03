@@ -68,8 +68,9 @@ export function veloErrorResponse(args: {
   message: string;
   param?: string;
   headers?: Record<string, string>;
+  requestId?: string;
 }) {
-  const requestId = crypto.randomUUID();
+  const requestId = args.requestId ?? crypto.randomUUID();
   const response = Response.json(
     {
       error: {

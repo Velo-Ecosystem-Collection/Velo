@@ -2,7 +2,7 @@
 type: reference
 area: frontend
 status: current
-last_updated: 2026-08-31
+last_updated: 2026-09-03
 source_of_truth: repository
 ---
 
@@ -34,9 +34,9 @@ source_of_truth: repository
 - Wallet auth: `/api/auth/wallet/challenge`, `/verify`, `/jwks`.
 - Payments: `/api/v1/payment-intents`, `/api/v1/payment-intents/[id]`, and corresponding `/api/v2` routes.
 - Merchant reads: `/api/v1/events`, `/api/v1/transactions/[hash]`, `/api/v1/webhooks/deliveries`.
+- Gas Station: `POST /api/gas/sponsor` is the unversioned Testnet-only sponsor reservation boundary; it accepts a bounded `transactionXdr` body and required `Idempotency-Key`.
 - Playground: `/api/v1/playground/contracts/load`, `/simulations`, `/transactions/submit`, `/transactions/[hash]`.
 - Wallet config and telemetry: `/api/v1/wallet-config/[publicKey]`, `/api/telemetry/playground`, `/api/telemetry/ui`.
 - Webhook utilities: `/api/webhook-tester`; `/api/webhooks/pdax` is retired with 410.
 
 The canonical provider callback is Convex HTTP `/api/webhooks/pdax/v1?token=...`, not the retired Next route. See [[modules/Settlement and PDAX]].
-

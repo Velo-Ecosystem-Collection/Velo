@@ -41,10 +41,10 @@ This is a domain-level index of high-value Convex entry points, not an exhaustiv
 - `payment_reconciliation_jobs/actions.ts`, `provider_operations/actions.ts`, `provider_events/processing.ts`: durable workers.
 - `webhookDelivery.ts`: signed outbound delivery.
 - `telemetry_outbox/actions.ts`: bounded OTLP export.
-- `gas/public_api.ts`: public Node-runtime sponsor orchestration that hashes normalized inputs, derives signed Testnet envelope facts, and delegates one atomic reservation call. The future Next.js HTTP route remains outside Convex.
+- `gas/public_api.ts`: public Node-runtime sponsor orchestration that hashes normalized inputs, derives signed Testnet envelope facts, and delegates one atomic reservation call. `apps/web/core/api/gas-route-handlers.ts` and `apps/web/app/api/gas/sponsor/route.ts` provide the bounded Next.js HTTP caller and minimal public DTO.
 
 ## HTTP
 
-`http.ts` exposes `POST /api/webhooks/pdax/v1?token=...`. Next.js routes under `apps/web/app/api` are a separate server boundary and call these functions through Convex clients.
+`http.ts` exposes `POST /api/webhooks/pdax/v1?token=...`. Next.js routes under `apps/web/app/api` are a separate server boundary and call these functions through Convex clients, including the Testnet-only `POST /api/gas/sponsor` boundary.
 
 Related: [[backend/Background Jobs]], [[modules/Payments and Checkout]], [[modules/Settlement and PDAX]], [[modules/Webhooks]].

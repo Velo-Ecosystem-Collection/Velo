@@ -15,7 +15,7 @@ Convex under `packages/backend/convex` is the authoritative application backend.
 - Queries read owner-scoped or public projections.
 - Mutations perform transactional state transitions, idempotency, authorization, and job scheduling.
 - Actions call Stellar RPC, PDAX, or other network dependencies, then delegate durable writes back to mutations.
-- Internal queries/mutations/actions are used by workers and cross-domain orchestration. The public Gas sponsor action authorizes through `internal.gas.public_api_internal.authorize`, derives the envelope facts, and passes them to `internal.gas.admission.reserve`, which revalidates scope and owns the atomic policy/budget/quota/log transition. The Next.js HTTP route remains a planned caller of this seam.
+- Internal queries/mutations/actions are used by workers and cross-domain orchestration. The public Gas sponsor action authorizes through `internal.gas.public_api_internal.authorize`, derives the envelope facts, and passes them to `internal.gas.admission.reserve`, which revalidates scope and owns the atomic policy/budget/quota/log transition. The Next.js `POST /api/gas/sponsor` route incrementally reads a 64 KiB maximum body, hashes the API key, and calls this seam through a minimal DTO boundary.
 - `http.ts` exposes the canonical versioned PDAX callback directly from Convex.
 
 ## Authorization

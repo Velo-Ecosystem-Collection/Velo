@@ -20,6 +20,7 @@ const expireJourneyStages = makeFunctionReference<"mutation">("journey_stages/mu
 const expirePlaygroundExecutions = makeFunctionReference<"mutation">(
   "playground_projects/mutations:expireExecutions",
 );
+const expireGasLogs = makeFunctionReference<"mutation">("gas/retention:expireLogs");
 const recoverBillingReservations = makeFunctionReference<"mutation">(
   "billing/mutations:recoverExpiredReservations",
 );
@@ -44,6 +45,7 @@ crons.interval("expire safe journey stages", { hours: 1 }, expireJourneyStages, 
 crons.interval("expire project playground history", { hours: 1 }, expirePlaygroundExecutions, {
   limit: 100,
 });
+crons.interval("expire retained gas logs", { hours: 1 }, expireGasLogs, { limit: 100 });
 crons.interval("recover expired billing reservations", { minutes: 1 }, recoverBillingReservations, {
   limit: SCHEDULED_WORKER_PAGE_SIZE,
 });

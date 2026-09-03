@@ -3,11 +3,16 @@
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 
-import type { DataModel, Id } from "../../_generated/dataModel";
+import type { DataModel, Doc, Id } from "../../_generated/dataModel";
 import type { TestConvexForDataModelAndIdentity } from "convex-test";
 
 import { api } from "../../_generated/api";
-import { GAS_NETWORK, GAS_RELAYER_STATUSES } from "../../gas/types";
+import {
+  GAS_DECISION_CODES,
+  GAS_LIFECYCLE_STATES,
+  GAS_NETWORK,
+  GAS_RELAYER_STATUSES,
+} from "../../gas/types";
 import schema from "../../schema";
 
 const modules = import.meta.glob("../../**/*.ts");
@@ -66,6 +71,40 @@ async function addMembership(
   });
 }
 
+async function addGasLog(
+  t: TestContext,
+  projectId: Id<"projects">,
+  requestId: string,
+  createdAt: number,
+  includeDerivedFacts = true,
+): Promise<Id<"gasLogs">> {
+  const input: Omit<Doc<"gasLogs">, "_id" | "_creationTime"> = {
+    projectId,
+    requestId,
+    idempotencyKeyHash: `${requestId}-idempotency-hash`,
+    requestFingerprint: `${requestId}-request-fingerprint`,
+    decisionCode: GAS_DECISION_CODES.reserved,
+    lifecycle: GAS_LIFECYCLE_STATES.reserved,
+    retentionExpiresAt: createdAt + 30 * 24 * 60 * 60 * 1000,
+    createdAt,
+    updatedAt: createdAt + 1,
+  };
+
+  if (includeDerivedFacts) {
+    Object.assign(input, {
+      transactionHash: requestId.padStart(64, "0"),
+      sourceWallet: OWNER,
+      targetContractIds: [CONTRACT_ID],
+      innerMaxFeeStroops: 100n,
+      reservedStroops: 200n,
+      actualFeeStroops: 150n,
+      expiresAt: createdAt + 900_000,
+    });
+  }
+
+  return await t.run(async (ctx) => ctx.db.insert("gasLogs", input));
+}
+
 test("Gas console reads are viewer-scoped and missing records return null", async () => {
   const t = convexTest(schema, modules);
   const owner = asWallet(t, OWNER);
@@ -83,6 +122,169 @@ test("Gas console reads are viewer-scoped and missing records return null", asyn
   ).rejects.toThrow("Unauthorized");
 
   expect(await owner.query(api.gas.queries.getPolicy, { projectId })).toBeNull();
+});
+
+test("Gas log pages are project-scoped, newest-first, and cursor-complete", async () => {
+  const t = convexTest(schema, modules);
+  const viewer = asWallet(t, VIEWER);
+  const projectId = await createProject(t);
+  const otherProjectId = await createProject(t, OTHER_OWNER);
+  await addMembership(t, projectId, VIEWER, "viewer");
+
+  await addGasLog(t, projectId, "project-a-oldest", NOW + 100, false);
+  await addGasLog(t, otherProjectId, "project-b-old", NOW + 200);
+  await addGasLog(t, projectId, "project-a-second", NOW + 300);
+  await addGasLog(t, otherProjectId, "project-b-middle", NOW + 400);
+  await addGasLog(t, projectId, "project-a-third", NOW + 500);
+  await addGasLog(t, otherProjectId, "project-b-newest", NOW + 600);
+  await addGasLog(t, projectId, "project-a-newest", NOW + 700);
+
+  const firstPage = await viewer.query(api.gas.queries.listLogsPage, {
+    projectId,
+    paginationOpts: { numItems: 2, cursor: null },
+  });
+  const secondPage = await viewer.query(api.gas.queries.listLogsPage, {
+    projectId,
+    paginationOpts: { numItems: 2, cursor: firstPage.continueCursor },
+  });
+
+  expect(firstPage.page.map((log) => log.requestId)).toEqual([
+    "project-a-newest",
+    "project-a-third",
+  ]);
+  expect(secondPage.page.map((log) => log.requestId)).toEqual([
+    "project-a-second",
+    "project-a-oldest",
+  ]);
+  expect(secondPage.isDone).toBe(true);
+  expect(new Set([...firstPage.page, ...secondPage.page].map((log) => log.requestId)).size).toBe(4);
+  expect(firstPage.continueCursor).toEqual(expect.any(String));
+  expect(secondPage.continueCursor).toEqual(expect.any(String));
+  expect(Object.keys(firstPage).sort()).toEqual([
+    "continueCursor",
+    "isDone",
+    "page",
+    "pageStatus",
+    "splitCursor",
+  ]);
+  expect(firstPage.splitCursor).toBeNull();
+  expect(firstPage.pageStatus).toBeNull();
+});
+
+test("Gas log pages return the exact safe projection with null optionals and decimal stroops", async () => {
+  const t = convexTest(schema, modules);
+  const viewer = asWallet(t, VIEWER);
+  const projectId = await createProject(t);
+  await addMembership(t, projectId, VIEWER, "viewer");
+  await addGasLog(t, projectId, "gas-log-without-derived-values", NOW, false);
+  await addGasLog(t, projectId, "gas-log-with-derived-values", NOW + 100);
+
+  const result = await viewer.query(api.gas.queries.listLogsPage, {
+    projectId,
+    paginationOpts: { numItems: 10, cursor: null },
+  });
+
+  const safeLogKeys = [
+    "actualFeeStroops",
+    "createdAt",
+    "decisionCode",
+    "expiresAt",
+    "innerMaxFeeStroops",
+    "lifecycle",
+    "rejectionCode",
+    "requestId",
+    "reservedStroops",
+    "sourceWallet",
+    "targetContractIds",
+    "transactionHash",
+    "updatedAt",
+  ];
+  expect(result.page).toHaveLength(2);
+  expect(result.page[0]).toEqual({
+    requestId: "gas-log-with-derived-values",
+    transactionHash: "0gas-log-with-derived-values".padStart(64, "0"),
+    sourceWallet: OWNER,
+    targetContractIds: [CONTRACT_ID],
+    innerMaxFeeStroops: "100",
+    reservedStroops: "200",
+    actualFeeStroops: "150",
+    decisionCode: "reserved",
+    rejectionCode: null,
+    lifecycle: "reserved",
+    expiresAt: NOW + 100 + 900_000,
+    createdAt: NOW + 100,
+    updatedAt: NOW + 101,
+  });
+  expect(result.page[1]).toEqual({
+    requestId: "gas-log-without-derived-values",
+    transactionHash: null,
+    sourceWallet: null,
+    targetContractIds: null,
+    innerMaxFeeStroops: null,
+    reservedStroops: null,
+    actualFeeStroops: null,
+    decisionCode: "reserved",
+    rejectionCode: null,
+    lifecycle: "reserved",
+    expiresAt: null,
+    createdAt: NOW,
+    updatedAt: NOW + 1,
+  });
+  for (const log of result.page) {
+    expect(Object.keys(log).sort()).toEqual(safeLogKeys);
+    expect(log).not.toHaveProperty("_id");
+    expect(log).not.toHaveProperty("projectId");
+    expect(log).not.toHaveProperty("idempotencyKeyHash");
+    expect(log).not.toHaveProperty("requestFingerprint");
+    expect(log).not.toHaveProperty("retentionExpiresAt");
+    expect(log).not.toHaveProperty("rawXdr");
+    expect(log).not.toHaveProperty("signature");
+    expect(log).not.toHaveProperty("secretKey");
+    expect(log).not.toHaveProperty("privateKey");
+  }
+});
+
+test("Gas log pages fail closed for unauthenticated, non-member, and other-project members", async () => {
+  const t = convexTest(schema, modules);
+  const projectId = await createProject(t);
+  const otherProjectId = await createProject(t, OTHER_OWNER);
+  await addMembership(t, projectId, VIEWER, "viewer");
+  await addGasLog(t, otherProjectId, "other-project-log", NOW);
+
+  const paginationOpts = { numItems: 1, cursor: null };
+  await expect(
+    t.query(api.gas.queries.listLogsPage, { projectId, paginationOpts }),
+  ).rejects.toThrow("Not authenticated");
+  await expect(
+    asWallet(t, EDITOR).query(api.gas.queries.listLogsPage, { projectId, paginationOpts }),
+  ).rejects.toThrow("Unauthorized");
+  await expect(
+    asWallet(t, OTHER_OWNER).query(api.gas.queries.listLogsPage, { projectId, paginationOpts }),
+  ).rejects.toThrow("Unauthorized");
+  await expect(
+    asWallet(t, VIEWER).query(api.gas.queries.listLogsPage, {
+      projectId: otherProjectId,
+      paginationOpts,
+    }),
+  ).rejects.toThrow("Unauthorized");
+});
+
+test("Gas log pages reject extra client-supplied authority and secret-looking arguments", async () => {
+  const t = convexTest(schema, modules);
+  const viewer = asWallet(t, VIEWER);
+  const projectId = await createProject(t);
+  await addMembership(t, projectId, VIEWER, "viewer");
+
+  const extraArguments = {
+    projectId,
+    paginationOpts: { numItems: 1, cursor: null },
+    walletAddress: OWNER,
+    requestedProjectId: projectId,
+    includeSecrets: true,
+    rawXdr: "must-not-be-accepted",
+    secretKey: "must-not-be-accepted",
+  };
+  await expect(viewer.query(api.gas.queries.listLogsPage, extraArguments)).rejects.toThrow();
 });
 
 test("policy upsert enforces editor writes, normalizes values, and preserves accounting", async () => {

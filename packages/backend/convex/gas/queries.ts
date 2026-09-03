@@ -1,12 +1,19 @@
+import { paginationOptsValidator, paginationResultValidator } from "convex/server";
 import { v } from "convex/values";
 
-import type { GasPolicyProjection, RelayerAccountProjection } from "./projections";
+import type {
+  GasLogProjection,
+  GasPolicyProjection,
+  RelayerAccountProjection,
+} from "./projections";
 
 import { query } from "../_generated/server";
 import { requireGasConsoleAccess } from "./authorization";
 import {
+  gasLogProjectionValidator,
   gasPolicyProjectionValidator,
   projectGasPolicy,
+  projectGasLog,
   projectRelayerAccount,
   relayerAccountProjectionValidator,
 } from "./projections";
@@ -43,5 +50,34 @@ export const getRelayerAccount = query({
       .unique();
 
     return account ? projectRelayerAccount(account) : null;
+  },
+});
+
+/** Read the authenticated project's Gas logs in newest-first pages. */
+export const listLogsPage = query({
+  args: {
+    projectId: v.id("projects"),
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: paginationResultValidator(gasLogProjectionValidator),
+  handler: async (ctx, args) => {
+    await requireGasConsoleAccess(ctx, args.projectId, "read");
+
+    const page = await ctx.db
+      .query("gasLogs")
+      .withIndex("by_project_id_and_created_at", (q) => q.eq("projectId", args.projectId))
+      .order("desc")
+      .paginate(args.paginationOpts);
+
+    return {
+      ...page,
+      page: page.page.map(projectGasLog),
+    } satisfies {
+      page: GasLogProjection[];
+      continueCursor: string;
+      isDone: boolean;
+      splitCursor?: string | null;
+      pageStatus?: "SplitRecommended" | "SplitRequired" | null;
+    };
   },
 });

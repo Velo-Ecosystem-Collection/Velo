@@ -18,7 +18,7 @@ This is a domain-level index of high-value Convex entry points, not an exhaustiv
 - Transactions: `transactions/query.ts` — cached hash lookup.
 - Webhooks: `webhook_endpoints/query.ts`, `webhook_deliveries/query.ts` — settings, summaries, delivery history.
 - Settlement/provider: `settlement_quotes/query.ts`, `settlement_transactions/query.ts`, provider query modules.
-- Gas: `gas/queries.ts` — viewer-scoped safe policy and Testnet relayer metadata reads.
+- Gas: `gas/queries.ts` — viewer-scoped safe policy and Testnet relayer metadata reads plus cursor-paginated, newest-first, project-scoped gas-log reads with native cursor metadata and field-by-field safe projections.
 - Wallets/Playground/Billing: corresponding domain `query.ts` files.
 
 ## Mutations

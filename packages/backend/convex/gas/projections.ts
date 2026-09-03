@@ -9,7 +9,13 @@ import type {
   GasRelayerStatus,
 } from "./types";
 
-import { gasNetworkValidator, gasRelayerStatusValidator } from "./schema";
+import {
+  gasDecisionCodeValidator,
+  gasLifecycleValidator,
+  gasNetworkValidator,
+  gasRejectionCodeValidator,
+  gasRelayerStatusValidator,
+} from "./schema";
 
 /** Fields safe for project-scoped policy views and API responses. */
 export type GasPolicyProjection = {
@@ -61,6 +67,23 @@ export const gasPolicyProjectionValidator = v.object({
   dailyWindowKey: v.string(),
   walletHourlyLimit: v.number(),
   allowedContractIds: v.array(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+/** Explicit public return validator for safe Gas log projections. */
+export const gasLogProjectionValidator = v.object({
+  requestId: v.string(),
+  transactionHash: v.union(v.string(), v.null()),
+  sourceWallet: v.union(v.string(), v.null()),
+  targetContractIds: v.union(v.array(v.string()), v.null()),
+  innerMaxFeeStroops: v.union(v.string(), v.null()),
+  reservedStroops: v.union(v.string(), v.null()),
+  actualFeeStroops: v.union(v.string(), v.null()),
+  decisionCode: gasDecisionCodeValidator,
+  rejectionCode: v.union(gasRejectionCodeValidator, v.null()),
+  lifecycle: gasLifecycleValidator,
+  expiresAt: v.union(v.number(), v.null()),
   createdAt: v.number(),
   updatedAt: v.number(),
 });

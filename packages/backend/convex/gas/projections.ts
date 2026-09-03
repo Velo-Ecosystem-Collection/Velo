@@ -1,3 +1,5 @@
+import { v } from "convex/values";
+
 import type { Doc } from "../_generated/dataModel";
 import type {
   GasDecisionCode,
@@ -6,6 +8,8 @@ import type {
   GasRejectionCode,
   GasRelayerStatus,
 } from "./types";
+
+import { gasNetworkValidator, gasRelayerStatusValidator } from "./schema";
 
 /** Fields safe for project-scoped policy views and API responses. */
 export type GasPolicyProjection = {
@@ -47,6 +51,30 @@ export type RelayerAccountProjection = {
   createdAt: number;
   updatedAt: number;
 };
+
+/** Explicit public return validator for safe Gas policy projections. */
+export const gasPolicyProjectionValidator = v.object({
+  enabled: v.boolean(),
+  network: gasNetworkValidator,
+  dailyCapStroops: v.string(),
+  dailyReservedStroops: v.string(),
+  dailyWindowKey: v.string(),
+  walletHourlyLimit: v.number(),
+  allowedContractIds: v.array(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+/** Explicit public return validator for safe relayer projections. */
+export const relayerAccountProjectionValidator = v.object({
+  publicKey: v.string(),
+  network: gasNetworkValidator,
+  status: gasRelayerStatusValidator,
+  balanceStroops: v.union(v.string(), v.null()),
+  balanceUpdatedAt: v.union(v.number(), v.null()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
 
 function decimalStroops(value: bigint | undefined): string | null {
   return value === undefined ? null : value.toString();

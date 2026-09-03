@@ -6,7 +6,11 @@ import {
   GAS_SUPPORTED_OPERATION,
   type GasRejectionCode,
 } from "./types";
-import { addStroopValues, assertValidStroopValue } from "./validation";
+import {
+  addStroopValues,
+  assertNonNegativeSafeInteger,
+  assertValidStroopValue,
+} from "./validation";
 
 /** The policy fields needed by the side-effect-free evaluator. */
 export type GasPolicySnapshot = Readonly<{
@@ -69,16 +73,7 @@ export type GasPolicyEvaluationResult =
       reason: GasPolicyRejectionReason;
     }>;
 
-const INVALID_QUOTA_INPUT = "Invalid gas quota input";
 const INVALID_REQUESTED_QUOTA_UNITS = "Invalid requested gas quota units";
-
-function assertNonNegativeSafeInteger(value: number, label: string): number {
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new Error(`${INVALID_QUOTA_INPUT}: ${label}`);
-  }
-
-  return value;
-}
 
 function assertPositiveSafeInteger(value: number): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
@@ -141,7 +136,14 @@ export function evaluateGasPolicy(input: GasPolicyEvaluationInput): GasPolicyEva
     });
   }
 
-  const [targetContractId] = input.targetContractIds;
+  const targetContractId = input.targetContractIds[0];
+  if (targetContractId === undefined) {
+    return rejected(GAS_REJECTION_CODES.unsupportedTransaction, requiredReservationStroops, {
+      expectedOperation: GAS_SUPPORTED_OPERATION,
+      observedTargetCount: input.targetContractIds.length,
+    });
+  }
+
   if (!policy.allowedContractIds.includes(targetContractId)) {
     return rejected(GAS_REJECTION_CODES.contractNotWhitelisted, requiredReservationStroops, {
       targetContractId,

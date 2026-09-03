@@ -2,7 +2,7 @@
 type: reference
 area: backend
 status: current
-last_updated: 2026-08-31
+last_updated: 2026-09-03
 source_of_truth: repository
 ---
 
@@ -18,6 +18,7 @@ This is a domain-level index of high-value Convex entry points, not an exhaustiv
 - Transactions: `transactions/query.ts` — cached hash lookup.
 - Webhooks: `webhook_endpoints/query.ts`, `webhook_deliveries/query.ts` — settings, summaries, delivery history.
 - Settlement/provider: `settlement_quotes/query.ts`, `settlement_transactions/query.ts`, provider query modules.
+- Gas: `gas/queries.ts` — viewer-scoped safe policy and Testnet relayer metadata reads.
 - Wallets/Playground/Billing: corresponding domain `query.ts` files.
 
 ## Mutations
@@ -28,6 +29,7 @@ This is a domain-level index of high-value Convex entry points, not an exhaustiv
 - Billing mutations own immutable ledger/lot/balance operations, top-ups, exceptions, launch policy, and reconciliation.
 - Webhook mutations create/claim/finish/retry/replay delivery records with lease fencing.
 - Provider/event/poller mutations checkpoint workers and move ambiguous records into recovery/quarantine.
+- Gas: `gas/mutations.ts` — editor policy upsert and owner relayer metadata upsert with Testnet-only fields, exact stroop handling, and safe projection returns.
 
 ## Actions
 
@@ -45,4 +47,3 @@ This is a domain-level index of high-value Convex entry points, not an exhaustiv
 `http.ts` exposes `POST /api/webhooks/pdax/v1?token=...`. Next.js routes under `apps/web/app/api` are a separate server boundary and call these functions through Convex clients.
 
 Related: [[backend/Background Jobs]], [[modules/Payments and Checkout]], [[modules/Settlement and PDAX]], [[modules/Webhooks]].
-

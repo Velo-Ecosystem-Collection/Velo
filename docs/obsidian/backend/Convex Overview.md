@@ -2,7 +2,7 @@
 type: architecture
 area: backend
 status: current
-last_updated: 2026-08-31
+last_updated: 2026-09-03
 source_of_truth: repository
 ---
 
@@ -18,12 +18,13 @@ The Convex application lives in `packages/backend/convex`. `schema.ts` composes 
 - `settlement`, `provider_*`, `payment_intent_route_jobs`, `pdax_route_cache`: PDAX operations and route enrichment.
 - `webhook_*`: event snapshots, delivery transport, signatures, retries, and replay.
 - `contract_events`, `poller_state`, `payAccessSync`, `contractEventPolling`: Soroban event ingestion.
+- `gas`: Testnet-only Gas policy, relayer metadata, safe projections, console authorization, and policy evaluation.
 - `playground_projects`, `wallet_configs`: project-integrated developer tools and published wallet runtime configuration.
 - `telemetry_outbox`, `journey_stages`, `rate_limits`: diagnostics, lifecycle visibility, and admission control.
 
 ## Authorization Pattern
 
-Authenticated Convex functions call project/organization helpers. Public merchant actions use hashed API-key lookup and project payment-access checks. Internal workers use `internal` references and must still validate ownership/state when crossing boundaries.
+Authenticated Convex functions call project/organization helpers. Gas console functions use the shared project role guard (`viewer` reads, `editor` policy updates, `owner` relayer updates) and return field-by-field projections. Public merchant actions use hashed API-key lookup and project payment-access checks. Internal workers use `internal` references and must still validate ownership/state when crossing boundaries.
 
 ## Backend Rules
 

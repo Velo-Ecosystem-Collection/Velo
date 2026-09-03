@@ -26,6 +26,17 @@ const INVALID_TRANSACTION_HASH = "Invalid transaction hash";
 const INVALID_NETWORK = "Gas Station network must be testnet";
 const INVALID_CONTRACT_ALLOWLIST = "Invalid contract allowlist";
 const CONTRACT_ALLOWLIST_TOO_LARGE = "Contract allowlist is too large";
+const INVALID_RELAYER_PUBLIC_KEY = "Invalid relayer public key";
+const INVALID_NON_NEGATIVE_SAFE_INTEGER = "Invalid non-negative safe integer";
+
+/** Validate a non-negative JavaScript safe integer at a numeric boundary. */
+export function assertNonNegativeSafeInteger(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new Error(`${INVALID_NON_NEGATIVE_SAFE_INTEGER}: ${label}`);
+  }
+
+  return value;
+}
 
 /** Parse a trimmed canonical unsigned decimal stroop amount. */
 export function parseStroopAmount(value: string): bigint {
@@ -85,6 +96,19 @@ export function normalizeWalletAddress(address: string): string {
     return assertValidPublicKey(address);
   } catch {
     throw new Error(INVALID_WALLET_ADDRESS);
+  }
+}
+
+/** Normalize and checksum-validate the public key of a managed relayer. */
+export function normalizeRelayerPublicKey(publicKey: string): string {
+  if (typeof publicKey !== "string") {
+    throw new Error(INVALID_RELAYER_PUBLIC_KEY);
+  }
+
+  try {
+    return assertValidPublicKey(publicKey);
+  } catch {
+    throw new Error(INVALID_RELAYER_PUBLIC_KEY);
   }
 }
 

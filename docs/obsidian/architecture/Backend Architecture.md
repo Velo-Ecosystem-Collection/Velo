@@ -2,7 +2,7 @@
 type: architecture
 area: backend
 status: current
-last_updated: 2026-08-31
+last_updated: 2026-09-03
 source_of_truth: repository
 ---
 
@@ -24,6 +24,7 @@ Convex under `packages/backend/convex` is the authoritative application backend.
 - Project helpers compare the Convex identity token identifier and normalized wallet subject/address; legacy address-only projects can be upgraded on access.
 - Public merchant APIs hash bearer or `x-api-key` values and authorize them to a project/payment access state.
 - Project role helpers also support owner/editor/viewer membership for project-integrated Playground features.
+- Gas console functions reuse the same project role resolution: viewer-or-higher reads, editor-or-higher policy updates, and owner-only relayer metadata updates. Caller input cannot select network, accounting counters, timestamps, balance metadata, ownership, or internal IDs.
 
 ## Durable Work
 
@@ -35,4 +36,3 @@ Payment reconciliation, PDAX provider operations, provider callback hints, route
 - RPC/PDAX outcomes that are uncertain must enter reconciliation rather than being blindly retried.
 - Browser-originated pending/submission state is never sufficient to mark a payment paid.
 - Provider callback payloads are normalized/redacted and unsigned PDAX callbacks are treated as hints until corroborated.
-

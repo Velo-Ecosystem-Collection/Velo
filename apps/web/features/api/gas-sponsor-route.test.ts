@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { GAS_TEST_CONTRACT_ID, GAS_TEST_SOURCE_KEYPAIR } from "@repo/stellar/test-fixtures";
+
 import { hashApiKey } from "../../core/api/auth.ts";
 import {
   createGasSponsorHandler,
+  GAS_SPONSOR_MAX_IDEMPOTENCY_KEY_BYTES,
   GAS_SPONSOR_MAX_BODY_BYTES,
   type GasSponsorCaller,
   type GasSponsorResult,
@@ -15,6 +18,8 @@ const OTHER_API_KEY = `tk_live_${"b".repeat(32)}`;
 const TRANSACTION_XDR = "valid-testnet-transaction-xdr";
 const REQUEST_CORRELATION_ID = "gas-sponsor-test-001";
 const EXPIRES_AT = 1_782_865_800_000;
+const SOURCE_WALLET = GAS_TEST_SOURCE_KEYPAIR.publicKey();
+const CONTRACT_ID = GAS_TEST_CONTRACT_ID;
 
 type ResponseBody = {
   error?: { type: string; code: string; requestId: string; message: string };
@@ -28,8 +33,8 @@ function reservationResult(replayed = false): GasSponsorResult {
     reservation: {
       requestId: "gas-request-001",
       transactionHash: "a".repeat(64),
-      sourceWallet: "GTESTWALLET",
-      targetContractIds: ["GTESTCONTRACT"],
+      sourceWallet: SOURCE_WALLET,
+      targetContractIds: [CONTRACT_ID],
       innerMaxFeeStroops: "100",
       reservedStroops: "200",
       actualFeeStroops: null,
@@ -125,8 +130,8 @@ test("success and replay return the minimal reservation DTO", async () => {
       replayed,
       decision: "reserved",
       transactionHash: "a".repeat(64),
-      sourceWallet: "GTESTWALLET",
-      targetContractIds: ["GTESTCONTRACT"],
+      sourceWallet: SOURCE_WALLET,
+      targetContractIds: [CONTRACT_ID],
       innerMaxFeeStroops: "100",
       reservedStroops: "200",
       expiresAt: "2026-07-01T00:30:00.000Z",
@@ -199,15 +204,24 @@ test("missing and malformed credentials are uniformly unauthorized before Convex
   }
 });
 
-test("missing, blank, and oversized idempotency keys are invalid requests", async () => {
-  const cases: Array<{ headers: Record<string, string>; omitIdempotencyKey?: boolean }> = [
-    { headers: {}, omitIdempotencyKey: true },
-    { headers: { "idempotency-key": "" } },
-    { headers: { "idempotency-key": "é".repeat(128) } },
+test("missing, blank, and oversized idempotency keys are rejected at the route boundary", async () => {
+  const cases: Array<{
+    headers: Record<string, string>;
+    omitIdempotencyKey?: boolean;
+    status: number;
+  }> = [
+    { headers: {}, omitIdempotencyKey: true, status: 400 },
+    { headers: { "idempotency-key": "" }, status: 400 },
+    {
+      headers: {
+        "idempotency-key": "é".repeat(Math.ceil(GAS_SPONSOR_MAX_IDEMPOTENCY_KEY_BYTES / 2)),
+      },
+      status: 413,
+    },
   ];
   for (const options of cases) {
     const { response, calls } = await invoke(reservationResult(), options);
-    assert.equal(response.status, 400);
+    assert.equal(response.status, options.status);
     assertRouteHeaders(response);
     const body = await responseBody(response);
     assert.equal(body.error?.code, "invalid_request");
@@ -260,6 +274,74 @@ test("declared and actual body sizes are enforced at 64 KiB", async () => {
   assert.equal(declaredMismatch.calls.length, 0);
 });
 
+test("the exact idempotency byte boundary is accepted", async () => {
+  const exactKey = "i".repeat(GAS_SPONSOR_MAX_IDEMPOTENCY_KEY_BYTES);
+  const { response, calls } = await invoke(reservationResult(), {
+    headers: { "idempotency-key": exactKey },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(calls[0]?.args.idempotencyKey, exactKey);
+});
+
+test("oversized chunked request streams are cancelled after crossing the bound", async () => {
+  let cancelled = false;
+  let chunkIndex = 0;
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (chunkIndex > 1) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(new Uint8Array(chunkIndex === 0 ? GAS_SPONSOR_MAX_BODY_BYTES : 1));
+      chunkIndex += 1;
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const caller: GasSponsorCaller = {
+    action: async () => reservationResult(),
+  };
+  const handler = withRouteTelemetry("gas.sponsor", createGasSponsorHandler(caller));
+  const response = await handler(
+    new Request("http://localhost/api/gas/sponsor", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${API_KEY}`,
+        "idempotency-key": "gas-idempotency-stream",
+        "x-correlation-id": REQUEST_CORRELATION_ID,
+      },
+      body: stream,
+      duplex: "half",
+    } as RequestInit),
+  );
+  assert.equal(response.status, 413);
+  assert.equal(cancelled, true);
+});
+
+test("secret-shaped correlation IDs are replaced before response and error telemetry", async () => {
+  const unsafeIds = [
+    API_KEY,
+    `S${"A".repeat(55)}`,
+    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature",
+  ];
+  for (const unsafeId of unsafeIds) {
+    const { response } = await invoke(
+      { status: "invalid_request" },
+      {
+        headers: { "x-correlation-id": unsafeId },
+      },
+    );
+    const returnedId = response.headers.get("x-correlation-id");
+    assert.notEqual(returnedId, unsafeId);
+    assert.match(returnedId ?? "", /^[0-9a-f-]{36}$/);
+    assert.equal(response.headers.get("x-request-id"), returnedId);
+    const body = await responseBody(response);
+    assert.equal(body.error?.requestId, returnedId);
+    assert.equal(JSON.stringify(body).includes(unsafeId), false);
+  }
+});
+
 test("forged project, wallet, fee, network, hash, and contract fields never reach Convex", async () => {
   const body = JSON.stringify({
     transactionXdr: ` ${TRANSACTION_XDR} `,
@@ -300,6 +382,12 @@ test("every Convex sponsor result maps to its stable HTTP error contract", async
       code: "idempotency_key_conflict",
     },
     { result: { status: "duplicate_transaction" }, status: 409, code: "duplicate_transaction" },
+    { result: { status: "payload_too_large" }, status: 413, code: "invalid_request" },
+    {
+      result: { status: "dependency_unavailable" },
+      status: 503,
+      code: "dependency_unavailable",
+    },
     { result: rejectionResult("policy_disabled"), status: 403, code: "policy_disabled" },
     {
       result: rejectionResult("contract_not_whitelisted"),
@@ -367,4 +455,26 @@ test("inconsistent Convex success results fail closed", async () => {
   const { response } = await invoke(inconsistent);
   assert.equal(response.status, 500);
   assert.equal((await responseBody(response)).error?.code, "internal_error");
+});
+
+test("corrupt or secret-looking reservation DTOs are sanitized as internal errors", async () => {
+  const valid = reservationResult();
+  if (valid.status !== "success") throw new Error("Expected a valid reservation fixture");
+  const cases = [
+    { ...valid.reservation, targetContractIds: [CONTRACT_ID, CONTRACT_ID] },
+    { ...valid.reservation, sourceWallet: GAS_TEST_SOURCE_KEYPAIR.secret() },
+    { ...valid.reservation, requestId: API_KEY },
+    { ...valid.reservation, reservedStroops: "201" },
+    { ...valid.reservation, actualFeeStroops: "not-a-stroop" },
+    { ...valid.reservation, expiresAt: valid.reservation.createdAt },
+  ];
+  for (const reservation of cases) {
+    const { response } = await invoke({
+      status: "success",
+      replayed: false,
+      reservation,
+    });
+    assert.equal(response.status, 500);
+    assert.equal((await responseBody(response)).error?.code, "internal_error");
+  }
 });

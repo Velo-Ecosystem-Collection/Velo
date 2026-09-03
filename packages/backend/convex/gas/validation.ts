@@ -1,3 +1,4 @@
+import { TESTNET_TRANSACTION_ENVELOPE_MAX_XDR_BYTES } from "@repo/stellar/transaction-envelope";
 import {
   assertValidContractId,
   assertValidPublicKey,
@@ -17,6 +18,8 @@ const CANONICAL_UNSIGNED_DECIMAL = /^(?:0|[1-9][0-9]*)$/;
 const MAX_STROOP_DIGITS = GAS_MAX_STROOPS.toString().length;
 export const GAS_MAX_TIME_SECONDS = Math.floor(Number.MAX_SAFE_INTEGER / 1_000);
 export const GAS_MAX_REQUEST_ID_BYTES = 128;
+export const GAS_MAX_TRANSACTION_XDR_BYTES = TESTNET_TRANSACTION_ENVELOPE_MAX_XDR_BYTES;
+export const GAS_MAX_IDEMPOTENCY_KEY_BYTES = 255;
 
 const INVALID_STROOP_AMOUNT = "Invalid stroop amount";
 const INVALID_STROOP_VALUE = "Invalid stroop value";
@@ -30,6 +33,8 @@ const INVALID_CONTRACT_ALLOWLIST = "Invalid contract allowlist";
 const CONTRACT_ALLOWLIST_TOO_LARGE = "Contract allowlist is too large";
 const INVALID_RELAYER_PUBLIC_KEY = "Invalid relayer public key";
 const INVALID_NON_NEGATIVE_SAFE_INTEGER = "Invalid non-negative safe integer";
+const INVALID_GAS_POLICY = "Invalid Gas policy";
+const UTC_DAY_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Validate a non-negative JavaScript safe integer at a numeric boundary. */
 export function assertNonNegativeSafeInteger(value: number, label: string): number {
@@ -38,6 +43,44 @@ export function assertNonNegativeSafeInteger(value: number, label: string): numb
   }
 
   return value;
+}
+
+function isValidUtcDayKey(value: string): boolean {
+  if (!UTC_DAY_KEY_PATTERN.test(value)) return false;
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+/**
+ * Validate persisted fields that participate in Gas admission accounting.
+ * A stale daily counter may exceed a newly lowered cap because it is rolled
+ * into the current UTC day before evaluation.
+ */
+export function assertValidGasPolicyState(policy: {
+  network: string;
+  dailyCapStroops: bigint;
+  dailyReservedStroops: bigint;
+  dailyWindowKey: string;
+  walletHourlyLimit: number;
+  allowedContractIds: readonly string[];
+}): void {
+  if (policy.network !== GAS_NETWORK || !isValidUtcDayKey(policy.dailyWindowKey)) {
+    throw new Error(INVALID_GAS_POLICY);
+  }
+
+  assertValidStroopValue(policy.dailyCapStroops);
+  assertValidStroopValue(policy.dailyReservedStroops);
+  assertNonNegativeSafeInteger(policy.walletHourlyLimit, "walletHourlyLimit");
+
+  const normalizedContractIds = normalizeContractAllowlist(policy.allowedContractIds);
+  if (
+    normalizedContractIds.length !== policy.allowedContractIds.length ||
+    normalizedContractIds.some(
+      (contractId, index) => contractId !== policy.allowedContractIds[index],
+    )
+  ) {
+    throw new Error(INVALID_GAS_POLICY);
+  }
 }
 
 /** Normalize and bound the opaque server-issued reservation/request identifier. */

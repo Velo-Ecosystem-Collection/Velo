@@ -261,6 +261,67 @@ test("a duplicate reserved transaction hash conflicts after idempotency resoluti
   });
 });
 
+test("ambiguous idempotency and transaction records fail closed without new accounting writes", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t);
+    await createPolicy(t, scope.projectId);
+
+    await t.run(async (ctx) => {
+      const base = {
+        projectId: scope.projectId,
+        sourceWallet: WALLET,
+        targetContractIds: [CONTRACT_ID],
+        innerMaxFeeStroops: 50n,
+        reservedStroops: 150n,
+        decisionCode: "reserved" as const,
+        lifecycle: "reserved" as const,
+        expiresAt: NOW + 900_000,
+        retentionExpiresAt: NOW + 30 * 24 * 60 * 60 * 1_000,
+        createdAt: NOW,
+        updatedAt: NOW,
+      };
+      await ctx.db.insert("gasLogs", {
+        ...base,
+        requestId: "ambiguous-idempotency-1",
+        idempotencyKeyHash: FIRST_IDEMPOTENCY_HASH,
+        requestFingerprint: FIRST_FINGERPRINT,
+        transactionHash: FIRST_TRANSACTION_HASH,
+      });
+      await ctx.db.insert("gasLogs", {
+        ...base,
+        requestId: "ambiguous-idempotency-2",
+        idempotencyKeyHash: FIRST_IDEMPOTENCY_HASH,
+        requestFingerprint: SECOND_FINGERPRINT,
+        transactionHash: SECOND_TRANSACTION_HASH,
+      });
+    });
+
+    const before = await readAdmissionState(t, scope.projectId);
+    const ambiguousIdempotency = await t.mutation(
+      internal.gas.admission.reserve,
+      admissionArgs(scope, {
+        idempotencyKeyHash: FIRST_IDEMPOTENCY_HASH,
+        requestFingerprint: "0".repeat(64),
+        transactionHash: "3".repeat(64),
+      }),
+    );
+    expect(ambiguousIdempotency).toEqual({ status: "invalid_internal_input" });
+    expect(await readAdmissionState(t, scope.projectId)).toEqual(before);
+
+    const ambiguousTransaction = await t.mutation(
+      internal.gas.admission.reserve,
+      admissionArgs(scope, {
+        idempotencyKeyHash: "4".repeat(64),
+        requestFingerprint: "5".repeat(64),
+        transactionHash: FIRST_TRANSACTION_HASH,
+      }),
+    );
+    expect(ambiguousTransaction).toEqual({ status: "duplicate_transaction" });
+    expect(await readAdmissionState(t, scope.projectId)).toEqual(before);
+  });
+});
+
 test("policy denial is replayable, redacted, and consumes neither budget nor wallet quota", async () => {
   await withFixedTime(async () => {
     const t = convexTest(schema, modules);

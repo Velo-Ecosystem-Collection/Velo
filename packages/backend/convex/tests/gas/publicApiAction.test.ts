@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+import { parseTestnetSorobanTransactionEnvelope } from "@repo/stellar/transaction-envelope";
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
 
@@ -8,19 +9,26 @@ import type { TestConvexForDataModelAndIdentity } from "convex-test";
 
 import { api, internal } from "../../_generated/api";
 import { GAS_NETWORK, GAS_SUPPORTED_OPERATION } from "../../gas/types";
+import { GAS_MAX_IDEMPOTENCY_KEY_BYTES, GAS_MAX_TRANSACTION_XDR_BYTES } from "../../gas/validation";
 import schema from "../../schema";
 import {
   gasEnvelopeFixtures,
   gasMalformedInputFixtures,
   gasMaxTimeEnvelopeFixtures,
+  gasFixtureContractId,
+  gasFixtureOtherContractId,
+  gasFixtureSourceWallet,
 } from "./fixtures";
 
 const modules = import.meta.glob("../../**/*.ts");
 
 const OWNER = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
-const CONTRACT_ID = "CC7RENKPGXGF6MMEMGJ4YWUBOBGQYOCGG33PNSONQF56UMMAQ22TWH6R";
-const NON_WHITELISTED_CONTRACT_ID = "CA7QYNF7SOWQ3LLQ6ZMPD6PTQVVBYV3R6DR2ICR6UBZMWRXZPPTD3FVO";
-const SOURCE_WALLET = "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57";
+const CONTRACT_ID = gasFixtureContractId;
+const NON_WHITELISTED_CONTRACT_ID = gasFixtureOtherContractId;
+const SOURCE_WALLET = gasFixtureSourceWallet;
+const UNBOUNDED_FACTS = parseTestnetSorobanTransactionEnvelope(
+  gasMaxTimeEnvelopeFixtures.unbounded,
+);
 const NOW = Date.parse("2026-09-03T12:34:56.789Z");
 const API_KEY_HASH = "a".repeat(64);
 const REVOKED_API_KEY_HASH = "b".repeat(64);
@@ -171,8 +179,8 @@ test("valid signed Testnet sponsor requests reserve once from derived facts", as
   if (result.status !== "success") throw new Error("Expected a sponsor reservation");
   expect(result.replayed).toBe(false);
   expect(result.reservation).toMatchObject({
-    transactionHash: "3c5c8dfa2e616feb24cde207380b4c6ba0c8618d88d430e15df522940720ab08",
-    sourceWallet: "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57",
+    transactionHash: UNBOUNDED_FACTS.transactionHash,
+    sourceWallet: UNBOUNDED_FACTS.sourceWallet,
     targetContractIds: [CONTRACT_ID],
     innerMaxFeeStroops: "100",
     reservedStroops: "200",
@@ -198,6 +206,30 @@ test("valid signed Testnet sponsor requests reserve once from derived facts", as
   expect(serialized).not.toContain(gasMaxTimeEnvelopeFixtures.unbounded);
   expect(serialized).not.toContain(await sha256("sponsor-valid-1"));
   expect(serialized).not.toContain(await sha256(gasMaxTimeEnvelopeFixtures.unbounded));
+});
+
+test("direct sponsor calls cannot bypass payload bounds or write accounting", async () => {
+  const t = convexTest(schema, modules);
+  const scope = await createScope(t, { projectSuffix: "oversized" });
+  await createPolicy(t, scope.projectId);
+
+  for (const [idempotencyKey, transactionXdr] of [
+    ["sponsor-oversized-xdr", "x".repeat(GAS_MAX_TRANSACTION_XDR_BYTES + 1)],
+    ["i".repeat(GAS_MAX_IDEMPOTENCY_KEY_BYTES + 1), gasMaxTimeEnvelopeFixtures.unbounded],
+  ] as const) {
+    await expect(
+      t.action(api.gas.public_api.sponsor, {
+        apiKeyHash: scope.apiKeyHash,
+        idempotencyKey,
+        transactionXdr,
+      }),
+    ).resolves.toEqual({ status: "payload_too_large" });
+  }
+
+  const state = await readGasState(t, scope.projectId);
+  expect(state.logs).toHaveLength(0);
+  expect(state.policy?.dailyReservedStroops).toBe(0n);
+  expect(state.buckets).toHaveLength(0);
 });
 
 test("policy denial returns a redacted typed decision without accounting writes", async () => {

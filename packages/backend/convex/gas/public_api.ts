@@ -1,9 +1,15 @@
 "use node";
 
+import { isCorrelationId } from "@repo/observability";
 import {
   TestnetTransactionEnvelopeError,
   type TestnetTransactionEnvelopeErrorCode,
 } from "@repo/stellar/transaction-envelope";
+import {
+  assertValidContractId,
+  assertValidPublicKey,
+  assertValidTransactionHash,
+} from "@repo/stellar/validation";
 import { v } from "convex/values";
 
 import type { ActionCtx } from "../_generated/server";
@@ -15,7 +21,12 @@ import { action } from "../_generated/server";
 import { deriveGasTransactionFacts } from "./envelope";
 import { gasLogProjectionValidator, type GasLogProjection } from "./projections";
 import { gasRejectionCodeValidator } from "./schema";
-import { normalizeGasRequestId, normalizeTransactionHash } from "./validation";
+import {
+  GAS_MAX_IDEMPOTENCY_KEY_BYTES,
+  GAS_MAX_TRANSACTION_XDR_BYTES,
+  normalizeGasRequestId,
+  normalizeTransactionHash,
+} from "./validation";
 
 export type GasSponsorResult =
   | {
@@ -33,6 +44,8 @@ export type GasSponsorResult =
   | { status: TestnetTransactionEnvelopeErrorCode }
   | { status: "idempotency_key_conflict" }
   | { status: "duplicate_transaction" }
+  | { status: "payload_too_large" }
+  | { status: "dependency_unavailable" }
   | { status: "internal_error" };
 
 export type GasSubmitResult =
@@ -42,6 +55,7 @@ export type GasSubmitResult =
   | { status: "resource_not_found" }
   | { status: "unauthorized" }
   | { status: "invalid_request" }
+  | { status: "dependency_unavailable" }
   | { status: "internal_error" };
 
 const gasSponsorSuccessValidator = v.object({
@@ -67,6 +81,8 @@ export const gasSponsorResultValidator = v.union(
   v.object({ status: v.literal("unsupported_transaction") }),
   v.object({ status: v.literal("idempotency_key_conflict") }),
   v.object({ status: v.literal("duplicate_transaction") }),
+  v.object({ status: v.literal("payload_too_large") }),
+  v.object({ status: v.literal("dependency_unavailable") }),
   v.object({ status: v.literal("internal_error") }),
 );
 
@@ -77,13 +93,21 @@ export const gasSubmitResultValidator = v.union(
   v.object({ status: v.literal("resource_not_found") }),
   v.object({ status: v.literal("unauthorized") }),
   v.object({ status: v.literal("invalid_request") }),
+  v.object({ status: v.literal("dependency_unavailable") }),
   v.object({ status: v.literal("internal_error") }),
 );
 
-function normalizeRequiredValue(value: string): string {
+type NormalizedRequiredValue =
+  | { ok: true; value: string }
+  | { ok: false; status: "invalid_request" | "payload_too_large" };
+
+function normalizeRequiredValue(value: string, maxBytes: number): NormalizedRequiredValue {
   const normalized = value.trim();
-  if (normalized === "") throw new Error("Required Gas sponsor input is empty");
-  return normalized;
+  if (normalized === "") return { ok: false, status: "invalid_request" };
+  if (new TextEncoder().encode(normalized).byteLength > maxBytes) {
+    return { ok: false, status: "payload_too_large" };
+  }
+  return { ok: true, value: normalized };
 }
 
 async function sha256(value: string): Promise<string> {
@@ -103,12 +127,16 @@ function mapAdmissionResult(result: GasAdmissionResult): GasSponsorResult {
       return { status: "unauthorized" };
     case "invalid_internal_input":
       return { status: "internal_error" };
+    case "dependency_unavailable":
+      return { status: "dependency_unavailable" };
     case "idempotency_key_conflict":
       return { status: "idempotency_key_conflict" };
     case "duplicate_transaction":
       return { status: "duplicate_transaction" };
     case "decision":
+      if (!isValidGasLogProjection(result.log)) return { status: "internal_error" };
       if (result.log.decisionCode === "reserved") {
+        if (!isValidReservationProjection(result.log)) return { status: "internal_error" };
         return {
           status: "success",
           replayed: result.replayed,
@@ -126,12 +154,122 @@ function mapAdmissionResult(result: GasAdmissionResult): GasSponsorResult {
   }
 }
 
+function isValidReservationProjection(value: GasLogProjection): boolean {
+  if (
+    !isCorrelationId(value.requestId) ||
+    normalizeGasRequestId(value.requestId) !== value.requestId ||
+    !isCanonicalPublicKey(value.sourceWallet) ||
+    !isCanonicalTransactionHash(value.transactionHash) ||
+    !Array.isArray(value.targetContractIds) ||
+    value.targetContractIds.length !== 1 ||
+    !isCanonicalContractId(value.targetContractIds[0]) ||
+    !isCanonicalStroop(value.innerMaxFeeStroops) ||
+    !isCanonicalStroop(value.reservedStroops) ||
+    value.decisionCode !== "reserved" ||
+    value.rejectionCode !== null ||
+    value.lifecycle !== "reserved" ||
+    !isValidTimestamp(value.expiresAt) ||
+    !isValidTimestamp(value.createdAt) ||
+    !isValidTimestamp(value.updatedAt) ||
+    value.expiresAt <= value.createdAt ||
+    value.updatedAt < value.createdAt ||
+    value.actualFeeStroops !== null
+  ) {
+    return false;
+  }
+
+  try {
+    return BigInt(value.reservedStroops) === BigInt(value.innerMaxFeeStroops) + 100n;
+  } catch {
+    return false;
+  }
+}
+
+function isValidGasLogProjection(value: GasLogProjection): boolean {
+  if (
+    !isCorrelationId(value.requestId) ||
+    !isValidTimestamp(value.createdAt) ||
+    !isValidTimestamp(value.updatedAt) ||
+    value.updatedAt < value.createdAt ||
+    (value.transactionHash !== null && !isCanonicalTransactionHash(value.transactionHash)) ||
+    (value.sourceWallet !== null && !isCanonicalPublicKey(value.sourceWallet)) ||
+    (value.targetContractIds !== null &&
+      (value.targetContractIds.length !== 1 ||
+        !isCanonicalContractId(value.targetContractIds[0]))) ||
+    (value.innerMaxFeeStroops !== null && !isCanonicalStroop(value.innerMaxFeeStroops)) ||
+    (value.reservedStroops !== null && !isCanonicalStroop(value.reservedStroops)) ||
+    (value.actualFeeStroops !== null && !isCanonicalStroop(value.actualFeeStroops)) ||
+    (value.expiresAt !== null && !isValidTimestamp(value.expiresAt))
+  ) {
+    return false;
+  }
+
+  if (value.decisionCode === "reserved") {
+    return value.rejectionCode === null && value.lifecycle === "reserved";
+  }
+
+  return (
+    value.decisionCode === "rejected" &&
+    value.rejectionCode !== null &&
+    value.lifecycle === "rejected"
+  );
+}
+
+function isCanonicalPublicKey(value: string | null): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    return assertValidPublicKey(value) === value;
+  } catch {
+    return false;
+  }
+}
+
+function isCanonicalContractId(value: string | undefined): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    return assertValidContractId(value) === value;
+  } catch {
+    return false;
+  }
+}
+
+function isCanonicalTransactionHash(value: string | null): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    return assertValidTransactionHash(value) === value;
+  } catch {
+    return false;
+  }
+}
+
+function isCanonicalStroop(value: string | null): value is string {
+  if (typeof value !== "string" || !/^(?:0|[1-9][0-9]*)$/.test(value)) return false;
+  if (value.length > 19) return false;
+  try {
+    const amount = BigInt(value);
+    return amount >= 0n && amount <= 2n ** 63n - 1n;
+  } catch {
+    return false;
+  }
+}
+
+function isValidTimestamp(value: number | null): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value > 0 &&
+    Number.isFinite(new Date(value).getTime())
+  );
+}
+
 function mapSubmitResult(result: GasSubmitMutationResult): GasSubmitResult {
   switch (result.status) {
     case "unauthorized":
       return { status: "unauthorized" };
     case "invalid_internal_input":
       return { status: "internal_error" };
+    case "dependency_unavailable":
+      return { status: "dependency_unavailable" };
     case "resource_not_found":
       return { status: "resource_not_found" };
     case "invalid_lifecycle":
@@ -161,26 +299,28 @@ export const sponsor = action({
       // API-key authorization intentionally precedes any input parsing or normalization.
       scope = await authorize(ctx, args.apiKeyHash);
     } catch {
-      return { status: "internal_error" };
+      return { status: "dependency_unavailable" };
     }
 
     if (!scope.authorized) return { status: "unauthorized" };
 
-    let idempotencyKey: string;
-    let transactionXdr: string;
-    try {
-      idempotencyKey = normalizeRequiredValue(args.idempotencyKey);
-      transactionXdr = normalizeRequiredValue(args.transactionXdr);
-    } catch {
-      return { status: "invalid_request" };
-    }
+    const idempotencyKey = normalizeRequiredValue(
+      args.idempotencyKey,
+      GAS_MAX_IDEMPOTENCY_KEY_BYTES,
+    );
+    if (!idempotencyKey.ok) return { status: idempotencyKey.status };
+    const transactionXdr = normalizeRequiredValue(
+      args.transactionXdr,
+      GAS_MAX_TRANSACTION_XDR_BYTES,
+    );
+    if (!transactionXdr.ok) return { status: transactionXdr.status };
 
     let idempotencyKeyHash: string;
     let requestFingerprint: string;
     try {
       [idempotencyKeyHash, requestFingerprint] = await Promise.all([
-        sha256(idempotencyKey),
-        sha256(transactionXdr),
+        sha256(idempotencyKey.value),
+        sha256(transactionXdr.value),
       ]);
     } catch {
       return { status: "internal_error" };
@@ -188,7 +328,7 @@ export const sponsor = action({
 
     let facts;
     try {
-      facts = deriveGasTransactionFacts(transactionXdr);
+      facts = deriveGasTransactionFacts(transactionXdr.value);
     } catch (error) {
       return mapEnvelopeError(error) ?? { status: "internal_error" };
     }
@@ -210,7 +350,7 @@ export const sponsor = action({
         ...(facts.innerMaxTime === undefined ? {} : { innerMaxTime: facts.innerMaxTime }),
       });
     } catch {
-      return { status: "internal_error" };
+      return { status: "dependency_unavailable" };
     }
 
     return mapAdmissionResult(admission);
@@ -231,7 +371,7 @@ export const submit = action({
       // Keep submit authorization in the same order and scope as sponsor admission.
       scope = await authorize(ctx, args.apiKeyHash);
     } catch {
-      return { status: "internal_error" };
+      return { status: "dependency_unavailable" };
     }
 
     if (!scope.authorized) return { status: "unauthorized" };
@@ -255,7 +395,7 @@ export const submit = action({
         transactionHash,
       });
     } catch {
-      return { status: "internal_error" };
+      return { status: "dependency_unavailable" };
     }
 
     return mapSubmitResult(result);

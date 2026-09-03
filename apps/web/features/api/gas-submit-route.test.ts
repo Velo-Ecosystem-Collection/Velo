@@ -201,6 +201,7 @@ test("every submit outcome maps to the stable HTTP contract", async () => {
     { result: { status: "resource_not_found" }, status: 404, code: "resource_not_found" },
     { result: { status: "unauthorized" }, status: 401, code: "invalid_api_key" },
     { result: { status: "invalid_request" }, status: 400, code: "invalid_request" },
+    { result: { status: "dependency_unavailable" }, status: 503, code: "dependency_unavailable" },
     { result: { status: "internal_error" }, status: 500, code: "internal_error" },
   ];
 

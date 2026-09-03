@@ -14,6 +14,8 @@ import { gasRelayerStatusValidator } from "./schema";
 import { GAS_NETWORK } from "./types";
 import {
   assertNonNegativeSafeInteger,
+  assertValidGasPolicyState,
+  assertValidStroopValue,
   normalizeContractAllowlist,
   normalizeRelayerPublicKey,
   parseStroopAmount,
@@ -42,17 +44,37 @@ export const updatePolicy = mutation({
       "walletHourlyLimit",
     );
     const allowedContractIds = normalizeContractAllowlist(args.allowedContractIds);
-    const existing = await ctx.db
+    const policyMatches = await ctx.db
       .query("gasPolicies")
       .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
-      .unique();
+      .take(2);
+    if (policyMatches.length > 1) throw new Error("Multiple Gas policies exist for project");
+    const existing = policyMatches[0] ?? null;
     const now = Date.now();
+    const currentDayKey = utcDayKey(now);
 
     if (existing) {
+      assertValidGasPolicyState(existing);
+      if (
+        existing.dailyWindowKey === currentDayKey &&
+        existing.dailyReservedStroops > existing.dailyCapStroops
+      ) {
+        throw new Error("Current-day Gas policy accounting is invalid");
+      }
+      const dailyReservedStroops =
+        existing.dailyWindowKey === currentDayKey
+          ? assertValidStroopValue(existing.dailyReservedStroops)
+          : 0n;
+      if (dailyCapStroops < dailyReservedStroops) {
+        throw new Error("Daily Gas cap cannot be lower than current-day reservations");
+      }
+
       await ctx.db.patch(existing._id, {
         enabled: args.enabled,
         network: GAS_NETWORK,
         dailyCapStroops,
+        dailyReservedStroops,
+        dailyWindowKey: currentDayKey,
         walletHourlyLimit,
         allowedContractIds,
         updatedAt: now,
@@ -93,16 +115,20 @@ export const updateRelayerAccount = mutation({
     await requireGasConsoleAccess(ctx, args.projectId, "updateRelayer");
 
     const publicKey = normalizeRelayerPublicKey(args.publicKey);
-    const existing = await ctx.db
+    const existingMatches = await ctx.db
       .query("relayerAccounts")
       .withIndex("by_project_id_and_network", (q) =>
         q.eq("projectId", args.projectId).eq("network", GAS_NETWORK),
       )
-      .unique();
-    const assigned = await ctx.db
+      .take(2);
+    if (existingMatches.length > 1) throw new Error("Multiple Gas relayers exist for project");
+    const existing = existingMatches[0] ?? null;
+    const assignedMatches = await ctx.db
       .query("relayerAccounts")
       .withIndex("by_public_key", (q) => q.eq("publicKey", publicKey))
-      .unique();
+      .take(2);
+    if (assignedMatches.length > 1) throw new Error("Multiple Gas relayers use public key");
+    const assigned = assignedMatches[0] ?? null;
 
     if (assigned && assigned.projectId !== args.projectId) {
       throw new Error("Relayer public key is already assigned to another project");

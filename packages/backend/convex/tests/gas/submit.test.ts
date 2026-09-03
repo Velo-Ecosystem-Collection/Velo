@@ -209,6 +209,51 @@ test("unknown and cross-project request IDs return the same project-safe result"
   });
 });
 
+test("ambiguous request IDs fail closed without changing reservation accounting", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t);
+    await createPolicy(t, scope.projectId);
+
+    await t.run(async (ctx) => {
+      const base = {
+        projectId: scope.projectId,
+        idempotencyKeyHash: "a".repeat(64),
+        requestFingerprint: "b".repeat(64),
+        sourceWallet: WALLET,
+        targetContractIds: [CONTRACT_ID],
+        innerMaxFeeStroops: 100n,
+        reservedStroops: 200n,
+        decisionCode: "reserved" as const,
+        lifecycle: "reserved" as const,
+        expiresAt: NOW + 900_000,
+        retentionExpiresAt: NOW + 30 * 24 * 60 * 60 * 1_000,
+        createdAt: NOW,
+        updatedAt: NOW,
+      };
+      await ctx.db.insert("gasLogs", {
+        ...base,
+        requestId: "ambiguous-submit-request",
+        transactionHash: TRANSACTION_HASH,
+      });
+      await ctx.db.insert("gasLogs", {
+        ...base,
+        requestId: "ambiguous-submit-request",
+        transactionHash: OTHER_TRANSACTION_HASH,
+      });
+    });
+
+    const before = await readState(t, scope.projectId);
+    const result = await t.action(api.gas.public_api.submit, {
+      apiKeyHash: scope.apiKeyHash,
+      requestId: "ambiguous-submit-request",
+      transactionHash: TRANSACTION_HASH,
+    });
+    expect(result).toEqual({ status: "internal_error" });
+    expect(await readState(t, scope.projectId)).toEqual(before);
+  });
+});
+
 test("hash mismatches and rejected reservations return stable lifecycle conflicts", async () => {
   await withFixedTime(async () => {
     const t = convexTest(schema, modules);

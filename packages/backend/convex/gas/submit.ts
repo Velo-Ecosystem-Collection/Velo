@@ -1,3 +1,4 @@
+import { isCorrelationId } from "@repo/observability";
 import { v } from "convex/values";
 
 import type { Doc } from "../_generated/dataModel";
@@ -5,18 +6,21 @@ import type { MutationCtx } from "../_generated/server";
 
 import { internalMutation } from "../_generated/server";
 import { revalidateGasApiKeyScope } from "./authorization";
-import { GAS_FEE_OVERHEAD_STROOPS, GAS_LIFECYCLE_STATES, GAS_NETWORK } from "./types";
+import { GAS_FEE_OVERHEAD_STROOPS, GAS_LIFECYCLE_STATES } from "./types";
 import {
   addStroopValues,
-  assertNonNegativeSafeInteger,
+  assertValidGasPolicyState,
   assertValidStroopValue,
+  normalizeContractId,
   normalizeGasRequestId,
   normalizeTransactionHash,
+  normalizeWalletAddress,
 } from "./validation";
 
 export type GasSubmitResult =
   | { status: "unauthorized" }
   | { status: "invalid_internal_input" }
+  | { status: "dependency_unavailable" }
   | { status: "resource_not_found" }
   | { status: "invalid_lifecycle" }
   | { status: "reservation_expired" }
@@ -25,22 +29,15 @@ export type GasSubmitResult =
 export const gasSubmitMutationResultValidator = v.union(
   v.object({ status: v.literal("unauthorized") }),
   v.object({ status: v.literal("invalid_internal_input") }),
+  v.object({ status: v.literal("dependency_unavailable") }),
   v.object({ status: v.literal("resource_not_found") }),
   v.object({ status: v.literal("invalid_lifecycle") }),
   v.object({ status: v.literal("reservation_expired") }),
   v.object({ status: v.literal("handoff_unavailable") }),
 );
 
-const UTC_DAY_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-
 function utcDayKey(timestamp: number): string {
   return new Date(timestamp).toISOString().slice(0, 10);
-}
-
-function isValidUtcDayKey(value: string): boolean {
-  if (!UTC_DAY_KEY_PATTERN.test(value)) return false;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
 }
 
 function isValidTimestamp(value: number): boolean {
@@ -63,12 +60,27 @@ function validateReservation(log: Doc<"gasLogs">): bigint | null {
     log.expiresAt === undefined ||
     !isValidTimestamp(log.expiresAt) ||
     !isValidTimestamp(log.createdAt) ||
-    !isValidTimestamp(log.updatedAt)
+    !isValidTimestamp(log.updatedAt) ||
+    log.updatedAt < log.createdAt ||
+    log.actualFeeStroops !== undefined
   ) {
     return null;
   }
 
   try {
+    if (
+      !isCorrelationId(log.requestId) ||
+      normalizeGasRequestId(log.requestId) !== log.requestId ||
+      normalizeTransactionHash(log.transactionHash) !== log.transactionHash ||
+      log.sourceWallet === undefined ||
+      normalizeWalletAddress(log.sourceWallet) !== log.sourceWallet ||
+      log.targetContractIds === undefined ||
+      log.targetContractIds.length !== 1 ||
+      normalizeContractId(log.targetContractIds[0]!) !== log.targetContractIds[0]
+    ) {
+      return null;
+    }
+
     const innerMaxFeeStroops = assertValidStroopValue(log.innerMaxFeeStroops);
     const reservedStroops = assertValidStroopValue(log.reservedStroops);
     if (reservedStroops <= 0n) return null;
@@ -82,13 +94,15 @@ function validateReservation(log: Doc<"gasLogs">): bigint | null {
 }
 
 function validatePolicy(policy: Doc<"gasPolicies">): boolean {
-  if (policy.network !== GAS_NETWORK || !isValidUtcDayKey(policy.dailyWindowKey)) return false;
-
   try {
-    const dailyCapStroops = assertValidStroopValue(policy.dailyCapStroops);
-    const dailyReservedStroops = assertValidStroopValue(policy.dailyReservedStroops);
-    assertNonNegativeSafeInteger(policy.walletHourlyLimit, "walletHourlyLimit");
-    return dailyReservedStroops <= dailyCapStroops;
+    assertValidGasPolicyState(policy);
+    if (
+      policy.dailyWindowKey === utcDayKey(Date.now()) &&
+      policy.dailyReservedStroops > policy.dailyCapStroops
+    ) {
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }
@@ -99,30 +113,26 @@ async function findReservation(
   projectId: Doc<"projects">["_id"],
   requestId: string,
 ): Promise<Doc<"gasLogs"> | null | "ambiguous"> {
-  try {
-    return await ctx.db
-      .query("gasLogs")
-      .withIndex("by_project_id_and_request_id", (q) =>
-        q.eq("projectId", projectId).eq("requestId", requestId),
-      )
-      .unique();
-  } catch {
-    return "ambiguous";
-  }
+  const matches = await ctx.db
+    .query("gasLogs")
+    .withIndex("by_project_id_and_request_id", (q) =>
+      q.eq("projectId", projectId).eq("requestId", requestId),
+    )
+    .take(2);
+  if (matches.length > 1) return "ambiguous";
+  return matches[0] ?? null;
 }
 
 async function findPolicy(
   ctx: MutationCtx,
   projectId: Doc<"projects">["_id"],
 ): Promise<Doc<"gasPolicies"> | null | "ambiguous"> {
-  try {
-    return await ctx.db
-      .query("gasPolicies")
-      .withIndex("by_project_id", (q) => q.eq("projectId", projectId))
-      .unique();
-  } catch {
-    return "ambiguous";
-  }
+  const matches = await ctx.db
+    .query("gasPolicies")
+    .withIndex("by_project_id", (q) => q.eq("projectId", projectId))
+    .take(2);
+  if (matches.length > 1) return "ambiguous";
+  return matches[0] ?? null;
 }
 
 /**

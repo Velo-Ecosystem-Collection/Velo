@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+import { buildGasTestEnvelope } from "@repo/stellar/test-fixtures";
 import { expect, test } from "vitest";
 
 import { GAS_LIFECYCLE_STATES, GAS_NETWORK, GAS_SUPPORTED_OPERATION } from "../../gas/types.ts";
@@ -13,22 +14,6 @@ const expectedEnvelopeCategories = {
   "gas-envelope-multi-soroban": "rejected",
   "gas-envelope-mixed-soroban-payment": "rejected",
   "gas-envelope-fee-bump-soroban": "rejected",
-} as const;
-
-const expectedEnvelopeDigests: Record<string, string> = {
-  "gas-envelope-valid-testnet-soroban":
-    "9f75133589e447a54c93c4867488cd8b7f8e1e5b156834500e98f3e1527ace26",
-  "gas-envelope-unsigned-soroban":
-    "3fa0c534d21edecd6744ec1ab5927e2fdaaa94d692d7c577609ee634adcff44c",
-  "gas-envelope-mainnet-signed-soroban":
-    "7d68e9a81924d86f6927d0791a652ba4c990544e145797b613bf52b3659f9e1f",
-  "gas-envelope-classic-payment":
-    "7efebc672ec7041d20b90322d582d03632666011c08ad01666cad26d5e84bdb2",
-  "gas-envelope-multi-soroban": "2136129ba1f01f26f0fb605ee08138e958b23c1d72db897cc8c79f7c1c8d821d",
-  "gas-envelope-mixed-soroban-payment":
-    "e5eccc60edfc05abfaec39a12fe2578a37c8c4b4e654f885b5b5e57d3b43a22b",
-  "gas-envelope-fee-bump-soroban":
-    "8db9cd6c3025ef85c3c498eb106d375e469ae611d02c6987ce316d361bcbdf50",
 } as const;
 
 const expectedMalformedInputCategories = {
@@ -84,11 +69,6 @@ function assertNoSecretLikeData(value: unknown, key = ""): void {
   }
 }
 
-async function sha256(value: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 test("gas domain exposes only the locked D1 vocabulary", () => {
   expect(GAS_NETWORK).toBe("testnet");
   expect(GAS_SUPPORTED_OPERATION).toBe("invokeHostFunction");
@@ -126,10 +106,23 @@ test("fixtures contain no Stellar secret seed, API-key-like, bearer, or private-
   ).not.toThrow();
 });
 
-test("valid and unsupported envelope constants remain byte-stable", async () => {
+test("valid and unsupported envelopes are deterministic runtime builds", () => {
+  const builders = {
+    "gas-envelope-valid-testnet-soroban": "valid",
+    "gas-envelope-unsigned-soroban": "unsigned",
+    "gas-envelope-mainnet-signed-soroban": "wrong_network",
+    "gas-envelope-classic-payment": "classic",
+    "gas-envelope-multi-soroban": "multi",
+    "gas-envelope-mixed-soroban-payment": "mixed",
+    "gas-envelope-fee-bump-soroban": "fee_bump",
+  } as const;
   for (const fixture of gasEnvelopeFixtures) {
-    expect(fixture.xdr).toBeTypeOf("string");
-    expect(fixture.xdr.length).toBeGreaterThan(0);
-    expect(await sha256(fixture.xdr)).toBe(expectedEnvelopeDigests[fixture.id]);
+    const fixtureId = fixture.id as keyof typeof builders;
+    expect(fixture.xdr).toBe(
+      buildGasTestEnvelope({
+        kind: builders[fixtureId],
+        ...(fixture.id === "gas-envelope-valid-testnet-soroban" ? { maxTime: "1788362232" } : {}),
+      }),
+    );
   }
 });

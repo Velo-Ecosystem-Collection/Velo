@@ -53,6 +53,7 @@ export type TestnetSorobanTransactionFacts = Readonly<{
 
 const MAX_SIGNED_INT64 = 2n ** 63n - 1n;
 const MAX_CONVEX_TIMESTAMP_SECONDS = BigInt(Math.floor(Number.MAX_SAFE_INTEGER / 1_000));
+export const TESTNET_TRANSACTION_ENVELOPE_MAX_XDR_BYTES = 64 * 1_024;
 
 function reject(code: TestnetTransactionEnvelopeErrorCode): never {
   throw new TestnetTransactionEnvelopeError(code);
@@ -72,6 +73,11 @@ function parseEnvelope(transactionXdr: string): Transaction | FeeBumpTransaction
   }
 
   const normalizedXdr = transactionXdr.trim();
+  if (
+    new TextEncoder().encode(normalizedXdr).byteLength > TESTNET_TRANSACTION_ENVELOPE_MAX_XDR_BYTES
+  ) {
+    return reject("invalid_request");
+  }
   if (!isCanonicalBase64(normalizedXdr)) {
     return reject("invalid_request");
   }
@@ -91,6 +97,10 @@ function contractTarget(transaction: Transaction): string {
 
     const [operation] = transaction.operations;
     if (!operation || operation.type !== "invokeHostFunction") {
+      return reject("unsupported_transaction");
+    }
+
+    if (operation.source !== undefined && operation.source !== transaction.source) {
       return reject("unsupported_transaction");
     }
 
@@ -172,22 +182,21 @@ function transactionHash(transaction: Transaction): string {
 }
 
 function hasValidSourceSignature(transaction: Transaction, source: string): boolean {
-  if (transaction.signatures.length === 0) {
+  if (transaction.signatures.length !== 1) {
     return false;
   }
 
   try {
     const keypair = Keypair.fromPublicKey(source);
-    const signatureBaseHash = transaction.hash();
+    const expectedHint = Buffer.from(keypair.rawPublicKey()).subarray(-4);
+    const [decoratedSignature] = transaction.signatures;
+    if (!decoratedSignature || !Buffer.from(decoratedSignature.hint()).equals(expectedHint)) {
+      return false;
+    }
 
-    return transaction.signatures.some((decoratedSignature) => {
-      try {
-        const signature = Buffer.from(decoratedSignature.signature());
-        return signature.length === 64 && keypair.verify(signatureBaseHash, signature);
-      } catch {
-        return false;
-      }
-    });
+    const signatureBaseHash = transaction.hash();
+    const signature = Buffer.from(decoratedSignature.signature());
+    return signature.length === 64 && keypair.verify(signatureBaseHash, signature);
   } catch {
     return false;
   }

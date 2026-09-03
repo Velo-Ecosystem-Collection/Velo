@@ -15,6 +15,7 @@ import {
 } from "./types";
 import {
   addStroopValues,
+  assertValidGasPolicyState,
   assertValidInnerMaxTime,
   assertValidStroopValue,
   normalizeContractId,
@@ -29,6 +30,7 @@ const RETENTION_PERIOD_MS = 30 * 24 * 60 * 60 * 1_000;
 export type GasAdmissionResult =
   | { status: "unauthorized" }
   | { status: "invalid_internal_input" }
+  | { status: "dependency_unavailable" }
   | { status: "idempotency_key_conflict" }
   | { status: "duplicate_transaction" }
   | { status: "decision"; replayed: boolean; log: GasLogProjection };
@@ -37,6 +39,7 @@ export type GasAdmissionResult =
 export const gasAdmissionResultValidator = v.union(
   v.object({ status: v.literal("unauthorized") }),
   v.object({ status: v.literal("invalid_internal_input") }),
+  v.object({ status: v.literal("dependency_unavailable") }),
   v.object({ status: v.literal("idempotency_key_conflict") }),
   v.object({ status: v.literal("duplicate_transaction") }),
   v.object({
@@ -138,16 +141,14 @@ async function findIdempotencyLog(
   projectId: Doc<"projects">["_id"],
   idempotencyKeyHash: string,
 ): Promise<Doc<"gasLogs"> | null | "ambiguous"> {
-  try {
-    return await ctx.db
-      .query("gasLogs")
-      .withIndex("by_project_id_and_idempotency_key_hash", (q) =>
-        q.eq("projectId", projectId).eq("idempotencyKeyHash", idempotencyKeyHash),
-      )
-      .unique();
-  } catch {
-    return "ambiguous";
-  }
+  const matches = await ctx.db
+    .query("gasLogs")
+    .withIndex("by_project_id_and_idempotency_key_hash", (q) =>
+      q.eq("projectId", projectId).eq("idempotencyKeyHash", idempotencyKeyHash),
+    )
+    .take(2);
+  if (matches.length > 1) return "ambiguous";
+  return matches[0] ?? null;
 }
 
 async function findTransactionLog(
@@ -155,16 +156,14 @@ async function findTransactionLog(
   projectId: Doc<"projects">["_id"],
   transactionHash: string,
 ): Promise<Doc<"gasLogs"> | null | "ambiguous"> {
-  try {
-    return await ctx.db
-      .query("gasLogs")
-      .withIndex("by_project_id_and_transaction_hash", (q) =>
-        q.eq("projectId", projectId).eq("transactionHash", transactionHash),
-      )
-      .unique();
-  } catch {
-    return "ambiguous";
-  }
+  const matches = await ctx.db
+    .query("gasLogs")
+    .withIndex("by_project_id_and_transaction_hash", (q) =>
+      q.eq("projectId", projectId).eq("transactionHash", transactionHash),
+    )
+    .take(2);
+  if (matches.length > 1) return "ambiguous";
+  return matches[0] ?? null;
 }
 
 function walletUsageForHour(
@@ -260,14 +259,25 @@ export const reserve = internalMutation({
       return { status: "invalid_internal_input" };
     }
 
-    let policy: Doc<"gasPolicies"> | null;
-    try {
-      policy = await ctx.db
-        .query("gasPolicies")
-        .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
-        .unique();
-    } catch {
-      return { status: "invalid_internal_input" };
+    const policyMatches = await ctx.db
+      .query("gasPolicies")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(2);
+    if (policyMatches.length > 1) return { status: "invalid_internal_input" };
+    const policy = policyMatches[0] ?? null;
+
+    if (policy) {
+      try {
+        assertValidGasPolicyState(policy);
+        if (
+          policy.dailyWindowKey === utcDayKey(Date.now()) &&
+          policy.dailyReservedStroops > policy.dailyCapStroops
+        ) {
+          return { status: "invalid_internal_input" };
+        }
+      } catch {
+        return { status: "invalid_internal_input" };
+      }
     }
 
     const currentDayKey = utcDayKey(now);
@@ -279,17 +289,14 @@ export const reserve = internalMutation({
         }
       : null;
 
-    let walletBucket;
-    try {
-      walletBucket = await ctx.db
-        .query("rateLimitBuckets")
-        .withIndex("by_scope_key", (q) =>
-          q.eq("scopeKey", gasWalletBucketScopeKey(args.projectId, input.sourceWallet)),
-        )
-        .unique();
-    } catch {
-      return { status: "invalid_internal_input" };
-    }
+    const walletBucketMatches = await ctx.db
+      .query("rateLimitBuckets")
+      .withIndex("by_scope_key", (q) =>
+        q.eq("scopeKey", gasWalletBucketScopeKey(args.projectId, input.sourceWallet)),
+      )
+      .take(2);
+    if (walletBucketMatches.length > 1) return { status: "invalid_internal_input" };
+    const walletBucket = walletBucketMatches[0] ?? null;
 
     let walletHourlyUsage: number;
     try {

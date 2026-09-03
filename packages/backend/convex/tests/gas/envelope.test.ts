@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 
+import { gasTestEnvelopeTransactionHash } from "@repo/stellar/test-fixtures";
 import {
   TestnetTransactionEnvelopeError,
   type TestnetTransactionEnvelopeErrorCode,
@@ -42,7 +43,7 @@ test("derives the exact Gas facts and locked literals from the valid fixture", (
     network: "testnet",
     operation: "invokeHostFunction",
     sourceWallet: fixture.metadata.expectedSource,
-    transactionHash: "a4d98992d858b947bc3e76e42f8ff2aae3d5734ddcb0cd2ace094055eb93f1ed",
+    transactionHash: gasTestEnvelopeTransactionHash(fixture.xdr),
     innerMaxFeeStroops: 100n,
     targetContractIds: [fixture.metadata.expectedTarget],
     innerMaxTime: 1788362232,

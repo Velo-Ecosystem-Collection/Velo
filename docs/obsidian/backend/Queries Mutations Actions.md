@@ -2,7 +2,7 @@
 type: reference
 area: backend
 status: current
-last_updated: 2026-09-03
+last_updated: 2026-09-04
 source_of_truth: repository
 ---
 
@@ -29,7 +29,7 @@ This is a domain-level index of high-value Convex entry points, not an exhaustiv
 - Billing mutations own immutable ledger/lot/balance operations, top-ups, exceptions, launch policy, and reconciliation.
 - Webhook mutations create/claim/finish/retry/replay delivery records with lease fencing.
 - Provider/event/poller mutations checkpoint workers and move ambiguous records into recovery/quarantine.
-- Gas: `gas/mutations.ts` — editor policy upsert and owner relayer metadata upsert with Testnet-only fields, exact stroop handling, and safe projection returns; `gas/admission.ts` — internal atomic API-key revalidation, idempotency, policy, quota, and reservation decision mutation.
+- Gas: `gas/mutations.ts` — editor policy upsert and owner relayer metadata upsert with Testnet-only fields, exact stroop handling, stale-day rollover, same-day cap-reduction protection, and safe projection returns; `gas/admission.ts` — internal atomic API-key revalidation, bounded uniqueness checks, idempotency, policy, quota, and reservation decision mutation; `gas/submit.ts` — bounded reservation lookup, lifecycle expiry, and guarded same-day budget release.
 
 ## Actions
 
@@ -41,7 +41,7 @@ This is a domain-level index of high-value Convex entry points, not an exhaustiv
 - `payment_reconciliation_jobs/actions.ts`, `provider_operations/actions.ts`, `provider_events/processing.ts`: durable workers.
 - `webhookDelivery.ts`: signed outbound delivery.
 - `telemetry_outbox/actions.ts`: bounded OTLP export.
-- `gas/public_api.ts`: public Node-runtime sponsor orchestration that hashes normalized inputs, derives signed Testnet envelope facts, and delegates one atomic reservation call. `apps/web/core/api/gas-route-handlers.ts` and `apps/web/app/api/gas/sponsor/route.ts` provide the bounded Next.js HTTP caller and minimal public DTO.
+- `gas/public_api.ts`: public Node-runtime sponsor/submit orchestration. Sponsor enforces its own 64 KiB XDR and 255-byte idempotency bounds before hashing, derives signed Testnet envelope facts, and delegates one atomic reservation call; both actions classify authorization/admission/submit dependency failures as `dependency_unavailable` and validate successful reservation projections. `apps/web/core/api/gas-route-handlers.ts` and the two `apps/web/app/api/gas/*/route.ts` routes provide bounded, cancellable HTTP callers, sanitized status mappings, and minimal public DTOs.
 
 ## HTTP
 

@@ -10,6 +10,7 @@
     "./event-monitor": "./src/event-monitor.ts",
     "./transaction-debugger": "./src/transaction-debugger.ts",
     "./transaction-envelope": "./src/transaction-envelope.ts",
+    "./test-fixtures": "./src/test-fixtures.ts",
     "./validation": "./src/validation.ts"
   },
   "scripts": {
@@ -17,6 +18,7 @@
     "test": "node --experimental-strip-types --test src/*.test.ts"
   },
   "dependencies": {
+    "@noble/hashes": "1.7.1",
     "@repo/observability": "workspace:*",
     "@stellar/stellar-sdk": "14.2.0"
   },

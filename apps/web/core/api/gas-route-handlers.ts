@@ -1,5 +1,11 @@
 import { api } from "@repo/backend/convex/_generated/api.js";
-import { assertValidTransactionHash } from "@repo/stellar/validation";
+import { isCorrelationId } from "@repo/observability";
+import { TESTNET_TRANSACTION_ENVELOPE_MAX_XDR_BYTES } from "@repo/stellar/transaction-envelope";
+import {
+  assertValidContractId,
+  assertValidPublicKey,
+  assertValidTransactionHash,
+} from "@repo/stellar/validation";
 
 import type { FunctionArgs, FunctionReturnType } from "convex/server";
 import type { NextRequest } from "next/server";
@@ -10,11 +16,39 @@ import { veloErrorResponse } from "./payment-intents.ts";
 
 const API_KEY_PATTERN = /^tk_live_[a-f0-9]{32}$/;
 const CANONICAL_DECIMAL_PATTERN = /^(?:0|[1-9][0-9]*)$/;
+const GAS_MAX_STROOPS = 2n ** 63n - 1n;
+const GAS_FEE_OVERHEAD_STROOPS = 100n;
+const GAS_LOG_PROJECTION_KEYS = [
+  "actualFeeStroops",
+  "createdAt",
+  "decisionCode",
+  "expiresAt",
+  "innerMaxFeeStroops",
+  "lifecycle",
+  "rejectionCode",
+  "requestId",
+  "reservedStroops",
+  "sourceWallet",
+  "targetContractIds",
+  "transactionHash",
+  "updatedAt",
+].sort();
+const GAS_REJECTION_CODES = new Set([
+  "policy_disabled",
+  "contract_not_whitelisted",
+  "daily_cap_exceeded",
+  "wallet_rate_limited",
+  "invalid_signature",
+  "wrong_network",
+  "unsupported_transaction",
+  "duplicate_transaction",
+]);
 
 /** Maximum raw request size accepted by the sponsor HTTP boundary. */
 const GAS_MAX_BODY_BYTES = 64 * 1_024;
 export const GAS_SPONSOR_MAX_BODY_BYTES = GAS_MAX_BODY_BYTES;
-const GAS_SPONSOR_MAX_IDEMPOTENCY_KEY_BYTES = 255;
+export const GAS_SPONSOR_MAX_XDR_BYTES = TESTNET_TRANSACTION_ENVELOPE_MAX_XDR_BYTES;
+export const GAS_SPONSOR_MAX_IDEMPOTENCY_KEY_BYTES = 255;
 export const GAS_SUBMIT_MAX_BODY_BYTES = GAS_MAX_BODY_BYTES;
 export const GAS_SUBMIT_MAX_REQUEST_ID_BYTES = 128;
 
@@ -56,10 +90,13 @@ type GasSponsorReservation = {
   targetContractIds: string[];
   innerMaxFeeStroops: string;
   reservedStroops: string;
+  actualFeeStroops: string | null;
   decisionCode: "reserved";
   rejectionCode: null;
   lifecycle: "reserved";
   expiresAt: number;
+  createdAt: number;
+  updatedAt: number;
 };
 
 type BodyReadResult =
@@ -95,7 +132,7 @@ export function createGasSponsorHandler(convex: GasSponsorCaller) {
       const idempotencyKey = parseIdempotencyKey(request);
       if (!idempotencyKey.ok) {
         return gasError(telemetry, {
-          status: 400,
+          status: idempotencyKey.reason === "too_large" ? 413 : 400,
           type: "validation_error",
           code: "invalid_request",
           message: idempotencyKey.message,
@@ -235,11 +272,16 @@ export function createGasSubmitHandler(convex: GasSubmitCaller) {
 function parseIdempotencyKey(request: Request) {
   const value = request.headers.get("idempotency-key")?.trim();
   if (!value) {
-    return { ok: false as const, message: "Idempotency-Key is required." };
+    return {
+      ok: false as const,
+      reason: "missing" as const,
+      message: "Idempotency-Key is required.",
+    };
   }
   if (new TextEncoder().encode(value).byteLength > GAS_SPONSOR_MAX_IDEMPOTENCY_KEY_BYTES) {
     return {
       ok: false as const,
+      reason: "too_large" as const,
       message: "Idempotency-Key must be at most 255 UTF-8 bytes.",
     };
   }
@@ -249,8 +291,12 @@ function parseIdempotencyKey(request: Request) {
 async function readRawBody(request: Request, maxBytes: number): Promise<BodyReadResult> {
   const declaredLength = parseDeclaredContentLength(request.headers.get("content-length"));
   if (declaredLength === "invalid") return { ok: false, reason: "invalid" };
-  if (declaredLength === "too_large") return { ok: false, reason: "too_large" };
+  if (declaredLength === "too_large") {
+    await cancelBody(request.body);
+    return { ok: false, reason: "too_large" };
+  }
   if (declaredLength !== null && declaredLength > maxBytes) {
+    await cancelBody(request.body);
     return { ok: false, reason: "too_large" };
   }
 
@@ -268,14 +314,19 @@ async function readRawBody(request: Request, maxBytes: number): Promise<BodyRead
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (!(value instanceof Uint8Array)) return { ok: false, reason: "invalid" };
+      if (!(value instanceof Uint8Array)) {
+        await cancelReader(reader);
+        return { ok: false, reason: "invalid" };
+      }
       totalBytes += value.byteLength;
       if (totalBytes > maxBytes) {
+        await cancelReader(reader);
         return { ok: false, reason: "too_large" };
       }
       chunks.push(value);
     }
   } catch {
+    await cancelReader(reader);
     return { ok: false, reason: "invalid" };
   } finally {
     reader?.releaseLock();
@@ -292,6 +343,24 @@ async function readRawBody(request: Request, maxBytes: number): Promise<BodyRead
     offset += chunk.byteLength;
   }
   return { ok: true, bytes };
+}
+
+async function cancelBody(body: ReadableStream<Uint8Array> | null): Promise<void> {
+  try {
+    await body?.cancel();
+  } catch {
+    // Request cancellation is best effort; the bounded response still closes the route.
+  }
+}
+
+async function cancelReader(
+  reader: ReadableStreamDefaultReader<Uint8Array> | undefined,
+): Promise<void> {
+  try {
+    await reader?.cancel();
+  } catch {
+    // Reader cancellation is best effort for already-closed or hostile streams.
+  }
 }
 
 function parseDeclaredContentLength(value: string | null): number | "invalid" | "too_large" | null {
@@ -336,7 +405,7 @@ function parseSponsorBody(
   }
 
   const normalizedXdr = transactionXdr.trim();
-  if (new TextEncoder().encode(normalizedXdr).byteLength > GAS_SPONSOR_MAX_BODY_BYTES) {
+  if (new TextEncoder().encode(normalizedXdr).byteLength > GAS_SPONSOR_MAX_XDR_BYTES) {
     return { ok: false, reason: "too_large", message: "transactionXdr is too large." };
   }
 
@@ -488,6 +557,20 @@ function mapGasSponsorResult(result: GasSponsorResult, telemetry: RouteTelemetry
         code: "duplicate_transaction",
         message: "The transaction has already been reserved.",
       });
+    case "payload_too_large":
+      return gasError(telemetry, {
+        status: 413,
+        type: "validation_error",
+        code: "invalid_request",
+        message: "The transaction request is too large.",
+      });
+    case "dependency_unavailable":
+      return gasError(telemetry, {
+        status: 503,
+        type: "api_error",
+        code: "dependency_unavailable",
+        message: "Gas sponsorship is temporarily unavailable.",
+      });
     case "internal_error":
       return internalError(telemetry);
     default:
@@ -542,6 +625,13 @@ function mapGasSubmitResult(result: GasSubmitResult, telemetry: RouteTelemetry):
         type: "validation_error",
         code: "invalid_request",
         message: "The submit request is invalid.",
+      });
+    case "dependency_unavailable":
+      return gasError(telemetry, {
+        status: 503,
+        type: "api_error",
+        code: "dependency_unavailable",
+        message: "Gas submission is temporarily unavailable.",
       });
     case "internal_error":
       return internalError(telemetry);
@@ -621,7 +711,7 @@ function mapRejection(
 function isRejectedDecision(result: Extract<GasSponsorResult, { status: "rejected" }>): boolean {
   return (
     typeof result.replayed === "boolean" &&
-    isRecord(result.decision) &&
+    isValidGasLogProjection(result.decision) &&
     result.decision.decisionCode === "rejected" &&
     result.decision.rejectionCode === result.rejectionCode &&
     result.decision.lifecycle === "rejected"
@@ -630,28 +720,141 @@ function isRejectedDecision(result: Extract<GasSponsorResult, { status: "rejecte
 
 function isReservation(value: unknown): value is GasSponsorReservation {
   if (!isRecord(value)) return false;
+  if (!isValidGasLogProjection(value)) return false;
+  if (
+    typeof value.requestId !== "string" ||
+    !isCorrelationId(value.requestId) ||
+    new TextEncoder().encode(value.requestId).byteLength > GAS_SUBMIT_MAX_REQUEST_ID_BYTES
+  ) {
+    return false;
+  }
+
+  if (
+    typeof value.transactionHash !== "string" ||
+    !isCanonicalTransactionHash(value.transactionHash) ||
+    typeof value.sourceWallet !== "string" ||
+    !isCanonicalPublicKey(value.sourceWallet) ||
+    !Array.isArray(value.targetContractIds) ||
+    value.targetContractIds.length !== 1 ||
+    !value.targetContractIds.every(isCanonicalContractId) ||
+    typeof value.innerMaxFeeStroops !== "string" ||
+    typeof value.reservedStroops !== "string" ||
+    !isCanonicalStroop(value.innerMaxFeeStroops) ||
+    !isCanonicalStroop(value.reservedStroops) ||
+    value.actualFeeStroops !== null ||
+    value.decisionCode !== "reserved" ||
+    value.rejectionCode !== null ||
+    value.lifecycle !== "reserved" ||
+    typeof value.expiresAt !== "number" ||
+    !Number.isSafeInteger(value.expiresAt) ||
+    value.expiresAt <= 0 ||
+    !Number.isFinite(new Date(value.expiresAt).getTime()) ||
+    !isValidTimestamp(value.createdAt) ||
+    !isValidTimestamp(value.updatedAt) ||
+    value.expiresAt <= value.createdAt ||
+    value.updatedAt < value.createdAt
+  ) {
+    return false;
+  }
+
+  try {
+    return (
+      BigInt(value.reservedStroops) === BigInt(value.innerMaxFeeStroops) + GAS_FEE_OVERHEAD_STROOPS
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isValidGasLogProjection(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) return false;
+  if (Object.keys(value).sort().join("\u0000") !== GAS_LOG_PROJECTION_KEYS.join("\u0000")) {
+    return false;
+  }
+
+  if (
+    typeof value.requestId !== "string" ||
+    !isCorrelationId(value.requestId) ||
+    new TextEncoder().encode(value.requestId).byteLength > GAS_SUBMIT_MAX_REQUEST_ID_BYTES ||
+    !isValidTimestamp(value.createdAt) ||
+    !isValidTimestamp(value.updatedAt) ||
+    value.updatedAt < value.createdAt ||
+    (value.transactionHash !== null &&
+      (typeof value.transactionHash !== "string" ||
+        !isCanonicalTransactionHash(value.transactionHash))) ||
+    (value.sourceWallet !== null &&
+      (typeof value.sourceWallet !== "string" || !isCanonicalPublicKey(value.sourceWallet))) ||
+    (value.targetContractIds !== null &&
+      (!Array.isArray(value.targetContractIds) ||
+        !value.targetContractIds.every(isCanonicalContractId))) ||
+    (value.innerMaxFeeStroops !== null &&
+      (typeof value.innerMaxFeeStroops !== "string" ||
+        !isCanonicalStroop(value.innerMaxFeeStroops))) ||
+    (value.reservedStroops !== null &&
+      (typeof value.reservedStroops !== "string" || !isCanonicalStroop(value.reservedStroops))) ||
+    (value.actualFeeStroops !== null &&
+      (typeof value.actualFeeStroops !== "string" || !isCanonicalStroop(value.actualFeeStroops))) ||
+    (value.rejectionCode !== null &&
+      (typeof value.rejectionCode !== "string" || !GAS_REJECTION_CODES.has(value.rejectionCode))) ||
+    (value.expiresAt !== null && !isValidTimestamp(value.expiresAt)) ||
+    (value.decisionCode !== "reserved" && value.decisionCode !== "rejected") ||
+    (value.lifecycle !== "reserved" &&
+      value.lifecycle !== "expired" &&
+      value.lifecycle !== "rejected")
+  ) {
+    return false;
+  }
+
+  if (value.decisionCode === "reserved") {
+    return value.rejectionCode === null && value.lifecycle === "reserved";
+  }
+
+  return value.rejectionCode !== null && value.lifecycle === "rejected";
+}
+
+function isValidTimestamp(value: unknown): value is number {
   return (
-    typeof value.requestId === "string" &&
-    value.requestId.length > 0 &&
-    typeof value.transactionHash === "string" &&
-    value.transactionHash.length > 0 &&
-    typeof value.sourceWallet === "string" &&
-    value.sourceWallet.length > 0 &&
-    Array.isArray(value.targetContractIds) &&
-    value.targetContractIds.length > 0 &&
-    value.targetContractIds.every((target) => typeof target === "string" && target.length > 0) &&
-    typeof value.innerMaxFeeStroops === "string" &&
-    CANONICAL_DECIMAL_PATTERN.test(value.innerMaxFeeStroops) &&
-    typeof value.reservedStroops === "string" &&
-    CANONICAL_DECIMAL_PATTERN.test(value.reservedStroops) &&
-    value.decisionCode === "reserved" &&
-    value.rejectionCode === null &&
-    value.lifecycle === "reserved" &&
-    typeof value.expiresAt === "number" &&
-    Number.isSafeInteger(value.expiresAt) &&
-    value.expiresAt > 0 &&
-    Number.isFinite(new Date(value.expiresAt).getTime())
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value > 0 &&
+    Number.isFinite(new Date(value).getTime())
   );
+}
+
+function isCanonicalTransactionHash(value: string): boolean {
+  try {
+    return assertValidTransactionHash(value) === value;
+  } catch {
+    return false;
+  }
+}
+
+function isCanonicalPublicKey(value: string): boolean {
+  try {
+    return assertValidPublicKey(value) === value;
+  } catch {
+    return false;
+  }
+}
+
+function isCanonicalContractId(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    return assertValidContractId(value) === value;
+  } catch {
+    return false;
+  }
+}
+
+function isCanonicalStroop(value: string): boolean {
+  if (!CANONICAL_DECIMAL_PATTERN.test(value)) return false;
+  if (value.length > GAS_MAX_STROOPS.toString().length) return false;
+  try {
+    const amount = BigInt(value);
+    return amount >= 0n && amount <= GAS_MAX_STROOPS;
+  } catch {
+    return false;
+  }
 }
 
 function toReservationDto(

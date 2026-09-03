@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   Address,
   Account,
-  Keypair,
   Networks,
   Operation,
   Transaction,
@@ -14,21 +13,27 @@ import {
 } from "@stellar/stellar-sdk";
 
 import {
+  buildGasTestEnvelope,
+  GAS_TEST_CONTRACT_ID,
+  GAS_TEST_SOURCE_KEYPAIR,
+  keypairForLabel,
+} from "./test-fixtures.ts";
+import {
   parseTestnetSorobanTransactionEnvelope,
+  TESTNET_TRANSACTION_ENVELOPE_MAX_XDR_BYTES,
   TestnetTransactionEnvelopeError,
   type TestnetTransactionEnvelopeErrorCode,
 } from "./transaction-envelope.ts";
 
-const VALID_TESTNET_XDR =
-  "AAAAAgAAAABadW5rta4REM0pw87n3o8AjuKAWqhQv5Yv8K6leUAAbQAAAGQAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAABqmD34AAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAFaGVsbG8AAAAAAAABAAAADwAAAARWZWxvAAAAAAAAAAAAAAABeUAAbQAAAEDTxNKaUtm2l4Soz5yILVJi6G7p88kCKjxUEgZEp5nMOaM8VUZXVC5dCTa9K/dYcuJGLsiQnI7kl+ANwfsthUkJ";
-const UNSIGNED_TESTNET_XDR =
-  "AAAAAgAAAABadW5rta4REM0pw87n3o8AjuKAWqhQv5Yv8K6leUAAbQAAAGQAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAABqmD34AAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAFaGVsbG8AAAAAAAABAAAADwAAAARWZWxvAAAAAAAAAAAAAAAA";
-const PUBLIC_NETWORK_XDR =
-  "AAAAAgAAAABadW5rta4REM0pw87n3o8AjuKAWqhQv5Yv8K6leUAAbQAAAGQAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAABqmD34AAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAFaGVsbG8AAAAAAAABAAAADwAAAARWZWxvAAAAAAAAAAAAAAABeUAAbQAAAEAfsC8s9qUgayPoUWzTGY4LjtRSzTianGeYOnoDSCs0ycw+zqcPXNFI8hSwPPF2M1xmqf1zLij2SEtP+uoAK8gN";
-
-const SOURCE_PUBLIC_KEY = "GBNHK3TLWWXBCEGNFHB45Z66R4AI5YUALKUFBP4WF7YK5JLZIAAG2DLI";
-const CONTRACT_ID = "CC7RENKPGXGF6MMEMGJ4YWUBOBGQYOCGG33PNSONQF56UMMAQ22TWH6R";
-const CONSTRUCTED_SOURCE = Keypair.fromRawEd25519Seed(Buffer.alloc(32, 7));
+const VALID_TESTNET_XDR = buildGasTestEnvelope({ kind: "valid", maxTime: "1788362232" });
+const UNSIGNED_TESTNET_XDR = buildGasTestEnvelope({ kind: "unsigned" });
+const PUBLIC_NETWORK_XDR = buildGasTestEnvelope({ kind: "wrong_network" });
+const SOURCE_PUBLIC_KEY = GAS_TEST_SOURCE_KEYPAIR.publicKey();
+const CONTRACT_ID = GAS_TEST_CONTRACT_ID;
+const CONSTRUCTED_SOURCE = GAS_TEST_SOURCE_KEYPAIR;
+const VALID_TRANSACTION_HASH = new Transaction(VALID_TESTNET_XDR, Networks.TESTNET)
+  .hash()
+  .toString("hex");
 
 function expectError(transactionXdr: string, code: TestnetTransactionEnvelopeErrorCode) {
   assert.throws(
@@ -75,54 +80,11 @@ function signedTransactionXdr(operation: xdr.Operation, maxTime: number = 300): 
 }
 
 function signedTransactionWithRawMaxTime(maxTime: string): string {
-  const base = xdr.TransactionEnvelope.fromXDR(
-    signedTransactionXdr(invokeContractOperation(new Address(CONTRACT_ID))),
-    "base64",
-  );
-  const transaction = base.v1().tx();
-  const alteredTransaction = new xdr.Transaction({
-    sourceAccount: transaction.sourceAccount(),
-    fee: transaction.fee(),
-    seqNum: transaction.seqNum(),
-    cond: xdr.Preconditions.precondTime(
-      new xdr.TimeBounds({
-        minTime: xdr.Uint64.fromString("0"),
-        maxTime: xdr.Uint64.fromString(maxTime),
-      }),
-    ),
-    memo: transaction.memo(),
-    operations: transaction.operations(),
-    ext: transaction.ext(),
-  });
-  const unsigned = xdr.TransactionEnvelope.envelopeTypeTx(
-    new xdr.TransactionV1Envelope({ tx: alteredTransaction, signatures: [] }),
-  ).toXDR("base64");
-  const signed = new Transaction(unsigned, Networks.TESTNET);
-  signed.sign(CONSTRUCTED_SOURCE);
-  return signed.toXDR();
+  return buildGasTestEnvelope({ maxTime });
 }
 
 function signedTransactionWithoutTimeBounds(): string {
-  const base = xdr.TransactionEnvelope.fromXDR(
-    signedTransactionXdr(invokeContractOperation(new Address(CONTRACT_ID))),
-    "base64",
-  );
-  const transaction = base.v1().tx();
-  const alteredTransaction = new xdr.Transaction({
-    sourceAccount: transaction.sourceAccount(),
-    fee: transaction.fee(),
-    seqNum: transaction.seqNum(),
-    cond: xdr.Preconditions.precondNone(),
-    memo: transaction.memo(),
-    operations: transaction.operations(),
-    ext: transaction.ext(),
-  });
-  const unsigned = xdr.TransactionEnvelope.envelopeTypeTx(
-    new xdr.TransactionV1Envelope({ tx: alteredTransaction, signatures: [] }),
-  ).toXDR("base64");
-  const signed = new Transaction(unsigned, Networks.TESTNET);
-  signed.sign(CONSTRUCTED_SOURCE);
-  return signed.toXDR();
+  return buildGasTestEnvelope({ maxTime: null });
 }
 
 function invokeContractOperation(address: Address): xdr.Operation {
@@ -140,7 +102,7 @@ function invokeContractOperation(address: Address): xdr.Operation {
 test("derives authoritative facts from a signed Testnet contract invocation", () => {
   assert.deepEqual(parseTestnetSorobanTransactionEnvelope(VALID_TESTNET_XDR), {
     sourceWallet: SOURCE_PUBLIC_KEY,
-    transactionHash: "a4d98992d858b947bc3e76e42f8ff2aae3d5734ddcb0cd2ace094055eb93f1ed",
+    transactionHash: VALID_TRANSACTION_HASH,
     innerMaxFeeStroops: 100n,
     targetContractIds: [CONTRACT_ID],
     innerMaxTime: 1788362232,
@@ -176,6 +138,25 @@ test("rejects unsigned and tampered envelopes as invalid signatures", () => {
 
 test("rejects a Public-network signature as wrong_network", () => {
   expectError(PUBLIC_NETWORK_XDR, "wrong_network");
+});
+
+test("rejects oversized XDR before decoding", () => {
+  expectError("A".repeat(TESTNET_TRANSACTION_ENVELOPE_MAX_XDR_BYTES + 1), "invalid_request");
+});
+
+test("requires one source signature with the correct hint", () => {
+  expectError(buildGasTestEnvelope({ signatureHint: Buffer.alloc(4, 0xff) }), "invalid_signature");
+  expectError(
+    buildGasTestEnvelope({ extraSignature: keypairForLabel("gas-extra-signer") }),
+    "invalid_signature",
+  );
+});
+
+test("rejects an alternate operation source", () => {
+  expectError(
+    buildGasTestEnvelope({ operationSource: keypairForLabel("gas-alternate-source").publicKey() }),
+    "unsupported_transaction",
+  );
 });
 
 test("rejects malformed XDR as invalid_request without exposing parser details", () => {

@@ -71,16 +71,14 @@ export async function verifyApiKeyForGas(
     return { authorized: false };
   }
 
-  let apiKey;
-  try {
-    apiKey = await ctx.db
-      .query("apiKeys")
-      .withIndex("by_key_hash", (q) => q.eq("keyHash", apiKeyHash))
-      .unique();
-  } catch {
-    // `.unique()` throws for an ambiguous hash; all key failures are uniform.
-    return { authorized: false };
-  }
+  const matchingApiKeys = await ctx.db
+    .query("apiKeys")
+    .withIndex("by_key_hash", (q) => q.eq("keyHash", apiKeyHash))
+    .take(2);
+  // An ambiguous credential is never authorized. The bounded read also lets real
+  // database failures propagate to the public action's dependency outcome.
+  if (matchingApiKeys.length !== 1) return { authorized: false };
+  const [apiKey] = matchingApiKeys;
 
   if (!apiKey || apiKey.revoked) return { authorized: false };
 
@@ -105,15 +103,12 @@ export async function revalidateGasApiKeyScope(
 ): Promise<boolean> {
   if (!GAS_API_KEY_HASH_PATTERN.test(args.apiKeyHash)) return false;
 
-  let keyedApiKey;
-  try {
-    keyedApiKey = await ctx.db
-      .query("apiKeys")
-      .withIndex("by_key_hash", (q) => q.eq("keyHash", args.apiKeyHash))
-      .unique();
-  } catch {
-    return false;
-  }
+  const matchingApiKeys = await ctx.db
+    .query("apiKeys")
+    .withIndex("by_key_hash", (q) => q.eq("keyHash", args.apiKeyHash))
+    .take(2);
+  if (matchingApiKeys.length !== 1) return false;
+  const [keyedApiKey] = matchingApiKeys;
 
   const apiKey = await ctx.db.get(args.apiKeyId);
   const project = await ctx.db.get(args.projectId);

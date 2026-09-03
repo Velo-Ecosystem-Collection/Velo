@@ -2,7 +2,7 @@
 type: architecture
 area: stellar
 status: current
-last_updated: 2026-09-03
+last_updated: 2026-09-04
 source_of_truth: repository
 ---
 
@@ -20,7 +20,7 @@ source_of_truth: repository
 
 `registry.ts` and `pay-access.ts` build/preflight contract transactions and confirm results. Contract-spec/argument modules load and normalize live Soroban specs for Playground simulation and exact XDR review.
 
-`transaction-envelope.ts` is the reusable authoritative admission helper for Sprint 3.1. It parses with `Networks.TESTNET`, accepts only a signed non-FeeBump transaction with exactly one `invokeHostFunction`/`invokeContract` operation targeting a contract address, verifies the source signature against the Testnet signature base, identifies a Public-network signature as `wrong_network`, and derives the source wallet, Testnet transaction hash, inner maximum fee, single contract target, and optional Convex-safe `maxTime` in seconds. Absent or zero `maxTime` is unbounded; values that cannot safely become Convex millisecond timestamps are invalid requests. `packages/backend/convex/gas/envelope.ts` validates and maps those facts to the locked Gas domain literals and stroop boundary. `packages/backend/convex/gas/public_api.ts` now authorizes, fingerprints, and delegates one reservation call; the Next.js HTTP route, submission, and relayer execution remain unimplemented.
+`transaction-envelope.ts` is the reusable authoritative admission helper for Sprint 3.1 and Sprint 4.4 hardening. It bounds XDR at 64 KiB before decoding, parses with `Networks.TESTNET`, accepts only a signed non-FeeBump transaction with exactly one source signature carrying the source-key hint and exactly one `invokeHostFunction`/`invokeContract` operation targeting a contract address, rejects alternate operation sources, verifies the signature against the Testnet signature base, identifies a Public-network signature as `wrong_network`, and derives the source wallet, Testnet transaction hash, inner maximum fee, single contract target, and optional Convex-safe `maxTime` in seconds. Absent or zero `maxTime` is unbounded; values that cannot safely become Convex millisecond timestamps are invalid requests. `packages/backend/convex/gas/envelope.ts` validates and maps those facts to the locked Gas domain literals and stroop boundary. Runtime deterministic test builders in `packages/stellar/src/test-fixtures.ts` construct valid, wrong-network, unsigned, classic, mixed, multi-operation, FeeBump, and max-time cases from public labels without checked-in envelopes or signing secrets.
 
 ## Backend Evidence
 

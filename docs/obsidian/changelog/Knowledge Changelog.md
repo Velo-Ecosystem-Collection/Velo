@@ -8,6 +8,12 @@ source_of_truth: repository
 
 # Knowledge Changelog
 
+## 2026-09-04
+
+- Hardened the D1 Gas Station public and HTTP boundaries: Convex actions now enforce XDR/idempotency limits and return typed dependency/payload outcomes; route bodies cancel oversized streams and sanitize dependency failures and malformed reservation projections; shared correlation IDs reject API-key, Stellar-seed, and JWT-shaped values.
+- Replaced broad uniqueness-error swallowing with bounded fail-closed reads across Gas authorization, admission, submit, console, and projections. Policy updates now roll stale counters into the current UTC day and reject same-day cap reductions below existing reservations atomically.
+- Tightened Stellar envelope admission to one correctly hinted source signature, no alternate operation source, and a 64 KiB parser bound. Signed-XDR fixtures now use deterministic runtime builders derived from public labels; no encoded envelopes or signing secrets are checked in.
+
 ## 2026-09-03
 
 - Completed Gas Station Sub-sprint 4.2: added the hourly internal bounded retention worker for 30-day Gas logs, deleting at most 100 expired indexed rows per transaction and scheduling immediate continuation for full pages; cleanup follows `retentionExpiresAt` independently of lifecycle status.

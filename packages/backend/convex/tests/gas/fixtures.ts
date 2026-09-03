@@ -1,10 +1,19 @@
+import {
+  buildGasTestEnvelope,
+  GAS_TEST_CONTRACT_ID,
+  GAS_TEST_DESTINATION_KEYPAIR,
+  GAS_TEST_OTHER_CONTRACT_ID,
+  GAS_TEST_RELAYER_KEYPAIR,
+  GAS_TEST_SOURCE_KEYPAIR,
+} from "@repo/stellar/test-fixtures";
+
 import { GAS_NETWORK, GAS_SUPPORTED_OPERATION } from "../../gas/types.ts";
 
-const TEST_SOURCE_PUBLIC_KEY = "GBNHK3TLWWXBCEGNFHB45Z66R4AI5YUALKUFBP4WF7YK5JLZIAAG2DLI";
-const TEST_CONTRACT_ID = "CC7RENKPGXGF6MMEMGJ4YWUBOBGQYOCGG33PNSONQF56UMMAQ22TWH6R";
-const TEST_DESTINATION_PUBLIC_KEY = "GCZCSOTTJVGJNVXKUUEPGZRWWEB4HOFCQLMZJX6VIP4C4ZURI4HVOIMA";
-const TEST_RELAYER_PUBLIC_KEY = "GAI7NKM2MASZ4OJH2LQNMXL4VEUVOWPVDNRVTB6XQRWYYRX3JD4KX4ZI";
-const OTHER_TEST_CONTRACT_ID = "CA7QYNF7SOWQ3LLQ6ZMPD6PTQVVBYV3R6DR2ICR6UBZMWRXZPPTD3FVO";
+const TEST_SOURCE_PUBLIC_KEY = GAS_TEST_SOURCE_KEYPAIR.publicKey();
+const TEST_CONTRACT_ID = GAS_TEST_CONTRACT_ID;
+const TEST_DESTINATION_PUBLIC_KEY = GAS_TEST_DESTINATION_KEYPAIR.publicKey();
+const TEST_RELAYER_PUBLIC_KEY = GAS_TEST_RELAYER_KEYPAIR.publicKey();
+const OTHER_TEST_CONTRACT_ID = GAS_TEST_OTHER_CONTRACT_ID;
 
 type EnvelopeDecision = "accepted" | "rejected";
 type EnvelopeRejectionReason =
@@ -44,16 +53,13 @@ function envelopeFixture(fixture: EnvelopeFixture): EnvelopeFixture {
   });
 }
 
-/**
- * Public, deterministic envelopes generated once with throwaway signing keys.
- * The signing keys are intentionally not part of this fixture module.
- */
+/** Deterministic envelopes are built in memory from public test labels. */
 export const gasEnvelopeFixtures = Object.freeze([
   envelopeFixture({
     id: "gas-envelope-valid-testnet-soroban",
     decision: "accepted",
     rejectionReason: null,
-    xdr: "AAAAAgAAAABadW5rta4REM0pw87n3o8AjuKAWqhQv5Yv8K6leUAAbQAAAGQAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAABqmD34AAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAFaGVsbG8AAAAAAAABAAAADwAAAARWZWxvAAAAAAAAAAAAAAABeUAAbQAAAEDTxNKaUtm2l4Soz5yILVJi6G7p88kCKjxUEgZEp5nMOaM8VUZXVC5dCTa9K/dYcuJGLsiQnI7kl+ANwfsthUkJ",
+    xdr: buildGasTestEnvelope({ kind: "valid", maxTime: "1788362232" }),
     metadata: {
       expectedSource: TEST_SOURCE_PUBLIC_KEY,
       expectedTarget: TEST_CONTRACT_ID,
@@ -67,7 +73,7 @@ export const gasEnvelopeFixtures = Object.freeze([
     id: "gas-envelope-unsigned-soroban",
     decision: "rejected",
     rejectionReason: "unsigned",
-    xdr: "AAAAAgAAAABadW5rta4REM0pw87n3o8AjuKAWqhQv5Yv8K6leUAAbQAAAGQAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAABqmD34AAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAFaGVsbG8AAAAAAAABAAAADwAAAARWZWxvAAAAAAAAAAAAAAAA",
+    xdr: buildGasTestEnvelope({ kind: "unsigned" }),
     metadata: {
       expectedSource: TEST_SOURCE_PUBLIC_KEY,
       expectedTarget: TEST_CONTRACT_ID,
@@ -81,7 +87,7 @@ export const gasEnvelopeFixtures = Object.freeze([
     id: "gas-envelope-mainnet-signed-soroban",
     decision: "rejected",
     rejectionReason: "wrong_network",
-    xdr: "AAAAAgAAAABadW5rta4REM0pw87n3o8AjuKAWqhQv5Yv8K6leUAAbQAAAGQAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAABqmD34AAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAFaGVsbG8AAAAAAAABAAAADwAAAARWZWxvAAAAAAAAAAAAAAABeUAAbQAAAEAfsC8s9qUgayPoUWzTGY4LjtRSzTianGeYOnoDSCs0ycw+zqcPXNFI8hSwPPF2M1xmqf1zLij2SEtP+uoAK8gN",
+    xdr: buildGasTestEnvelope({ kind: "wrong_network" }),
     metadata: {
       expectedSource: TEST_SOURCE_PUBLIC_KEY,
       expectedTarget: TEST_CONTRACT_ID,
@@ -95,7 +101,7 @@ export const gasEnvelopeFixtures = Object.freeze([
     id: "gas-envelope-classic-payment",
     decision: "rejected",
     rejectionReason: "classic_operation",
-    xdr: "AAAAAgAAAABadW5rta4REM0pw87n3o8AjuKAWqhQv5Yv8K6leUAAbQAAAGQAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAABqmD34AAAAAAAAAAEAAAAAAAAAAQAAAACyKTpzTUyW1uqlCPNmNrEDw7iigtmU39VD+C5mkUcPVwAAAAAAAAAAAJiWgAAAAAAAAAABeUAAbQAAAECXBDFZBNvyAJBLpo3rrjgN6ngjjd8U0OUWvOHfNI7FZCGI+YpQqZj9OQk27DMSKVy37cE1pwADLf+OJVTwr1QP",
+    xdr: buildGasTestEnvelope({ kind: "classic" }),
     metadata: {
       expectedSource: TEST_SOURCE_PUBLIC_KEY,
       expectedTarget: TEST_DESTINATION_PUBLIC_KEY,
@@ -109,7 +115,7 @@ export const gasEnvelopeFixtures = Object.freeze([
     id: "gas-envelope-multi-soroban",
     decision: "rejected",
     rejectionReason: "multiple_operations",
-    xdr: "AAAAAgAAAABadW5rta4REM0pw87n3o8AjuKAWqhQv5Yv8K6leUAAbQAAAMgAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAABqmD34AAAAAAAAAAIAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAFaGVsbG8AAAAAAAABAAAADwAAAARWZWxvAAAAAAAAAAAAAAAYAAAAAAAAAAG/EjVPNcxfMYRhk8xagXBNDDhGNvb2yc2Be+oxgIa1OwAAAAVoZWxsbwAAAAAAAAEAAAAPAAAABFZlbG8AAAAAAAAAAAAAAAF5QABtAAAAQINH2k3jjoex3kxLSQ4clPIC6Uo5BKOAXh1Dv2HAXPFI8v3aGmz8plMogVxcQel58jXb5rG+DtFEPa89H4zvFgE=",
+    xdr: buildGasTestEnvelope({ kind: "multi" }),
     metadata: {
       expectedSource: TEST_SOURCE_PUBLIC_KEY,
       expectedTarget: TEST_CONTRACT_ID,
@@ -123,7 +129,7 @@ export const gasEnvelopeFixtures = Object.freeze([
     id: "gas-envelope-mixed-soroban-payment",
     decision: "rejected",
     rejectionReason: "mixed_operations",
-    xdr: "AAAAAgAAAABadW5rta4REM0pw87n3o8AjuKAWqhQv5Yv8K6leUAAbQAAAMgAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAABqmD34AAAAAAAAAAIAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAFaGVsbG8AAAAAAAABAAAADwAAAARWZWxvAAAAAAAAAAAAAAABAAAAALIpOnNNTJbW6qUI82Y2sQPDuKKC2ZTf1UP4LmaRRw9XAAAAAAAAAAAAmJaAAAAAAAAAAAF5QABtAAAAQIT08WyFqe27+5qyGTjZqDp//B9X5RfLGH+lW2vO0iyu5frfNLHp4j3PEAeUZP5/J3dKSB5RquI27Uno8rfSrAI=",
+    xdr: buildGasTestEnvelope({ kind: "mixed" }),
     metadata: {
       expectedSource: TEST_SOURCE_PUBLIC_KEY,
       expectedTarget: TEST_CONTRACT_ID,
@@ -137,7 +143,7 @@ export const gasEnvelopeFixtures = Object.freeze([
     id: "gas-envelope-fee-bump-soroban",
     decision: "rejected",
     rejectionReason: "fee_bump",
-    xdr: "AAAABQAAAAAR9qmaYCWeOSfS4NZdfKkpV1n1G2NZh9eEbYxG+0j4qwAAAAAAAAGQAAAAAgAAAABadW5rta4REM0pw87n3o8AjuKAWqhQv5Yv8K6leUAAbQAAAGQAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAABqmD34AAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAFaGVsbG8AAAAAAAABAAAADwAAAARWZWxvAAAAAAAAAAAAAAABeUAAbQAAAEDTxNKaUtm2l4Soz5yILVJi6G7p88kCKjxUEgZEp5nMOaM8VUZXVC5dCTa9K/dYcuJGLsiQnI7kl+ANwfsthUkJAAAAAAAAAAH7SPirAAAAQHM641MbccwTc2JgKUEEQk1j98HXYcCkfiP1axk7ghuKfYi6X5Id6jQliSGy+3enfEVNvz/DkWkDjhTpQ+0OBAg=",
+    xdr: buildGasTestEnvelope({ kind: "fee_bump" }),
     metadata: {
       expectedSource: TEST_SOURCE_PUBLIC_KEY,
       expectedTarget: TEST_CONTRACT_ID,
@@ -407,17 +413,15 @@ export const gasPolicyFixtures = Object.freeze([
 export const gasFixtureLifecycleStates = Object.freeze(["reserved", "rejected", "expired"]);
 
 export const gasFixtureRelayerPublicKey = TEST_RELAYER_PUBLIC_KEY;
+export const gasFixtureSourceWallet = TEST_SOURCE_PUBLIC_KEY;
+export const gasFixtureContractId = TEST_CONTRACT_ID;
+export const gasFixtureOtherContractId = OTHER_TEST_CONTRACT_ID;
 
 /** Signed Testnet contract envelopes used to exercise the Convex-safe maxTime boundary. */
 export const gasMaxTimeEnvelopeFixtures = Object.freeze({
-  unbounded:
-    "AAAAAgAAAADqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLAAAAGQAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAFaGVsbG8AAAAAAAAAAAAAAAAAAAAAAAABFEbSLAAAAEAUxx6pXhgHr03pb1aV+cZ3TrLmftGWUp6VrfdBeKkXE5X7UeOnd0ZAX5RqBGeXiuVLUy0bz28tNdJTC1hTEJYJ",
-  alreadyExpired:
-    "AAAAAgAAAADqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLAAAAGQAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAFaGVsbG8AAAAAAAAAAAAAAAAAAAAAAAABFEbSLAAAAEAr38nug5vIn/pn8gpwpWFkQzVwDxk2fBpZjbv5sCj96J5ZRgKsctbg7+wT5tg+nc/tXDPLwc9s9tICsZgJAl8O",
-  earlier:
-    "AAAAAgAAAADqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLAAAAGQAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAAD0hlcAAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAFaGVsbG8AAAAAAAAAAAAAAAAAAAAAAAABFEbSLAAAAEDtUt+ner0Fj0haVLoxQHJziO2rsmHCjSCcwOepRjBHunAdSdJ81c0FaqytdEfIUYnco6bDk0UH7pFTcPYMuh4G",
-  later:
-    "AAAAAgAAAADqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLAAAAGQAAAAAAAAAAgAAAAEAAAAAAAAAAAAAAAD0hlcBAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAHZ29vZGJ5ZQAAAAAAAAAAAAAAAAAAAAABFEbSLAAAAEDORP2BPUShS6JbI6F/b66x3fwbVhUp08Vg4fgnVBSIR/+7nQ9CTePR7hAUMxsfJpiod/m7IHTbO3C7nj5sqP0J",
-  unsafe:
-    "AAAAAgAAAADqSmxj4pxSCr71UHsTLsX5lUd2rr6+e5JCHuppFEbSLAAAAGQAAAAAAAAAAgAAAAEAAAAAAAAAAAAACDEm6XjVAAAAAAAAAAEAAAAAAAAAGAAAAAAAAAABvxI1TzXMXzGEYZPMWoFwTQw4Rjb29snNgXvqMYCGtTsAAAAFaGVsbG8AAAAAAAAAAAAAAAAAAAAAAAABFEbSLAAAAEAWR3e9PwWGaN6Q2f3wtGwG3kDyUoCNl+HelOe+/QzcsK4FCPxvcohti152jb1gwAuqBkO29vH2zw87JS47VHQH",
+  unbounded: buildGasTestEnvelope({ maxTime: undefined }),
+  alreadyExpired: buildGasTestEnvelope({ maxTime: 1 }),
+  earlier: buildGasTestEnvelope({ maxTime: "4102444800" }),
+  later: buildGasTestEnvelope({ maxTime: "4102444801" }),
+  unsafe: buildGasTestEnvelope({ maxTime: "9007199254741" }),
 });

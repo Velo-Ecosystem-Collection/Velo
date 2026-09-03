@@ -18,6 +18,7 @@ import {
   relayerAccountProjectionValidator,
 } from "./projections";
 import { GAS_NETWORK } from "./types";
+import { assertValidGasPolicyState } from "./validation";
 
 /** Read the authenticated project's Testnet Gas policy. */
 export const getPolicy = query({
@@ -26,10 +27,13 @@ export const getPolicy = query({
   handler: async (ctx, args): Promise<GasPolicyProjection | null> => {
     await requireGasConsoleAccess(ctx, args.projectId, "read");
 
-    const policy = await ctx.db
+    const policyMatches = await ctx.db
       .query("gasPolicies")
       .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
-      .unique();
+      .take(2);
+    if (policyMatches.length > 1) throw new Error("Multiple Gas policies exist for project");
+    const policy = policyMatches[0] ?? null;
+    if (policy) assertValidGasPolicyState(policy);
 
     return policy ? projectGasPolicy(policy) : null;
   },
@@ -42,12 +46,14 @@ export const getRelayerAccount = query({
   handler: async (ctx, args): Promise<RelayerAccountProjection | null> => {
     await requireGasConsoleAccess(ctx, args.projectId, "read");
 
-    const account = await ctx.db
+    const accountMatches = await ctx.db
       .query("relayerAccounts")
       .withIndex("by_project_id_and_network", (q) =>
         q.eq("projectId", args.projectId).eq("network", GAS_NETWORK),
       )
-      .unique();
+      .take(2);
+    if (accountMatches.length > 1) throw new Error("Multiple Gas relayers exist for project");
+    const account = accountMatches[0] ?? null;
 
     return account ? projectRelayerAccount(account) : null;
   },

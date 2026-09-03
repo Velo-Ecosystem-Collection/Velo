@@ -313,13 +313,14 @@ test("webhook delivery preserves correlation ID in storage, payload, and headers
   };
 
   try {
-    await expect(
-      owner.action(api.webhookDelivery.sendTest, {
-        projectId,
-        eventType: "payment.succeeded",
-        correlationId: "Bearer tk_live_should_not_echo",
-      }),
-    ).rejects.toThrow("Invalid correlation ID");
+    await owner.action(api.webhookDelivery.sendTest, {
+      projectId,
+      eventType: "payment.succeeded",
+      correlationId: "Bearer tk_live_should_not_echo",
+    });
+    const generatedCorrelationId = receivedCorrelationId;
+    expect(generatedCorrelationId).not.toBe("Bearer tk_live_should_not_echo");
+    expect(generatedCorrelationId).toMatch(/^[0-9a-f-]{36}$/);
 
     await owner.action(api.webhookDelivery.sendTest, {
       projectId,

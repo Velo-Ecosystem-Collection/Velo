@@ -360,14 +360,54 @@ test("policy upsert enforces editor writes, normalizes values, and preserves acc
     enabled: false,
     network: GAS_NETWORK,
     dailyCapStroops: "0",
-    dailyReservedStroops: "250",
-    dailyWindowKey: "2026-01-01",
+    dailyReservedStroops: "0",
+    dailyWindowKey: new Date(updated.updatedAt).toISOString().slice(0, 10),
     walletHourlyLimit: 0,
     allowedContractIds: [],
     createdAt: 123,
   });
   expect(updated.updatedAt).toBeGreaterThanOrEqual(NOW);
   expect(await viewer.query(api.gas.queries.getPolicy, { projectId })).toEqual(updated);
+});
+
+test("same-day cap reductions below reserved stroops fail atomically", async () => {
+  const t = convexTest(schema, modules);
+  const editor = asWallet(t, EDITOR);
+  const projectId = await createProject(t);
+  await addMembership(t, projectId, EDITOR, "editor");
+
+  const created = await editor.mutation(api.gas.mutations.updatePolicy, {
+    projectId,
+    enabled: true,
+    dailyCapStroops: "1000",
+    walletHourlyLimit: 10,
+    allowedContractIds: [],
+  });
+  const currentDayKey = new Date().toISOString().slice(0, 10);
+  await t.run(async (ctx) => {
+    await ctx.db.patch(
+      (
+        await ctx.db
+          .query("gasPolicies")
+          .withIndex("by_project_id", (q) => q.eq("projectId", projectId))
+          .take(1)
+      )[0]!._id,
+      { dailyReservedStroops: 200n, dailyWindowKey: currentDayKey },
+    );
+  });
+
+  const before = await editor.query(api.gas.queries.getPolicy, { projectId });
+  await expect(
+    editor.mutation(api.gas.mutations.updatePolicy, {
+      projectId,
+      enabled: false,
+      dailyCapStroops: "199",
+      walletHourlyLimit: 0,
+      allowedContractIds: [],
+    }),
+  ).rejects.toThrow("Daily Gas cap cannot be lower");
+  expect(await editor.query(api.gas.queries.getPolicy, { projectId })).toEqual(before);
+  expect(created.dailyReservedStroops).toBe("0");
 });
 
 test("policy writes reject invalid decimal, numeric, allowlist, and extra authority fields", async () => {

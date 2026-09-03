@@ -151,6 +151,9 @@ export type SafeTelemetryEvent = {
 };
 
 const CORRELATION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
+const VELO_API_KEY = /^tk_(?:live|test)_[a-f0-9]{32}$/i;
+const STELLAR_SECRET_SEED = /^S[A-Z2-7]{55}$/;
+const JWT_LIKE_VALUE = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
 const TRACEPARENT = /^00-(?!0{32})[0-9a-f]{32}-(?!0{16})[0-9a-f]{16}-[0-9a-f]{2}$/;
 const METRIC_LABELS = new Set([
   "service",
@@ -180,7 +183,13 @@ const SAFE_EVENT_KEYS = new Set<keyof SafeTelemetryEvent>([
 ]);
 
 export function isCorrelationId(value: unknown): value is string {
-  return typeof value === "string" && CORRELATION_ID.test(value);
+  return (
+    typeof value === "string" &&
+    CORRELATION_ID.test(value) &&
+    !VELO_API_KEY.test(value) &&
+    !STELLAR_SECRET_SEED.test(value) &&
+    !JWT_LIKE_VALUE.test(value)
+  );
 }
 
 export function isTraceparent(value: unknown): value is string {

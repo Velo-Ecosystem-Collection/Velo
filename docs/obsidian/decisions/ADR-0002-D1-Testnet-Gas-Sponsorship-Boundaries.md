@@ -2,7 +2,7 @@
 type: decision
 area: gas-station
 status: accepted
-last_updated: 2026-09-03
+last_updated: 2026-09-04
 source_of_truth: repository
 ---
 
@@ -20,6 +20,8 @@ D1 exposes only `POST /api/gas/sponsor` and `POST /api/gas/submit`; no versioned
 
 The initial reservation is the inner maximum fee plus 100 stroops. D2 must atomically increase that reservation before constructing a FeeBump with a higher maximum. A reservation expires at the earlier of the inner transaction’s `maxTime` and 15 minutes after reservation creation. Denials consume neither daily budget nor wallet quota. A proven D2 pre-submission failure releases daily reserved budget; uncertain submissions remain reserved for reconciliation, and consumed wallet quota is not refunded.
 
+All public Convex action inputs are independently bounded at the action boundary: XDR is at most 64 KiB and idempotency keys are at most 255 UTF-8 bytes. Oversized sponsor input returns typed `payload_too_large`, which HTTP exposes as `413 invalid_request`; authorization, reservation, and submit dependency failures return typed `dependency_unavailable` and HTTP `503`, while unexpected invariant failures remain sanitized `internal_error`. Indexed uniqueness reads are bounded to two rows; duplicate or corrupt records fail closed rather than being mistaken for a dependency outage. Successful reservation projections must contain canonical checksum-valid identifiers, one target, bounded canonical stroop values with `reserved = inner fee + 100`, safe correlation IDs, and a valid expiry.
+
 In D1, `/submit` validates project ownership, transaction-hash correlation, expiry, duplicate submission, and lifecycle. It then returns `503 handoff_unavailable` without changing a `reserved` record or implying queued or network work. D2 owns FeeBump construction, signing, submission, retries, reconciliation, and network-success truth.
 
 The complete decision and HTTP outcome matrix is maintained in the [[../../instawards/Velo-Instawards-Deliverable-1-Sprint-Plan|D1 sprint plan]].
@@ -30,10 +32,11 @@ The complete decision and HTTP outcome matrix is maintained in the [[../../insta
 - Gas logs are retained for 30 days and cleanup is processed in pages of 100.
 - Authenticated policy denials may create redacted rejection audit records without reserving budget or quota. Invalid authentication and unparseable or oversized input do not create audit records.
 - Public responses use the locked safe status mapping and contain no raw XDR, credentials, signatures, private keys, or unnecessary internal identifiers.
+- Correlation IDs that resemble complete Velo API keys, Stellar secret seeds, or JWTs are replaced before response headers, error bodies, or telemetry. Policy updates roll stale counters to the current UTC day and reject a same-day cap below already-reserved stroops without changing state.
 
 ## Implementation status
 
-This is an accepted design decision, not a claim that the complete Gas Station runtime exists. The schema, validation, authorization, safe projections, pure policy evaluator, authenticated console policy/relayer metadata CRUD, internal atomic admission reservation, D1 submit lifecycle mutation, Convex sponsor/submit orchestration, and bounded retention cleanup are implemented. The two unversioned Next.js public HTTP routes are implemented with bounded, redacted, correlated error handling. The submit seam only validates ownership/hash/lifecycle and expires overdue reservations with guarded same-day budget release; an active reservation returns `handoff_unavailable`. The hourly internal retention worker deletes only logs whose locked 30-day deadline has elapsed, in pages of at most 100 with immediate continuation for full pages; lifecycle status does not override retention. Relayer code, SDK helpers, dashboard UI, and contracts remain planned work under Deliverable 1 and later deliverables.
+This is an accepted design decision, not a claim that the complete Gas Station runtime exists. The schema, validation, authorization, safe projections, pure policy evaluator, authenticated console policy/relayer metadata CRUD, internal atomic admission reservation, D1 submit lifecycle mutation, Convex sponsor/submit orchestration, and bounded retention cleanup are implemented. The two unversioned Next.js public HTTP routes are implemented with bounded, cancellable, redacted, correlated error handling. The submit seam only validates ownership/hash/lifecycle and expires overdue reservations with guarded same-day budget release; an active reservation returns `handoff_unavailable`. The hourly internal retention worker deletes only logs whose locked 30-day deadline has elapsed, in pages of at most 100 with immediate continuation for full pages; lifecycle status does not override retention. Relayer code, SDK helpers, dashboard UI, and contracts remain planned work under Deliverable 1 and later deliverables.
 
 ## Consequences
 

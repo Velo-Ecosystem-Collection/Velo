@@ -9,6 +9,7 @@
     "./contract-config": "./src/contract-config.ts",
     "./event-monitor": "./src/event-monitor.ts",
     "./transaction-debugger": "./src/transaction-debugger.ts",
+    "./transaction-envelope": "./src/transaction-envelope.ts",
     "./validation": "./src/validation.ts"
   },
   "scripts": {

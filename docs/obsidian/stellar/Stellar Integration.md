@@ -2,7 +2,7 @@
 type: architecture
 area: stellar
 status: current
-last_updated: 2026-08-31
+last_updated: 2026-09-03
 source_of_truth: repository
 ---
 
@@ -10,7 +10,7 @@ source_of_truth: repository
 
 ## Shared Package
 
-`packages/stellar/src/index.ts` exports helpers for wallet auth/WebAuth, classic checkout payments, contract configuration, contract specs/arguments, Registry and PayAccess calls, event monitoring, transaction debugging, Playground code generation/project variables, validation, and webhook utilities.
+`packages/stellar/src/index.ts` exports helpers for wallet auth/WebAuth, classic checkout payments, contract configuration, contract specs/arguments, Registry and PayAccess calls, event monitoring, transaction debugging, authoritative Testnet transaction-envelope validation, Playground code generation/project variables, validation, and webhook utilities.
 
 ## Classic Payments
 
@@ -19,6 +19,8 @@ source_of_truth: repository
 ## Soroban
 
 `registry.ts` and `pay-access.ts` build/preflight contract transactions and confirm results. Contract-spec/argument modules load and normalize live Soroban specs for Playground simulation and exact XDR review.
+
+`transaction-envelope.ts` is the reusable authoritative admission helper for Sprint 3.1. It parses with `Networks.TESTNET`, accepts only a signed non-FeeBump transaction with exactly one `invokeHostFunction`/`invokeContract` operation targeting a contract address, verifies the source signature against the Testnet signature base, identifies a Public-network signature as `wrong_network`, and derives the source wallet, Testnet transaction hash, inner maximum fee, and single contract target. `packages/backend/convex/gas/envelope.ts` maps those facts to the locked Gas domain literals and stroop boundary. Durable admission, reservations, API routes, submission, and relayer execution remain unimplemented.
 
 ## Backend Evidence
 

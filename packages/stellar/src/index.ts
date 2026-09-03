@@ -6,6 +6,7 @@ export * from "./contract-spec.ts";
 export * from "./event-monitor.ts";
 export * from "./registry.ts";
 export * from "./transaction-debugger.ts";
+export * from "./transaction-envelope.ts";
 export * from "./validation.ts";
 export * from "./pay-access.ts";
 export * from "./playground-codegen.ts";

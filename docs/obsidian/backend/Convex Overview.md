@@ -18,7 +18,7 @@ The Convex application lives in `packages/backend/convex`. `schema.ts` composes 
 - `settlement`, `provider_*`, `payment_intent_route_jobs`, `pdax_route_cache`: PDAX operations and route enrichment.
 - `webhook_*`: event snapshots, delivery transport, signatures, retries, and replay.
 - `contract_events`, `poller_state`, `payAccessSync`, `contractEventPolling`: Soroban event ingestion.
-- `gas`: Testnet-only Gas policy, relayer metadata, safe projections, console authorization, and policy evaluation.
+- `gas`: Testnet-only Gas policy, relayer metadata, safe projections, console authorization, policy evaluation, and the internal atomic admission/reservation boundary.
 - `playground_projects`, `wallet_configs`: project-integrated developer tools and published wallet runtime configuration.
 - `telemetry_outbox`, `journey_stages`, `rate_limits`: diagnostics, lifecycle visibility, and admission control.
 

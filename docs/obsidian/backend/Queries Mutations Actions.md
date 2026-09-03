@@ -29,7 +29,7 @@ This is a domain-level index of high-value Convex entry points, not an exhaustiv
 - Billing mutations own immutable ledger/lot/balance operations, top-ups, exceptions, launch policy, and reconciliation.
 - Webhook mutations create/claim/finish/retry/replay delivery records with lease fencing.
 - Provider/event/poller mutations checkpoint workers and move ambiguous records into recovery/quarantine.
-- Gas: `gas/mutations.ts` — editor policy upsert and owner relayer metadata upsert with Testnet-only fields, exact stroop handling, and safe projection returns.
+- Gas: `gas/mutations.ts` — editor policy upsert and owner relayer metadata upsert with Testnet-only fields, exact stroop handling, and safe projection returns; `gas/admission.ts` — internal atomic API-key revalidation, idempotency, policy, quota, and reservation decision mutation.
 
 ## Actions
 

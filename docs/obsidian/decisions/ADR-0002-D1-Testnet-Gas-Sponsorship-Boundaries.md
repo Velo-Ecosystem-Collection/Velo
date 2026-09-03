@@ -33,7 +33,7 @@ The complete decision and HTTP outcome matrix is maintained in the [[../../insta
 
 ## Implementation status
 
-This is an accepted design decision, not a claim that the complete Gas Station runtime exists. The schema, validation, authorization, safe projections, pure policy evaluator, and authenticated console policy/relayer metadata CRUD are implemented as D1 groundwork. Durable admission, API routes, cleanup, relayer code, SDK helpers, dashboard UI, and contracts remain planned work under Deliverable 1 and later deliverables.
+This is an accepted design decision, not a claim that the complete Gas Station runtime exists. The schema, validation, authorization, safe projections, pure policy evaluator, authenticated console policy/relayer metadata CRUD, and internal atomic admission reservation are implemented as D1 groundwork. Public API routes/orchestration, cleanup, relayer code, SDK helpers, dashboard UI, and contracts remain planned work under Deliverable 1 and later deliverables.
 
 ## Consequences
 

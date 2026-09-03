@@ -17,7 +17,7 @@ const REQUEST_CORRELATION_ID = "gas-sponsor-test-001";
 const EXPIRES_AT = 1_782_865_800_000;
 
 type ResponseBody = {
-  error?: { code: string; requestId: string; message: string };
+  error?: { type: string; code: string; requestId: string; message: string };
   [key: string]: unknown;
 };
 
@@ -155,6 +155,48 @@ test("Authorization Bearer takes precedence over x-api-key and both hash the for
   });
   assert.equal(malformedPrecedence.response.status, 401);
   assert.equal(malformedPrecedence.calls.length, 0);
+});
+
+test("missing and malformed credentials are uniformly unauthorized before Convex or body parsing", async () => {
+  const cases: ReadonlyArray<{ id: string; headers: Record<string, string> }> = [
+    { id: "missing", headers: { authorization: "", "x-api-key": "" } },
+    { id: "blank-bearer", headers: { authorization: "Bearer ", "x-api-key": "" } },
+    { id: "malformed-scheme", headers: { authorization: `Basic ${API_KEY}`, "x-api-key": "" } },
+    {
+      id: "wrong-prefix",
+      headers: { authorization: `Bearer tk_test_${"c".repeat(32)}`, "x-api-key": "" },
+    },
+    {
+      id: "wrong-length",
+      headers: { authorization: `Bearer tk_live_${"c".repeat(31)}`, "x-api-key": "" },
+    },
+    {
+      id: "malformed-x-api-key",
+      headers: { authorization: "", "x-api-key": `tk_live_${"C".repeat(32)}` },
+    },
+  ];
+
+  for (const credential of cases) {
+    const sensitiveXdr = `${TRANSACTION_XDR}-${credential.id}-${API_KEY}`;
+    const { response, calls } = await invoke(reservationResult(), {
+      headers: credential.headers,
+      body: JSON.stringify({ transactionXdr: sensitiveXdr }),
+    });
+
+    assert.equal(response.status, 401, credential.id);
+    assertRouteHeaders(response);
+    const body = await responseBody(response);
+    assert.deepEqual(body.error, {
+      type: "auth_error",
+      code: "invalid_api_key",
+      message: "Missing or invalid API key.",
+      requestId: REQUEST_CORRELATION_ID,
+    });
+    assert.equal(calls.length, 0, credential.id);
+    const serialized = JSON.stringify(body);
+    assert.equal(serialized.includes(API_KEY), false);
+    assert.equal(serialized.includes(sensitiveXdr), false);
+  }
 });
 
 test("missing, blank, and oversized idempotency keys are invalid requests", async () => {

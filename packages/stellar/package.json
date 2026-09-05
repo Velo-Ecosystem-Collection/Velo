@@ -8,6 +8,7 @@
     "./contract-arguments": "./src/contract-arguments.ts",
     "./contract-config": "./src/contract-config.ts",
     "./event-monitor": "./src/event-monitor.ts",
+    "./fee-bump": "./src/fee-bump.ts",
     "./transaction-debugger": "./src/transaction-debugger.ts",
     "./transaction-envelope": "./src/transaction-envelope.ts",
     "./test-fixtures": "./src/test-fixtures.ts",

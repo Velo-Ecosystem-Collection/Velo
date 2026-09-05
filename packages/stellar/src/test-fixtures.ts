@@ -31,6 +31,7 @@ export type GasTestEnvelopeKind =
 export type GasTestEnvelopeOptions = Readonly<{
   kind?: GasTestEnvelopeKind;
   fee?: string;
+  resourceFee?: string | bigint;
   maxTime?: number | string | null;
   operationSource?: string;
   extraSignature?: Keypair;
@@ -83,6 +84,21 @@ function buildTransaction(
     networkPassphrase,
   });
   for (const operation of operations) builder.addOperation(operation);
+
+  if (options.resourceFee !== undefined) {
+    builder.setSorobanData(
+      new xdr.SorobanTransactionData({
+        resources: new xdr.SorobanResources({
+          footprint: new xdr.LedgerFootprint({ readOnly: [], readWrite: [] }),
+          instructions: 1_000,
+          diskReadBytes: 100,
+          writeBytes: 100,
+        }),
+        ext: new xdr.SorobanTransactionDataExt(0),
+        resourceFee: new xdr.Int64(String(options.resourceFee)),
+      }),
+    );
+  }
 
   if (options.maxTime === null) {
     builder.setTimeout(TimeoutInfinite);

@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 
+import { isCorrelationId } from "@repo/observability";
+
 const API_KEY_PATTERN = /^tk_live_[a-f0-9]{32}$/;
 export const PAYMENT_INTENT_STATUSES = [
   "awaiting_route",
@@ -68,8 +70,10 @@ export function veloErrorResponse(args: {
   message: string;
   param?: string;
   headers?: Record<string, string>;
+  requestId?: string;
 }) {
-  const requestId = crypto.randomUUID();
+  const suppliedRequestId = args.requestId?.trim();
+  const requestId = isCorrelationId(suppliedRequestId) ? suppliedRequestId : crypto.randomUUID();
   const response = Response.json(
     {
       error: {

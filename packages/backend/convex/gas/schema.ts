@@ -31,6 +31,12 @@ export const gasLifecycleValidator = v.union(
   v.literal(GAS_LIFECYCLE_STATES.reserved),
   v.literal(GAS_LIFECYCLE_STATES.rejected),
   v.literal(GAS_LIFECYCLE_STATES.expired),
+  v.literal(GAS_LIFECYCLE_STATES.claimed),
+  v.literal(GAS_LIFECYCLE_STATES.submissionUnknown),
+  v.literal(GAS_LIFECYCLE_STATES.submitted),
+  v.literal(GAS_LIFECYCLE_STATES.succeeded),
+  v.literal(GAS_LIFECYCLE_STATES.failed),
+  v.literal(GAS_LIFECYCLE_STATES.cancelled),
 );
 
 export const gasRelayerStatusValidator = v.union(
@@ -94,3 +100,48 @@ export const relayerAccounts = defineTable({
 })
   .index("by_project_id_and_network", ["projectId", "network"])
   .index("by_public_key", ["publicKey"]);
+
+/**
+ * Durable D2 execution identity and accounting facts.
+ *
+ * This table deliberately contains no signed envelope, signature, secret, or
+ * raw provider response. It is independent from gasLogs so reconciliation can
+ * continue after the D1 audit row is retained or deleted.
+ */
+export const gasExecutionAttempts = defineTable({
+  projectId: v.id("projects"),
+  network: gasNetworkValidator,
+  requestId: v.string(),
+  idempotencyKeyHash: v.string(),
+  requestFingerprint: v.string(),
+  innerTransactionHash: v.string(),
+  sourceWallet: v.string(),
+  targetContractIds: v.array(v.string()),
+  innerMaxFeeStroops: v.int64(),
+  originalReservationStroops: v.int64(),
+  reservationCreatedAt: v.number(),
+  reservationExpiresAt: v.number(),
+  accountingDayKey: v.string(),
+  lifecycle: gasLifecycleValidator,
+  approvedHoldStroops: v.int64(),
+  feeCeilingStroops: v.int64(),
+  relayerPublicKey: v.string(),
+  outerTransactionHash: v.optional(v.string()),
+  leaseToken: v.optional(v.string()),
+  leaseGeneration: v.number(),
+  leaseExpiresAt: v.optional(v.number()),
+  sendCount: v.number(),
+  nextCheckAt: v.number(),
+  firstPossibleSendAt: v.optional(v.number()),
+  reconciliationDeadlineAt: v.optional(v.number()),
+  reconciliationRequired: v.boolean(),
+  actualFeeStroops: v.optional(v.int64()),
+  settledAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_project_id_and_request_id", ["projectId", "requestId"])
+  .index("by_project_id_and_idempotency_key_hash", ["projectId", "idempotencyKeyHash"])
+  .index("by_project_id_and_inner_transaction_hash", ["projectId", "innerTransactionHash"])
+  .index("by_lifecycle_and_next_check_at", ["lifecycle", "nextCheckAt"])
+  .index("by_lifecycle_and_lease_expires_at", ["lifecycle", "leaseExpiresAt"]);

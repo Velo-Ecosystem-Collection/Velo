@@ -69,13 +69,19 @@ function assertNoSecretLikeData(value: unknown, key = ""): void {
   }
 }
 
-test("gas domain exposes only the locked D1 vocabulary", () => {
+test("gas domain exposes the preserved D1 and accepted D2 lifecycle vocabulary", () => {
   expect(GAS_NETWORK).toBe("testnet");
   expect(GAS_SUPPORTED_OPERATION).toBe("invokeHostFunction");
   expect(GAS_LIFECYCLE_STATES).toEqual({
     reserved: "reserved",
     rejected: "rejected",
     expired: "expired",
+    claimed: "claimed",
+    submissionUnknown: "submission_unknown",
+    submitted: "submitted",
+    succeeded: "succeeded",
+    failed: "failed",
+    cancelled: "cancelled",
   });
 });
 

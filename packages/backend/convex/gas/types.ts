@@ -16,11 +16,17 @@ export const GAS_MAX_ALLOWED_CONTRACT_IDS = 20;
 export const GAS_SUPPORTED_OPERATION = "invokeHostFunction" as const;
 export type GasSupportedOperation = typeof GAS_SUPPORTED_OPERATION;
 
-/** The initial D1 lifecycle vocabulary; D2 may extend it behind a trusted seam. */
+/** D1 admission and D2 trusted execution lifecycle vocabulary. */
 export const GAS_LIFECYCLE_STATES = {
   reserved: "reserved",
   rejected: "rejected",
   expired: "expired",
+  claimed: "claimed",
+  submissionUnknown: "submission_unknown",
+  submitted: "submitted",
+  succeeded: "succeeded",
+  failed: "failed",
+  cancelled: "cancelled",
 } as const;
 
 export type GasLifecycleState = (typeof GAS_LIFECYCLE_STATES)[keyof typeof GAS_LIFECYCLE_STATES];

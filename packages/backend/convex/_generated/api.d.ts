@@ -43,6 +43,7 @@ import type * as feedback_query from "../feedback/query.js";
 import type * as gas_admission from "../gas/admission.js";
 import type * as gas_authorization from "../gas/authorization.js";
 import type * as gas_envelope from "../gas/envelope.js";
+import type * as gas_execution from "../gas/execution.js";
 import type * as gas_mutations from "../gas/mutations.js";
 import type * as gas_policy from "../gas/policy.js";
 import type * as gas_projections from "../gas/projections.js";
@@ -171,6 +172,7 @@ declare const fullApi: ApiFromModules<{
   "gas/admission": typeof gas_admission;
   "gas/authorization": typeof gas_authorization;
   "gas/envelope": typeof gas_envelope;
+  "gas/execution": typeof gas_execution;
   "gas/mutations": typeof gas_mutations;
   "gas/policy": typeof gas_policy;
   "gas/projections": typeof gas_projections;

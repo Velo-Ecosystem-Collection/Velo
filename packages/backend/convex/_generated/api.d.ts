@@ -49,6 +49,7 @@ import type * as gas_projections from "../gas/projections.js";
 import type * as gas_public_api from "../gas/public_api.js";
 import type * as gas_public_api_internal from "../gas/public_api_internal.js";
 import type * as gas_queries from "../gas/queries.js";
+import type * as gas_relayer from "../gas/relayer.js";
 import type * as gas_retention from "../gas/retention.js";
 import type * as gas_submit from "../gas/submit.js";
 import type * as gas_types from "../gas/types.js";
@@ -176,6 +177,7 @@ declare const fullApi: ApiFromModules<{
   "gas/public_api": typeof gas_public_api;
   "gas/public_api_internal": typeof gas_public_api_internal;
   "gas/queries": typeof gas_queries;
+  "gas/relayer": typeof gas_relayer;
   "gas/retention": typeof gas_retention;
   "gas/submit": typeof gas_submit;
   "gas/types": typeof gas_types;

@@ -13,6 +13,7 @@ const app = defineApp({
     VELO_PLAYGROUND_RATE_LIMIT_SECRET: v.optional(v.string()),
     VELO_PLAYGROUND_PERSISTENCE_SECRET: v.optional(v.string()),
     VELO_STELLAR_NETWORK: v.optional(v.union(v.literal("testnet"), v.literal("public"))),
+    VELO_GAS_TESTNET_RELAYER_SIGNERS_JSON: v.optional(v.string()),
     VELO_MAINNET_USDC_ISSUER: v.optional(v.string()),
     VELO_DEPLOYMENT_ENVIRONMENT: v.optional(
       v.union(v.literal("development"), v.literal("preview"), v.literal("production")),

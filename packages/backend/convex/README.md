@@ -81,3 +81,18 @@ outbox telemetry, bounded gauge scans, and exporter claims. The switch defaults 
 is unset. Existing outbox rows remain available for the hourly expiry worker to delete.
 
 Sprint 10 is **IMPLEMENTED — LIVE EVIDENCE PENDING**. See the [architecture](../../../docs/architecture/sprint-10-end-to-end-observability-and-redaction.md), [operator runbook](../../../docs/operations/sprint-10-observability-and-redaction-runbook.md), and [evidence report](../../../docs/references/sprint-10-observability-redaction-and-overhead-report.md).
+
+## Testnet Gas relayer custody
+
+`VELO_GAS_TESTNET_RELAYER_SIGNERS_JSON` is an optional, typed Convex environment variable whose
+value is a bounded JSON array of exact entries shaped as
+`{ "projectId": "<Convex project ID>", "network": "testnet", "secretKey": "<deployment-only Stellar seed>" }`.
+The value is consumed only by the Node-runtime `convex/gas/relayer.ts` boundary. Missing or invalid
+configuration fails closed; seeds and SDK keypairs are never returned, stored, logged, or included
+in errors. The internal `gas.relayer.readiness` action returns only a fixed status, `testnet`, and
+the verified public key when ready.
+
+Rotate custody by disabling the project's `relayerAccounts` metadata before changing the deployment
+variable. Configure the replacement out of band, run readiness, update the stored public key, and
+re-enable the metadata only after the derived key matches exactly. A configuration change alone
+must not authorize signing.

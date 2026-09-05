@@ -182,6 +182,9 @@ importers:
       '@repo/stellar':
         specifier: workspace:*
         version: link:../stellar
+      '@stellar/stellar-sdk':
+        specifier: 14.2.0
+        version: 14.2.0
       '@upstash/redis':
         specifier: ^1.38.0
         version: 1.38.0

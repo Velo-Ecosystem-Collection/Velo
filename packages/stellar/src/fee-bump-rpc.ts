@@ -29,6 +29,11 @@ export type TestnetFeeBumpRpcConfiguration = Readonly<{
   rpcUrl?: string;
   /** A deterministic transport seam for tests or a trusted backend adapter. */
   transport?: TestnetFeeBumpRpcTransport;
+  /**
+   * Optional last-mile authorization. It runs after local envelope and network
+   * preflight and immediately before transport submission.
+   */
+  authorizeSend?: TestnetFeeBumpRpcAuthorizationHook;
 }>;
 
 export type TestnetFeeBumpRpcTransport = Readonly<{
@@ -37,10 +42,15 @@ export type TestnetFeeBumpRpcTransport = Readonly<{
   getTransaction(hash: string): Promise<unknown>;
 }>;
 
+export type TestnetFeeBumpRpcAuthorizationHook = (
+  request: TestnetFeeBumpSendRequest,
+) => Promise<boolean>;
+
 export const TESTNET_FEE_BUMP_RPC_CONFIGURATION_ERROR_CODES = {
   invalidConfiguration: "invalid_configuration",
   invalidEndpoint: "invalid_endpoint",
   invalidTransport: "invalid_transport",
+  invalidAuthorizationHook: "invalid_authorization_hook",
 } as const;
 
 export type TestnetFeeBumpRpcConfigurationErrorCode =
@@ -50,6 +60,7 @@ const CONFIGURATION_ERROR_MESSAGES: Record<TestnetFeeBumpRpcConfigurationErrorCo
   invalid_configuration: "Invalid Testnet RPC configuration",
   invalid_endpoint: "Invalid Testnet RPC endpoint",
   invalid_transport: "Invalid Testnet RPC transport",
+  invalid_authorization_hook: "Invalid Testnet RPC authorization hook",
 };
 
 export class TestnetFeeBumpRpcConfigurationError extends Error {
@@ -86,6 +97,8 @@ export const TESTNET_FEE_BUMP_RPC_PREFLIGHT_ERROR_CODES = {
   networkTimeout: "network_timeout",
   networkUnavailable: "network_unavailable",
   networkResponseMalformed: "network_response_malformed",
+  sendAuthorizationDenied: "send_authorization_denied",
+  sendAuthorizationUnavailable: "send_authorization_unavailable",
 } as const;
 
 export type TestnetFeeBumpRpcPreflightErrorCode =
@@ -667,6 +680,10 @@ export function createTestnetFeeBumpRpcAdapter(
   if (transport !== undefined && !isValidTransport(transport)) {
     throw new TestnetFeeBumpRpcConfigurationError("invalid_transport");
   }
+  const authorizeSend = configuration.authorizeSend;
+  if (authorizeSend !== undefined && typeof authorizeSend !== "function") {
+    throw new TestnetFeeBumpRpcConfigurationError("invalid_authorization_hook");
+  }
 
   const selectedTransport = transport ?? sdkTransport(endpoint);
 
@@ -677,6 +694,16 @@ export function createTestnetFeeBumpRpcAdapter(
 
       const network = await verifyTestnetNetwork(selectedTransport);
       if (network.status !== "ok") return network;
+
+      if (authorizeSend !== undefined) {
+        let authorized: boolean;
+        try {
+          authorized = await authorizeSend(request);
+        } catch {
+          return preflightFailure("send_authorization_unavailable");
+        }
+        if (authorized !== true) return preflightFailure("send_authorization_denied");
+      }
 
       const result = await withDeadline(
         () => selectedTransport.sendTransaction(preflight.value.transaction),

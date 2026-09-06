@@ -21,7 +21,7 @@ import type { GasSubmitResult as GasSubmitMutationResult } from "./submit";
 import { internal } from "../_generated/api";
 import { action } from "../_generated/server";
 import { deriveGasTransactionFacts } from "./envelope";
-import { claimGasExecution } from "./execution_action";
+import { executeGasExecution } from "./execution_action";
 import {
   gasLogProjectionValidator,
   gasSubmitResultProjectionValidator,
@@ -426,7 +426,7 @@ export const submit = action({
 
       let claim: GasClaimResult;
       try {
-        claim = await claimGasExecution(
+        claim = await executeGasExecution(
           ctx,
           {
             apiKeyHash: args.apiKeyHash,

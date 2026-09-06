@@ -54,6 +54,80 @@ export const gasRelayerStatusValidator = v.union(
   v.literal(GAS_RELAYER_STATUSES.disabled),
 );
 
+const gasSendUnknownReasonValidator = v.union(
+  v.literal("timeout"),
+  v.literal("transport_failure"),
+  v.literal("malformed_response"),
+  v.literal("hash_mismatch"),
+);
+
+/** Sanitized post-authorization adapter evidence retained for recovery. */
+export const gasSendClassificationValidator = v.union(
+  v.object({
+    status: v.literal("pending"),
+    outerTransactionHash: v.string(),
+    sendCount: v.number(),
+    recordedAt: v.number(),
+  }),
+  v.object({
+    status: v.literal("duplicate"),
+    outerTransactionHash: v.string(),
+    sendCount: v.number(),
+    recordedAt: v.number(),
+  }),
+  v.object({
+    status: v.literal("retry_later"),
+    outerTransactionHash: v.string(),
+    sendCount: v.number(),
+    recordedAt: v.number(),
+  }),
+  v.object({
+    status: v.literal("rejected"),
+    outerTransactionHash: v.string(),
+    sendCount: v.number(),
+    recordedAt: v.number(),
+    resultCode: v.optional(v.string()),
+  }),
+  v.object({
+    status: v.literal("unknown"),
+    outerTransactionHash: v.string(),
+    sendCount: v.number(),
+    recordedAt: v.number(),
+    reason: gasSendUnknownReasonValidator,
+  }),
+);
+
+/** Internal input shape; the mutation supplies the trusted record timestamp. */
+export const gasSendClassificationInputValidator = v.union(
+  v.object({
+    status: v.literal("pending"),
+    outerTransactionHash: v.string(),
+    sendCount: v.number(),
+  }),
+  v.object({
+    status: v.literal("duplicate"),
+    outerTransactionHash: v.string(),
+    sendCount: v.number(),
+  }),
+  v.object({
+    status: v.literal("retry_later"),
+    outerTransactionHash: v.string(),
+    sendCount: v.number(),
+  }),
+  v.object({
+    status: v.literal("rejected"),
+    outerTransactionHash: v.string(),
+    sendCount: v.number(),
+    resultCode: v.optional(v.string()),
+  }),
+  v.object({
+    status: v.literal("unknown"),
+    outerTransactionHash: v.string(),
+    sendCount: v.number(),
+    reason: gasSendUnknownReasonValidator,
+  }),
+);
+
 export const gasPolicies = defineTable({
   projectId: v.id("projects"),
   enabled: v.boolean(),
@@ -141,6 +215,8 @@ export const gasExecutionAttempts = defineTable({
   feeCeilingStroops: v.int64(),
   relayerPublicKey: v.string(),
   outerTransactionHash: v.optional(v.string()),
+  /** Exact fee on the pinned outer wrapper, when send authorization exists. */
+  outerFeeStroops: v.optional(v.int64()),
   leaseToken: v.optional(v.string()),
   leaseGeneration: v.number(),
   leaseExpiresAt: v.optional(v.number()),
@@ -149,6 +225,7 @@ export const gasExecutionAttempts = defineTable({
   firstPossibleSendAt: v.optional(v.number()),
   reconciliationDeadlineAt: v.optional(v.number()),
   reconciliationRequired: v.boolean(),
+  latestSendClassification: v.optional(gasSendClassificationValidator),
   actualFeeStroops: v.optional(v.int64()),
   settledAt: v.optional(v.number()),
   createdAt: v.number(),

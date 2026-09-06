@@ -9,6 +9,7 @@ import {
   TESTNET_FEE_BUMP_RPC_PREFLIGHT_ERROR_CODES,
   TESTNET_FEE_BUMP_RPC_TIMEOUTS,
   TestnetFeeBumpRpcConfigurationError,
+  type TestnetFeeBumpRpcAuthorizationHook,
   type TestnetFeeBumpRpcTransport,
 } from "./fee-bump-rpc.ts";
 import { buildTestnetFeeBumpTransaction, type TestnetFeeBumpResult } from "./fee-bump.ts";
@@ -347,6 +348,75 @@ test("requires Testnet identity and transmits the unchanged signed outer envelop
   }).send(request());
   assert.equal(sent.status, "pending");
   assert.equal(transmittedXdr, FEE_BUMP.signedOuterXdr);
+});
+
+test("runs optional send authorization after network preflight and before transport", async () => {
+  const events: string[] = [];
+  let sendCalls = 0;
+  const result = await createTestnetFeeBumpRpcAdapter(
+    {
+      authorizeSend: async (sendRequest) => {
+        events.push(`authorize:${sendRequest.expectedOuterHash}`);
+        return true;
+      },
+    },
+    transport({
+      getNetwork: async () => {
+        events.push("network");
+        return { passphrase: Networks.TESTNET };
+      },
+      sendTransaction: async (transaction) => {
+        events.push("send");
+        sendCalls += 1;
+        return {
+          status: "PENDING",
+          hash: transaction.hash().toString("hex"),
+          latestLedger: 99,
+          latestLedgerCloseTime: 1_000,
+        };
+      },
+    }),
+  ).send(request());
+
+  assert.deepEqual(result, {
+    status: "pending",
+    outerTransactionHash: FEE_BUMP.outerTransactionHash,
+  });
+  assert.deepEqual(events, ["network", `authorize:${FEE_BUMP.outerTransactionHash}`, "send"]);
+  assert.equal(sendCalls, 1);
+});
+
+test("a denied or throwing send authorization hook prevents transport submission", async () => {
+  let sendCalls = 0;
+  const send = (authorizeSend: TestnetFeeBumpRpcAuthorizationHook) =>
+    createTestnetFeeBumpRpcAdapter(
+      { authorizeSend },
+      transport({
+        sendTransaction: async () => {
+          sendCalls += 1;
+          return {
+            status: "PENDING",
+            hash: FEE_BUMP.outerTransactionHash,
+            latestLedger: 99,
+            latestLedgerCloseTime: 1_000,
+          };
+        },
+      }),
+    ).send(request());
+
+  const denied = await send(async () => false);
+  assert.deepEqual(denied, {
+    status: "preflight_failed",
+    code: "send_authorization_denied",
+  });
+  const throwing = await send(async () => {
+    throw new Error("must not escape");
+  });
+  assert.deepEqual(throwing, {
+    status: "preflight_failed",
+    code: "send_authorization_unavailable",
+  });
+  assert.equal(sendCalls, 0);
 });
 
 test("does not continue from a timed-out network preflight into a late send", async () => {

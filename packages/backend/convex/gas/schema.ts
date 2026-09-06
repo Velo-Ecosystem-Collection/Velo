@@ -8,6 +8,8 @@ import {
   GAS_NETWORK,
   GAS_REJECTION_CODES,
   GAS_RELAYER_STATUSES,
+  GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS,
+  GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS,
 } from "./types";
 
 export const gasNetworkValidator = v.literal(GAS_NETWORK);
@@ -61,6 +63,42 @@ const gasSendUnknownReasonValidator = v.union(
   v.literal("hash_mismatch"),
 );
 
+const gasSequenceLookupClassificationValidator = v.union(
+  v.literal(GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS.found),
+  v.literal(GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS.notFound),
+  v.literal(GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS.unavailable),
+  v.literal(GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS.malformedResponse),
+  v.literal(GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS.wrongNetwork),
+);
+
+const gasSequenceDiagnosisDispositionValidator = v.union(
+  v.literal(GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS.unresolved),
+  v.literal(GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS.ledgerObserved),
+  v.literal(GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS.clientRebuildRequired),
+);
+
+const gasSequenceDiagnosisEvidenceValidator = v.object({
+  outerTransactionHash: v.string(),
+  innerTransactionHash: v.string(),
+  feeSource: v.string(),
+  feeStroops: v.int64(),
+  ledger: v.number(),
+  resultCode: v.string(),
+  innerResultCode: v.optional(v.string()),
+});
+
+export const gasSequenceDiagnosisInputValidator = v.object({
+  lookupClassification: gasSequenceLookupClassificationValidator,
+  evidence: v.optional(gasSequenceDiagnosisEvidenceValidator),
+});
+
+export const gasSequenceDiagnosisValidator = v.object({
+  disposition: gasSequenceDiagnosisDispositionValidator,
+  lookupClassification: gasSequenceLookupClassificationValidator,
+  recordedAt: v.number(),
+  evidence: v.optional(gasSequenceDiagnosisEvidenceValidator),
+});
+
 /** Sanitized post-authorization adapter evidence retained for recovery. */
 export const gasSendClassificationValidator = v.union(
   v.object({
@@ -87,6 +125,7 @@ export const gasSendClassificationValidator = v.union(
     sendCount: v.number(),
     recordedAt: v.number(),
     resultCode: v.optional(v.string()),
+    innerResultCode: v.optional(v.string()),
   }),
   v.object({
     status: v.literal("unknown"),
@@ -119,6 +158,7 @@ export const gasSendClassificationInputValidator = v.union(
     outerTransactionHash: v.string(),
     sendCount: v.number(),
     resultCode: v.optional(v.string()),
+    innerResultCode: v.optional(v.string()),
   }),
   v.object({
     status: v.literal("unknown"),
@@ -226,6 +266,8 @@ export const gasExecutionAttempts = defineTable({
   reconciliationDeadlineAt: v.optional(v.number()),
   reconciliationRequired: v.boolean(),
   latestSendClassification: v.optional(gasSendClassificationValidator),
+  /** One bounded, internal diagnosis of an inner bad-sequence rejection. */
+  sequenceDiagnosis: v.optional(gasSequenceDiagnosisValidator),
   actualFeeStroops: v.optional(v.int64()),
   settledAt: v.optional(v.number()),
   createdAt: v.number(),

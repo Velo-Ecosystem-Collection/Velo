@@ -10,6 +10,8 @@ import {
   type TestnetFeeBumpRpcAdapter,
   type TestnetFeeBumpRpcAuthorizationHook,
   type TestnetFeeBumpRpcPreflightErrorCode,
+  type TestnetFeeBumpLedgerEvidence,
+  type TestnetFeeBumpLookupOutcome,
   type TestnetFeeBumpSendOutcome,
   type TestnetFeeBumpRpcTransport,
 } from "@repo/stellar/fee-bump-rpc";
@@ -18,7 +20,12 @@ import { v } from "convex/values";
 
 import type { ActionCtx } from "../_generated/server";
 import type { GasApiKeyAuthorizationResult } from "./authorization";
-import type { GasClaimResult, GasSendAuthorizationResult, GasSendOutcomeResult } from "./execution";
+import type {
+  GasClaimResult,
+  GasSendAuthorizationResult,
+  GasSendOutcomeResult,
+  GasSequenceDiagnosisResult,
+} from "./execution";
 
 import { internal } from "../_generated/api";
 import { internalAction } from "../_generated/server";
@@ -284,6 +291,9 @@ function sendClassification(
         outerTransactionHash: outcome.outerTransactionHash,
         sendCount: 1,
         ...(outcome.resultCode === undefined ? {} : { resultCode: outcome.resultCode }),
+        ...(outcome.innerResultCode === undefined
+          ? {}
+          : { innerResultCode: outcome.innerResultCode }),
       } as const;
     case "unknown":
       return {
@@ -293,6 +303,55 @@ function sendClassification(
         reason: outcome.reason,
       } as const;
   }
+}
+
+type GasSequenceDiagnosisInput = {
+  lookupClassification:
+    | "found"
+    | "not_found"
+    | "unavailable"
+    | "malformed_response"
+    | "wrong_network";
+  evidence?: {
+    outerTransactionHash: string;
+    innerTransactionHash: string;
+    feeSource: string;
+    feeStroops: bigint;
+    ledger: number;
+    resultCode: string;
+    innerResultCode?: string;
+  };
+};
+
+function sequenceLookupClassification(
+  outcome: TestnetFeeBumpLookupOutcome,
+): GasSequenceDiagnosisInput["lookupClassification"] {
+  if (outcome.status === "found") return "found";
+  if (outcome.status === "not_found") return "not_found";
+  if (outcome.status === "unavailable") return "unavailable";
+  if (outcome.status === "malformed_response") return "malformed_response";
+  return outcome.code === "wrong_network" ? "wrong_network" : "unavailable";
+}
+
+function sequenceDiagnosisInput(outcome: TestnetFeeBumpLookupOutcome): GasSequenceDiagnosisInput {
+  const lookupClassification = sequenceLookupClassification(outcome);
+  if (outcome.status !== "found") return { lookupClassification };
+
+  const evidence: TestnetFeeBumpLedgerEvidence = outcome;
+  return {
+    lookupClassification,
+    evidence: {
+      outerTransactionHash: evidence.outerTransactionHash,
+      innerTransactionHash: evidence.innerTransactionHash,
+      feeSource: evidence.feeSource,
+      feeStroops: evidence.feeStroops,
+      ledger: evidence.ledger,
+      resultCode: evidence.resultCode,
+      ...(evidence.innerResultCode === undefined
+        ? {}
+        : { innerResultCode: evidence.innerResultCode }),
+    },
+  };
 }
 
 async function authorizedScope(
@@ -469,6 +528,32 @@ export async function executeGasExecution(
         return { status: "dependency_unavailable" };
       }
       if (recorded.status !== "recorded") return recorded;
+
+      if (outcome.status === "rejected" && outcome.innerResultCode === "txBadSeq") {
+        let lookupOutcome: TestnetFeeBumpLookupOutcome;
+        try {
+          lookupOutcome = await adapter.lookup(built.outerTransactionHash);
+        } catch {
+          lookupOutcome = { status: "unavailable" };
+        }
+
+        let diagnosis: GasSequenceDiagnosisResult;
+        try {
+          diagnosis = await ctx.runMutation(internal.gas.execution.recordSequenceDiagnosis, {
+            executionAttemptId: claim.executionAttemptId,
+            projectId: scope.projectId,
+            outerTransactionHash: built.outerTransactionHash,
+            sendCount: 1,
+            leaseToken: claim.leaseToken!,
+            leaseGeneration: claim.leaseGeneration,
+            diagnosis: sequenceDiagnosisInput(lookupOutcome),
+          });
+        } catch {
+          return { status: "dependency_unavailable" };
+        }
+        if (diagnosis.status !== "recorded") return diagnosis;
+      }
+
       return { status: "recorded", outcome: recorded };
     });
   } catch (error) {

@@ -126,6 +126,7 @@ export type TestnetFeeBumpSendOutcome =
   | (TestnetFeeBumpRpcSendNetworkOutcome & {
       status: "rejected";
       resultCode?: string;
+      innerResultCode?: string;
     })
   | (TestnetFeeBumpRpcSendNetworkOutcome & {
       status: "unknown";
@@ -141,6 +142,7 @@ export type TestnetFeeBumpLedgerEvidence = Readonly<{
   feeStroops: bigint;
   ledger: number;
   resultCode: string;
+  innerResultCode?: string;
 }>;
 
 export type TestnetFeeBumpLookupOutcome =
@@ -219,10 +221,17 @@ function normalizedPublicKey(value: unknown): string | undefined {
   }
 }
 
+function normalizedXdrHash(value: unknown): string | undefined {
+  if (Buffer.isBuffer(value)) return normalizedHash(value.toString("hex"));
+  if (value instanceof Uint8Array) return normalizedHash(Buffer.from(value).toString("hex"));
+  return undefined;
+}
+
 function parseTransactionResult(
   value: unknown,
+  expectedInnerHash?: string,
 ):
-  | Readonly<{ status: "valid"; code: string; feeStroops: bigint }>
+  | Readonly<{ status: "valid"; code: string; innerResultCode?: string; feeStroops: bigint }>
   | Readonly<{ status: "invalid" }> {
   let result = value;
   if (typeof result === "string") {
@@ -255,7 +264,54 @@ function parseTransactionResult(
     const feeStroops = parseNonnegativeInt64(result.feeCharged().toString());
     if (feeStroops === undefined) return { status: "invalid" };
 
-    return { status: "valid", code: resultType.name, feeStroops };
+    let innerResultCode: string | undefined;
+    if (resultType.name === "txFeeBumpInnerSuccess" || resultType.name === "txFeeBumpInnerFailed") {
+      if (typeof transactionResult.innerResultPair !== "function") return { status: "invalid" };
+      const innerResultPair = transactionResult.innerResultPair();
+      if (
+        !isRecord(innerResultPair) ||
+        typeof innerResultPair.transactionHash !== "function" ||
+        typeof innerResultPair.result !== "function"
+      ) {
+        return { status: "invalid" };
+      }
+
+      const innerTransactionHash = normalizedXdrHash(innerResultPair.transactionHash());
+      if (
+        innerTransactionHash === undefined ||
+        (expectedInnerHash !== undefined && innerTransactionHash !== expectedInnerHash)
+      ) {
+        return { status: "invalid" };
+      }
+
+      const innerResult = innerResultPair.result();
+      if (
+        !isRecord(innerResult) ||
+        typeof innerResult.result !== "function" ||
+        typeof innerResult.feeCharged !== "function"
+      ) {
+        return { status: "invalid" };
+      }
+      const innerResultType = innerResult.result();
+      if (!isRecord(innerResultType) || typeof innerResultType.switch !== "function") {
+        return { status: "invalid" };
+      }
+      const innerCode = innerResultType.switch();
+      if (!isRecord(innerCode) || typeof innerCode.name !== "string") {
+        return { status: "invalid" };
+      }
+      if (parseNonnegativeInt64(innerResult.feeCharged().toString()) === undefined) {
+        return { status: "invalid" };
+      }
+      innerResultCode = innerCode.name;
+    }
+
+    return {
+      status: "valid",
+      code: resultType.name,
+      ...(innerResultCode === undefined ? {} : { innerResultCode }),
+      feeStroops,
+    };
   } catch {
     return { status: "invalid" };
   }
@@ -469,6 +525,7 @@ function sendUnknown(
 function normalizeSendResponse(
   response: unknown,
   expectedOuterHash: string,
+  expectedInnerHash: string,
 ): TestnetFeeBumpSendOutcome {
   if (!isRecord(response)) return sendUnknown(expectedOuterHash, "malformed_response");
 
@@ -491,11 +548,25 @@ function normalizeSendResponse(
       const resultValue = response.errorResult ?? response.errorResultXdr;
       let resultCode: string | undefined;
       if (resultValue !== undefined) {
-        const parsedResult = parseTransactionResult(resultValue);
-        if (parsedResult.status === "invalid" || parsedResult.code === "txSuccess") {
+        const parsedResult = parseTransactionResult(resultValue, expectedInnerHash);
+        if (
+          parsedResult.status === "invalid" ||
+          parsedResult.code === "txSuccess" ||
+          parsedResult.code === "txFeeBumpInnerSuccess" ||
+          (parsedResult.code === "txFeeBumpInnerFailed" &&
+            parsedResult.innerResultCode === "txSuccess")
+        ) {
           return sendUnknown(expectedOuterHash, "malformed_response");
         }
         resultCode = parsedResult.code;
+        return Object.freeze({
+          ...outcome,
+          status: "rejected",
+          ...(resultCode ? { resultCode } : {}),
+          ...(parsedResult.innerResultCode === undefined
+            ? {}
+            : { innerResultCode: parsedResult.innerResultCode }),
+        });
       }
       return Object.freeze({
         ...outcome,
@@ -574,11 +645,18 @@ function normalizeLookupResponse(
   const innerTransactionHash = normalizedHash(innerFacts.transactionHash);
   if (innerTransactionHash === undefined) return { status: "malformed_response" };
 
-  const parsedResult = parseTransactionResult(response.resultXdr);
+  const parsedResult = parseTransactionResult(response.resultXdr, innerTransactionHash);
   if (parsedResult.status === "invalid") return { status: "malformed_response" };
+  const isFeeBumpSuccess =
+    parsedResult.code === "txSuccess" ||
+    (parsedResult.code === "txFeeBumpInnerSuccess" && parsedResult.innerResultCode === "txSuccess");
+  const isFeeBumpFailure =
+    parsedResult.code !== "txSuccess" &&
+    parsedResult.code !== "txFeeBumpInnerSuccess" &&
+    (parsedResult.code !== "txFeeBumpInnerFailed" || parsedResult.innerResultCode !== "txSuccess");
   if (
-    (response.status === "SUCCESS" && parsedResult.code !== "txSuccess") ||
-    (response.status === "FAILED" && parsedResult.code === "txSuccess") ||
+    (response.status === "SUCCESS" && !isFeeBumpSuccess) ||
+    (response.status === "FAILED" && !isFeeBumpFailure) ||
     parsedResult.feeStroops > feeStroops
   ) {
     return { status: "malformed_response" };
@@ -592,6 +670,9 @@ function normalizeLookupResponse(
     feeStroops: parsedResult.feeStroops,
     ledger: response.ledger,
     resultCode: parsedResult.code,
+    ...(parsedResult.innerResultCode === undefined
+      ? {}
+      : { innerResultCode: parsedResult.innerResultCode }),
   });
 }
 
@@ -719,7 +800,11 @@ export function createTestnetFeeBumpRpcAdapter(
         );
       }
 
-      return normalizeSendResponse(result.value, preflight.value.outerTransactionHash);
+      return normalizeSendResponse(
+        result.value,
+        preflight.value.outerTransactionHash,
+        preflight.value.innerTransactionHash,
+      );
     },
 
     async lookup(outerTransactionHash: string): Promise<TestnetFeeBumpLookupOutcome> {

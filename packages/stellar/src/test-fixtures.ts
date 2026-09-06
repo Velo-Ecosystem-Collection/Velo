@@ -33,6 +33,7 @@ export type GasTestEnvelopeOptions = Readonly<{
   fee?: string;
   resourceFee?: string | bigint;
   maxTime?: number | string | null;
+  sourceKeypair?: Keypair;
   operationSource?: string;
   extraSignature?: Keypair;
   signatureHint?: Uint8Array;
@@ -79,7 +80,8 @@ function buildTransaction(
   options: GasTestEnvelopeOptions,
 ): Transaction {
   const networkPassphrase = options.kind === "wrong_network" ? Networks.PUBLIC : Networks.TESTNET;
-  const builder = new TransactionBuilder(new Account(GAS_TEST_SOURCE_KEYPAIR.publicKey(), "1"), {
+  const sourceKeypair = options.sourceKeypair ?? GAS_TEST_SOURCE_KEYPAIR;
+  const builder = new TransactionBuilder(new Account(sourceKeypair.publicKey(), "1"), {
     fee: options.fee ?? (operations.length > 1 ? "200" : "100"),
     networkPassphrase,
   });
@@ -108,11 +110,15 @@ function buildTransaction(
   }
 
   const transaction = builder.build();
-  if (options.kind !== "unsigned") transaction.sign(GAS_TEST_SOURCE_KEYPAIR);
+  if (options.kind !== "unsigned") transaction.sign(sourceKeypair);
   return transaction;
 }
 
-function withRawMaxTime(transaction: Transaction, maxTime: string): Transaction {
+function withRawMaxTime(
+  transaction: Transaction,
+  maxTime: string,
+  sourceKeypair: Keypair,
+): Transaction {
   const envelope = transaction.toEnvelope().v1();
   const base = envelope.tx();
   const alteredTransaction = new xdr.Transaction({
@@ -133,7 +139,7 @@ function withRawMaxTime(transaction: Transaction, maxTime: string): Transaction 
     new xdr.TransactionV1Envelope({ tx: alteredTransaction, signatures: [] }),
   ).toXDR("base64");
   const signed = new Transaction(unsigned, Networks.TESTNET);
-  signed.sign(GAS_TEST_SOURCE_KEYPAIR);
+  signed.sign(sourceKeypair);
   return signed;
 }
 
@@ -199,8 +205,12 @@ export function buildGasTestEnvelope(options: GasTestEnvelopeOptions = {}): stri
           ? Number(options.maxTime)
           : options.maxTime,
   });
+  const sourceKeypair = options.sourceKeypair ?? GAS_TEST_SOURCE_KEYPAIR;
   if (rawMaxTime && kind !== "unsigned") {
-    return addFixtureSignature(withRawMaxTime(transaction, String(options.maxTime)), options);
+    return addFixtureSignature(
+      withRawMaxTime(transaction, String(options.maxTime), sourceKeypair),
+      options,
+    );
   }
   return addFixtureSignature(transaction, options);
 }

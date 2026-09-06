@@ -44,6 +44,28 @@ export const GAS_EXECUTION_STATUSES = {
 export type GasExecutionStatus =
   (typeof GAS_EXECUTION_STATUSES)[keyof typeof GAS_EXECUTION_STATUSES];
 
+/** Internal one-shot diagnosis states for an observed inner bad sequence. */
+export const GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS = {
+  unresolved: "unresolved",
+  ledgerObserved: "ledger_observed",
+  clientRebuildRequired: "client_rebuild_required",
+} as const;
+
+export type GasSequenceDiagnosisDisposition =
+  (typeof GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS)[keyof typeof GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS];
+
+/** Sanitized outcomes of the bounded Testnet lookup used by sequence diagnosis. */
+export const GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS = {
+  found: "found",
+  notFound: "not_found",
+  unavailable: "unavailable",
+  malformedResponse: "malformed_response",
+  wrongNetwork: "wrong_network",
+} as const;
+
+export type GasSequenceLookupClassification =
+  (typeof GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS)[keyof typeof GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS];
+
 /** Decisions persisted by the D1 gas admission log. */
 export const GAS_DECISION_CODES = {
   reserved: "reserved",

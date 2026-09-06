@@ -16,12 +16,18 @@ import {
   projectGasExecutionAttempt,
   type GasSubmitResultProjection,
 } from "./projections";
-import { gasNetworkValidator, gasSendClassificationInputValidator } from "./schema";
+import {
+  gasNetworkValidator,
+  gasSendClassificationInputValidator,
+  gasSequenceDiagnosisInputValidator,
+} from "./schema";
 import {
   GAS_FEE_OVERHEAD_STROOPS,
   GAS_LIFECYCLE_STATES,
   GAS_NETWORK,
   GAS_SUPPORTED_OPERATION,
+  GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS,
+  type GasSequenceDiagnosisDisposition,
 } from "./types";
 import {
   addStroopValues,
@@ -843,6 +849,7 @@ type GasSendClassificationInput =
       outerTransactionHash: string;
       sendCount: number;
       resultCode?: string;
+      innerResultCode?: string;
     }
   | {
       status: "unknown";
@@ -872,6 +879,13 @@ function normalizedSendClassification(
       ) {
         return null;
       }
+      if (
+        classification.innerResultCode !== undefined &&
+        (!RESULT_CODE_PATTERN.test(classification.innerResultCode) ||
+          new TextEncoder().encode(classification.innerResultCode).byteLength > 64)
+      ) {
+        return null;
+      }
       return {
         status: classification.status,
         outerTransactionHash,
@@ -879,6 +893,9 @@ function normalizedSendClassification(
         ...(classification.resultCode === undefined
           ? {}
           : { resultCode: classification.resultCode }),
+        ...(classification.innerResultCode === undefined
+          ? {}
+          : { innerResultCode: classification.innerResultCode }),
       };
     }
     if (classification.status === "unknown") {
@@ -909,6 +926,229 @@ function storedSendClassification(
     recordedAt,
   };
 }
+
+type GasSequenceDiagnosisEvidence = {
+  outerTransactionHash: string;
+  innerTransactionHash: string;
+  feeSource: string;
+  feeStroops: bigint;
+  ledger: number;
+  resultCode: string;
+  innerResultCode?: string;
+};
+
+type GasSequenceDiagnosisInput = {
+  lookupClassification:
+    | "found"
+    | "not_found"
+    | "unavailable"
+    | "malformed_response"
+    | "wrong_network";
+  evidence?: GasSequenceDiagnosisEvidence;
+};
+
+type NormalizedGasSequenceDiagnosis = {
+  disposition: GasSequenceDiagnosisDisposition;
+  lookupClassification: GasSequenceDiagnosisInput["lookupClassification"];
+  evidence?: GasSequenceDiagnosisEvidence;
+};
+
+export type GasSequenceDiagnosisResult =
+  | {
+      status: "recorded";
+      disposition: GasSequenceDiagnosisDisposition;
+      idempotent: boolean;
+    }
+  | { status: "invalid_internal_input" }
+  | { status: "resource_not_found" }
+  | { status: "invalid_lifecycle" };
+
+export const gasSequenceDiagnosisResultValidator = v.union(
+  v.object({
+    status: v.literal("recorded"),
+    disposition: v.union(
+      v.literal(GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS.unresolved),
+      v.literal(GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS.ledgerObserved),
+      v.literal(GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS.clientRebuildRequired),
+    ),
+    idempotent: v.boolean(),
+  }),
+  v.object({ status: v.literal("invalid_internal_input") }),
+  v.object({ status: v.literal("resource_not_found") }),
+  v.object({ status: v.literal("invalid_lifecycle") }),
+);
+
+function normalizedSequenceDiagnosis(
+  diagnosis: GasSequenceDiagnosisInput,
+  attempt: Doc<"gasExecutionAttempts">,
+): NormalizedGasSequenceDiagnosis | null {
+  if (diagnosis.lookupClassification !== "found") {
+    return {
+      disposition: GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS.unresolved,
+      lookupClassification: diagnosis.lookupClassification,
+    };
+  }
+
+  if (diagnosis.evidence === undefined) {
+    return {
+      disposition: GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS.unresolved,
+      lookupClassification: diagnosis.lookupClassification,
+    };
+  }
+
+  try {
+    const evidence = diagnosis.evidence;
+    if (
+      !Number.isSafeInteger(evidence.ledger) ||
+      evidence.ledger <= 0 ||
+      !RESULT_CODE_PATTERN.test(evidence.resultCode) ||
+      (evidence.innerResultCode !== undefined &&
+        !RESULT_CODE_PATTERN.test(evidence.innerResultCode)) ||
+      new TextEncoder().encode(evidence.resultCode).byteLength > 64 ||
+      (evidence.innerResultCode !== undefined &&
+        new TextEncoder().encode(evidence.innerResultCode).byteLength > 64)
+    ) {
+      return {
+        disposition: GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS.unresolved,
+        lookupClassification: diagnosis.lookupClassification,
+      };
+    }
+
+    const outerTransactionHash = normalizeTransactionHash(evidence.outerTransactionHash);
+    const innerTransactionHash = normalizeTransactionHash(evidence.innerTransactionHash);
+    const feeSource = normalizeRelayerPublicKey(evidence.feeSource);
+    const feeStroops = assertValidStroopValue(evidence.feeStroops);
+    if (
+      outerTransactionHash !== attempt.outerTransactionHash ||
+      innerTransactionHash !== attempt.innerTransactionHash ||
+      feeSource !== attempt.relayerPublicKey ||
+      feeStroops > attempt.feeCeilingStroops
+    ) {
+      return {
+        disposition: GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS.unresolved,
+        lookupClassification: diagnosis.lookupClassification,
+      };
+    }
+
+    const normalizedEvidence: GasSequenceDiagnosisEvidence = {
+      outerTransactionHash,
+      innerTransactionHash,
+      feeSource,
+      feeStroops,
+      ledger: evidence.ledger,
+      resultCode: evidence.resultCode,
+      ...(evidence.innerResultCode === undefined
+        ? {}
+        : { innerResultCode: evidence.innerResultCode }),
+    };
+    return {
+      disposition:
+        evidence.innerResultCode === "txBadSeq"
+          ? GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS.clientRebuildRequired
+          : GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS.ledgerObserved,
+      lookupClassification: diagnosis.lookupClassification,
+      evidence: normalizedEvidence,
+    };
+  } catch {
+    return {
+      disposition: GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS.unresolved,
+      lookupClassification: diagnosis.lookupClassification,
+    };
+  }
+}
+
+function sameSequenceDiagnosis(
+  stored: NonNullable<Doc<"gasExecutionAttempts">["sequenceDiagnosis"]>,
+  next: NormalizedGasSequenceDiagnosis,
+): boolean {
+  if (
+    stored.disposition !== next.disposition ||
+    stored.lookupClassification !== next.lookupClassification
+  ) {
+    return false;
+  }
+  const storedEvidence = stored.evidence;
+  const nextEvidence = next.evidence;
+  if (storedEvidence === undefined || nextEvidence === undefined) {
+    return storedEvidence === undefined && nextEvidence === undefined;
+  }
+  return (
+    storedEvidence.outerTransactionHash === nextEvidence.outerTransactionHash &&
+    storedEvidence.innerTransactionHash === nextEvidence.innerTransactionHash &&
+    storedEvidence.feeSource === nextEvidence.feeSource &&
+    storedEvidence.feeStroops === nextEvidence.feeStroops &&
+    storedEvidence.ledger === nextEvidence.ledger &&
+    storedEvidence.resultCode === nextEvidence.resultCode &&
+    storedEvidence.innerResultCode === nextEvidence.innerResultCode
+  );
+}
+
+/** Persist one fenced, sanitized diagnosis of an inner bad-sequence rejection. */
+export const recordSequenceDiagnosis = internalMutation({
+  args: {
+    executionAttemptId: v.id("gasExecutionAttempts"),
+    projectId: v.id("projects"),
+    outerTransactionHash: v.string(),
+    sendCount: v.number(),
+    leaseToken: v.string(),
+    leaseGeneration: v.number(),
+    diagnosis: gasSequenceDiagnosisInputValidator,
+  },
+  returns: gasSequenceDiagnosisResultValidator,
+  handler: async (ctx, args): Promise<GasSequenceDiagnosisResult> => {
+    const attempt = await ctx.db.get("gasExecutionAttempts", args.executionAttemptId);
+    if (!attempt) return { status: "resource_not_found" };
+
+    let outerTransactionHash: string;
+    try {
+      outerTransactionHash = normalizeTransactionHash(args.outerTransactionHash);
+    } catch {
+      return { status: "invalid_internal_input" };
+    }
+
+    if (
+      attempt.projectId !== args.projectId ||
+      attempt.lifecycle !== GAS_LIFECYCLE_STATES.submissionUnknown ||
+      attempt.outerTransactionHash !== outerTransactionHash ||
+      attempt.sendCount !== args.sendCount ||
+      attempt.leaseToken !== args.leaseToken ||
+      attempt.leaseGeneration !== args.leaseGeneration ||
+      attempt.latestSendClassification?.status !== "rejected" ||
+      attempt.latestSendClassification.innerResultCode !== "txBadSeq"
+    ) {
+      return { status: "invalid_lifecycle" };
+    }
+
+    const normalized = normalizedSequenceDiagnosis(args.diagnosis, attempt);
+    if (normalized === null) return { status: "invalid_internal_input" };
+
+    if (attempt.sequenceDiagnosis !== undefined) {
+      return sameSequenceDiagnosis(attempt.sequenceDiagnosis, normalized)
+        ? {
+            status: "recorded",
+            disposition: attempt.sequenceDiagnosis.disposition,
+            idempotent: true,
+          }
+        : { status: "invalid_lifecycle" };
+    }
+
+    const recordedAt = Date.now();
+    if (!isValidTimestamp(recordedAt)) return { status: "invalid_internal_input" };
+    await ctx.db.patch(attempt._id, {
+      sequenceDiagnosis: {
+        ...normalized,
+        recordedAt,
+      },
+      updatedAt: recordedAt,
+    });
+
+    return {
+      status: "recorded",
+      disposition: normalized.disposition,
+      idempotent: false,
+    };
+  },
+});
 
 /**
  * Atomically authorizes exactly one send for a live claimed attempt. The

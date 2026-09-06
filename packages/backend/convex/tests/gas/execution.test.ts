@@ -4,8 +4,9 @@ import {
   buildGasTestEnvelope,
   GAS_TEST_RELAYER_KEYPAIR,
   GAS_TEST_SOURCE_KEYPAIR,
+  keypairForLabel,
 } from "@repo/stellar/test-fixtures";
-import { Networks } from "@stellar/stellar-sdk";
+import { Networks, Transaction, xdr } from "@stellar/stellar-sdk";
 import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
 
@@ -30,6 +31,33 @@ const OWNER = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
 const API_KEY_HASH = "a".repeat(64);
 const NOW = Date.parse("2026-09-03T12:34:56.789Z");
 const RELAYER_PUBLIC_KEY = GAS_TEST_RELAYER_KEYPAIR.publicKey();
+
+function nestedFeeBumpResult(
+  innerTransactionHash: string,
+  outcome: "success" | "failed",
+  innerCode: "txSuccess" | "txBadSeq",
+): xdr.TransactionResult {
+  const innerResult = new xdr.InnerTransactionResult({
+    feeCharged: new xdr.Int64("187"),
+    result:
+      innerCode === "txSuccess"
+        ? xdr.InnerTransactionResultResult.txSuccess([])
+        : xdr.InnerTransactionResultResult.txBadSeq(),
+    ext: new xdr.InnerTransactionResultExt(0),
+  });
+  const innerResultPair = new xdr.InnerTransactionResultPair({
+    transactionHash: Buffer.from(innerTransactionHash, "hex"),
+    result: innerResult,
+  });
+  return new xdr.TransactionResult({
+    feeCharged: new xdr.Int64("187"),
+    result:
+      outcome === "success"
+        ? xdr.TransactionResultResult.txFeeBumpInnerSuccess(innerResultPair)
+        : xdr.TransactionResultResult.txFeeBumpInnerFailed(innerResultPair),
+    ext: new xdr.TransactionResultExt(0),
+  });
+}
 
 async function withFixedTime<T>(callback: () => Promise<T>): Promise<T> {
   vi.useFakeTimers();
@@ -695,6 +723,478 @@ test("simultaneous duplicate executions share one pinned outer identity and one 
     const state = await readState(t, scope.projectId);
     expect(state.attempts).toHaveLength(1);
     expect(state.attempts[0]?.sendCount).toBe(1);
+  });
+});
+
+test("diagnoses inner bad sequence once with bounded lookup evidence and preserves replay", async () => {
+  await withFixedTime(async () => {
+    const cases = [
+      { id: "found", expectedLookup: "found", expectedDisposition: "client_rebuild_required" },
+      { id: "not-found", expectedLookup: "not_found", expectedDisposition: "unresolved" },
+      { id: "timeout", expectedLookup: "unavailable", expectedDisposition: "unresolved" },
+      {
+        id: "malformed",
+        expectedLookup: "malformed_response",
+        expectedDisposition: "unresolved",
+      },
+      { id: "wrong-network", expectedLookup: "wrong_network", expectedDisposition: "unresolved" },
+      { id: "late-lookup", expectedLookup: "not_found", expectedDisposition: "unresolved" },
+    ] as const;
+
+    for (const diagnosisCase of cases) {
+      vi.setSystemTime(NOW);
+      const t = convexTest(schema, modules);
+      const scope = await createScope(t, { suffix: `diagnosis-${diagnosisCase.id}` });
+      const transactionXdr = gasMaxTimeEnvelopeFixtures.unbounded;
+      const sponsored = await sponsor(
+        t,
+        transactionXdr,
+        `diagnosis-${diagnosisCase.id}`,
+        scope.apiKeyHash,
+      );
+      expect(sponsored.status).toBe("success");
+      if (sponsored.status !== "success") throw new Error("Expected a reservation");
+      const transactionHash = sponsored.reservation.transactionHash;
+      if (transactionHash === null) throw new Error("Expected a transaction hash");
+
+      let sendCalls = 0;
+      let lookupCalls = 0;
+      let networkCalls = 0;
+      let sentEnvelopeXdr: string | undefined;
+      const transport = {
+        getNetwork: async () => {
+          networkCalls += 1;
+          return {
+            passphrase:
+              diagnosisCase.id === "wrong-network" && networkCalls > 1
+                ? Networks.PUBLIC
+                : Networks.TESTNET,
+          };
+        },
+        sendTransaction: async (outer: { hash(): Buffer }) => {
+          sendCalls += 1;
+          sentEnvelopeXdr = (outer as unknown as { toEnvelope(): string }).toEnvelope();
+          return {
+            status: "ERROR",
+            hash: outer.hash().toString("hex"),
+            latestLedger: 99,
+            latestLedgerCloseTime: NOW,
+            errorResult: nestedFeeBumpResult(transactionHash, "failed", "txBadSeq"),
+          };
+        },
+        getTransaction: async (hash: string) => {
+          lookupCalls += 1;
+          if (diagnosisCase.id === "late-lookup") {
+            await t.run(async (ctx) => {
+              const attempt = await ctx.db
+                .query("gasExecutionAttempts")
+                .withIndex("by_project_id_and_request_id", (q) =>
+                  q
+                    .eq("projectId", scope.projectId)
+                    .eq("requestId", sponsored.reservation.requestId),
+                )
+                .unique();
+              if (!attempt) throw new Error("Missing attempt during lookup");
+              await ctx.db.patch(attempt._id, { leaseExpiresAt: NOW - 1 });
+            });
+            return {
+              status: "NOT_FOUND",
+              txHash: hash,
+              latestLedger: 99,
+              latestLedgerCloseTime: NOW,
+              oldestLedger: 1,
+              oldestLedgerCloseTime: NOW,
+            };
+          }
+          if (diagnosisCase.id === "not-found") {
+            return {
+              status: "NOT_FOUND",
+              txHash: hash,
+              latestLedger: 99,
+              latestLedgerCloseTime: NOW,
+              oldestLedger: 1,
+              oldestLedgerCloseTime: NOW,
+            };
+          }
+          if (diagnosisCase.id === "timeout") {
+            throw Object.assign(new Error("provider detail"), { name: "TimeoutError" });
+          }
+          if (diagnosisCase.id === "malformed") {
+            return { status: "SUCCESS", txHash: hash };
+          }
+          if (sentEnvelopeXdr === undefined) throw new Error("Missing sent envelope");
+          return {
+            status: "FAILED",
+            txHash: hash,
+            latestLedger: 99,
+            latestLedgerCloseTime: NOW,
+            oldestLedger: 1,
+            oldestLedgerCloseTime: NOW,
+            ledger: 42,
+            createdAt: NOW,
+            applicationOrder: 1,
+            feeBump: true,
+            envelopeXdr: sentEnvelopeXdr,
+            resultXdr: nestedFeeBumpResult(transactionHash, "failed", "txBadSeq"),
+            resultMetaXdr: sentEnvelopeXdr,
+          };
+        },
+      };
+
+      const result = await withSignerConfiguration([scope.projectId], () =>
+        executeWithTransport(
+          t,
+          scope.apiKeyHash,
+          sponsored.reservation.requestId,
+          transactionHash,
+          transactionXdr,
+          transport,
+        ),
+      );
+      expect(result).toMatchObject({
+        status: "submission_unknown",
+        transactionHash,
+        reservedStroops: "200",
+        actualFeeStroops: null,
+        reconciliationRequired: false,
+      });
+      expect(Object.keys(result).sort()).toEqual(
+        [
+          "actualFeeStroops",
+          "expiresAt",
+          "object",
+          "outerTransactionHash",
+          "reconciliationRequired",
+          "requestId",
+          "reservedStroops",
+          "status",
+          "transactionHash",
+        ].sort(),
+      );
+      expect(sendCalls).toBe(1);
+      expect(lookupCalls).toBe(diagnosisCase.id === "wrong-network" ? 0 : 1);
+
+      const state = await readState(t, scope.projectId);
+      const attempt = state.attempts[0];
+      if (
+        !attempt ||
+        attempt.outerTransactionHash === undefined ||
+        attempt.leaseToken === undefined
+      ) {
+        throw new Error("Expected a fenced attempt with a pinned outer hash");
+      }
+      expect(attempt).toMatchObject({
+        lifecycle: "submission_unknown",
+        sendCount: 1,
+        outerFeeStroops: 200n,
+        sequenceDiagnosis: {
+          disposition: diagnosisCase.expectedDisposition,
+          lookupClassification: diagnosisCase.expectedLookup,
+          recordedAt: NOW,
+        },
+      });
+      if (diagnosisCase.id === "late-lookup") {
+        expect(attempt.leaseExpiresAt).toBe(NOW - 1);
+      }
+      expect(state.policy?.outstandingHoldsStroops).toBe(200n);
+      expect(state.logs[0]?.lifecycle).toBe("submission_unknown");
+
+      if (diagnosisCase.id === "found") {
+        expect(attempt.sequenceDiagnosis).toMatchObject({
+          evidence: {
+            outerTransactionHash: attempt.outerTransactionHash,
+            innerTransactionHash: transactionHash,
+            feeSource: RELAYER_PUBLIC_KEY,
+            feeStroops: 187n,
+            ledger: 42,
+            resultCode: "txFeeBumpInnerFailed",
+            innerResultCode: "txBadSeq",
+          },
+        });
+
+        const duplicateDiagnosis = await t.mutation(
+          internal.gas.execution.recordSequenceDiagnosis,
+          {
+            executionAttemptId: attempt._id,
+            projectId: scope.projectId,
+            outerTransactionHash: attempt.outerTransactionHash,
+            sendCount: 1,
+            leaseToken: attempt.leaseToken,
+            leaseGeneration: attempt.leaseGeneration,
+            diagnosis: {
+              lookupClassification: "found",
+              evidence: {
+                outerTransactionHash: attempt.outerTransactionHash,
+                innerTransactionHash: transactionHash,
+                feeSource: RELAYER_PUBLIC_KEY,
+                feeStroops: 187n,
+                ledger: 42,
+                resultCode: "txFeeBumpInnerFailed",
+                innerResultCode: "txBadSeq",
+              },
+            },
+          },
+        );
+        expect(duplicateDiagnosis).toEqual({
+          status: "recorded",
+          disposition: "client_rebuild_required",
+          idempotent: true,
+        });
+
+        const staleDiagnosis = await t.mutation(internal.gas.execution.recordSequenceDiagnosis, {
+          executionAttemptId: attempt._id,
+          projectId: scope.projectId,
+          outerTransactionHash: attempt.outerTransactionHash,
+          sendCount: 1,
+          leaseToken: "stale-fence",
+          leaseGeneration: attempt.leaseGeneration,
+          diagnosis: { lookupClassification: "found" },
+        });
+        expect(staleDiagnosis).toEqual({ status: "invalid_lifecycle" });
+
+        const conflictingDiagnosis = await t.mutation(
+          internal.gas.execution.recordSequenceDiagnosis,
+          {
+            executionAttemptId: attempt._id,
+            projectId: scope.projectId,
+            outerTransactionHash: attempt.outerTransactionHash,
+            sendCount: 1,
+            leaseToken: attempt.leaseToken,
+            leaseGeneration: attempt.leaseGeneration,
+            diagnosis: { lookupClassification: "not_found" },
+          },
+        );
+        expect(conflictingDiagnosis).toEqual({ status: "invalid_lifecycle" });
+
+        await t.run(async (ctx) => {
+          await ctx.db.patch(attempt._id, { leaseExpiresAt: NOW - 1 });
+        });
+        const lateDuplicate = await t.mutation(internal.gas.execution.recordSequenceDiagnosis, {
+          executionAttemptId: attempt._id,
+          projectId: scope.projectId,
+          outerTransactionHash: attempt.outerTransactionHash,
+          sendCount: 1,
+          leaseToken: attempt.leaseToken,
+          leaseGeneration: attempt.leaseGeneration,
+          diagnosis: {
+            lookupClassification: "found",
+            evidence: {
+              outerTransactionHash: attempt.outerTransactionHash,
+              innerTransactionHash: transactionHash,
+              feeSource: RELAYER_PUBLIC_KEY,
+              feeStroops: 187n,
+              ledger: 42,
+              resultCode: "txFeeBumpInnerFailed",
+              innerResultCode: "txBadSeq",
+            },
+          },
+        });
+        expect(lateDuplicate).toMatchObject({ status: "recorded", idempotent: true });
+      }
+
+      const beforeReplay = await readState(t, scope.projectId);
+      let replaySendCalls = 0;
+      let replayLookupCalls = 0;
+      const replay = await withSignerConfiguration([scope.projectId], () =>
+        executeWithTransport(
+          t,
+          scope.apiKeyHash,
+          sponsored.reservation.requestId,
+          transactionHash,
+          transactionXdr,
+          {
+            getNetwork: async () => ({ passphrase: Networks.PUBLIC }),
+            sendTransaction: async () => {
+              replaySendCalls += 1;
+              throw new Error("replay must not send");
+            },
+            getTransaction: async () => {
+              replayLookupCalls += 1;
+              throw new Error("replay must not look up");
+            },
+          },
+        ),
+      );
+      expect(replay).toEqual(result);
+      expect(replaySendCalls).toBe(0);
+      expect(replayLookupCalls).toBe(0);
+      expect(await readState(t, scope.projectId)).toEqual(beforeReplay);
+    }
+  });
+});
+
+test("keeps distinct same-sequence inner identities independent across source wallets", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t, { suffix: "same-sequence-wallets" });
+    const firstXdr = buildGasTestEnvelope({ maxTime: "4102444800" });
+    const secondXdr = buildGasTestEnvelope({
+      maxTime: "4102444801",
+      sourceKeypair: keypairForLabel("gas-alternate-source"),
+    });
+    const firstSponsored = await sponsor(t, firstXdr, "same-sequence-first", scope.apiKeyHash);
+    const secondSponsored = await sponsor(t, secondXdr, "same-sequence-second", scope.apiKeyHash);
+    expect(firstSponsored.status).toBe("success");
+    expect(secondSponsored.status).toBe("success");
+    if (firstSponsored.status !== "success" || secondSponsored.status !== "success") {
+      throw new Error("Expected independent reservations");
+    }
+    const firstHash = firstSponsored.reservation.transactionHash;
+    const secondHash = secondSponsored.reservation.transactionHash;
+    if (firstHash === null || secondHash === null) throw new Error("Expected transaction hashes");
+    expect(firstHash).not.toBe(secondHash);
+    expect(new Transaction(secondXdr, Networks.TESTNET).sequence).toBe(
+      new Transaction(firstXdr, Networks.TESTNET).sequence,
+    );
+
+    let firstOuterHash: string | undefined;
+    let secondOuterHash: string | undefined;
+    const firstResult = await withSignerConfiguration([scope.projectId], () =>
+      executeWithTransport(
+        t,
+        scope.apiKeyHash,
+        firstSponsored.reservation.requestId,
+        firstHash,
+        firstXdr,
+        {
+          getNetwork: async () => ({ passphrase: Networks.TESTNET }),
+          sendTransaction: async (outer: { hash(): Buffer }) => {
+            firstOuterHash = outer.hash().toString("hex");
+            return {
+              status: "ERROR",
+              hash: firstOuterHash,
+              latestLedger: 99,
+              latestLedgerCloseTime: NOW,
+              errorResult: nestedFeeBumpResult(firstHash, "failed", "txBadSeq"),
+            };
+          },
+          getTransaction: async (hash: string) => ({
+            status: "NOT_FOUND",
+            txHash: hash,
+            latestLedger: 99,
+            latestLedgerCloseTime: NOW,
+            oldestLedger: 1,
+            oldestLedgerCloseTime: NOW,
+          }),
+        },
+      ),
+    );
+    const secondResult = await withSignerConfiguration([scope.projectId], () =>
+      executeWithTransport(
+        t,
+        scope.apiKeyHash,
+        secondSponsored.reservation.requestId,
+        secondHash,
+        secondXdr,
+        {
+          getNetwork: async () => ({ passphrase: Networks.TESTNET }),
+          sendTransaction: async (outer: { hash(): Buffer }) => {
+            secondOuterHash = outer.hash().toString("hex");
+            return {
+              status: "PENDING",
+              hash: secondOuterHash,
+              latestLedger: 99,
+              latestLedgerCloseTime: NOW,
+            };
+          },
+          getTransaction: async (hash: string) => ({
+            status: "NOT_FOUND",
+            txHash: hash,
+            latestLedger: 99,
+            latestLedgerCloseTime: NOW,
+            oldestLedger: 1,
+            oldestLedgerCloseTime: NOW,
+          }),
+        },
+      ),
+    );
+
+    expect(firstResult).toMatchObject({ status: "submission_unknown" });
+    expect(secondResult).toMatchObject({ status: "submitted" });
+    expect(firstOuterHash).toEqual(expect.any(String));
+    expect(secondOuterHash).toEqual(expect.any(String));
+    expect(firstOuterHash).not.toBe(secondOuterHash);
+
+    const state = await readState(t, scope.projectId);
+    expect(state.attempts).toHaveLength(2);
+    const firstAttempt = state.attempts.find(
+      (attempt) => attempt.innerTransactionHash === firstHash,
+    );
+    const secondAttempt = state.attempts.find(
+      (attempt) => attempt.innerTransactionHash === secondHash,
+    );
+    expect(firstAttempt).toMatchObject({
+      innerTransactionHash: firstHash,
+      outerTransactionHash: firstOuterHash,
+      sourceWallet: GAS_TEST_SOURCE_KEYPAIR.publicKey(),
+      relayerPublicKey: RELAYER_PUBLIC_KEY,
+      sendCount: 1,
+      sequenceDiagnosis: {
+        disposition: "unresolved",
+        lookupClassification: "not_found",
+      },
+    });
+    expect(secondAttempt).toMatchObject({
+      innerTransactionHash: secondHash,
+      outerTransactionHash: secondOuterHash,
+      sourceWallet: keypairForLabel("gas-alternate-source").publicKey(),
+      relayerPublicKey: RELAYER_PUBLIC_KEY,
+      sendCount: 1,
+    });
+    expect(firstAttempt?.outerTransactionHash).not.toBe(secondAttempt?.outerTransactionHash);
+  });
+});
+
+test("keeps mismatched ledger evidence unresolved", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t, { suffix: "diagnosis-mismatch" });
+    const transactionXdr = gasMaxTimeEnvelopeFixtures.unbounded;
+    const sponsored = await sponsor(t, transactionXdr, "diagnosis-mismatch", scope.apiKeyHash);
+    expect(sponsored.status).toBe("success");
+    if (sponsored.status !== "success") throw new Error("Expected a reservation");
+    const transactionHash = sponsored.reservation.transactionHash;
+    if (transactionHash === null) throw new Error("Expected a transaction hash");
+
+    const result = await withSignerConfiguration([scope.projectId], () =>
+      executeWithAdapterFactory(
+        t,
+        scope.apiKeyHash,
+        sponsored.reservation.requestId,
+        transactionHash,
+        transactionXdr,
+        (authorizeSend) => ({
+          send: async (request) => {
+            if (!(await authorizeSend(request))) throw new Error("authorization denied");
+            return {
+              status: "rejected" as const,
+              outerTransactionHash: request.expectedOuterHash,
+              resultCode: "txFeeBumpInnerFailed",
+              innerResultCode: "txBadSeq",
+            };
+          },
+          lookup: async (outerTransactionHash) => ({
+            status: "found" as const,
+            outerTransactionHash,
+            innerTransactionHash: "a".repeat(64),
+            feeSource: RELAYER_PUBLIC_KEY,
+            feeStroops: 187n,
+            ledger: 42,
+            resultCode: "txFeeBumpInnerFailed",
+            innerResultCode: "txBadSeq",
+          }),
+        }),
+      ),
+    );
+    expect(result).toMatchObject({ status: "submission_unknown" });
+
+    const state = await readState(t, scope.projectId);
+    expect(state.attempts[0]?.sequenceDiagnosis).toEqual({
+      disposition: "unresolved",
+      lookupClassification: "found",
+      recordedAt: NOW,
+    });
+    expect(state.policy?.outstandingHoldsStroops).toBe(200n);
   });
 });
 

@@ -27,20 +27,52 @@ const FEE_BUMP: TestnetFeeBumpResult = buildTestnetFeeBumpTransaction(INNER_XDR,
 });
 const OUTER = new FeeBumpTransaction(FEE_BUMP.signedOuterXdr, Networks.TESTNET);
 
-function successResult(): xdr.TransactionResult {
+function feeBumpResult(
+  outcome: "success" | "failed",
+  innerCode: "txSuccess" | "txBadSeq",
+  innerHash = FEE_BUMP.innerTransactionHash,
+): xdr.TransactionResult {
+  const innerResult = new xdr.InnerTransactionResult({
+    feeCharged: new xdr.Int64("187"),
+    result:
+      innerCode === "txSuccess"
+        ? xdr.InnerTransactionResultResult.txSuccess([])
+        : xdr.InnerTransactionResultResult.txBadSeq(),
+    ext: new xdr.InnerTransactionResultExt(0),
+  });
+  const innerResultPair = new xdr.InnerTransactionResultPair({
+    transactionHash: Buffer.from(innerHash, "hex"),
+    result: innerResult,
+  });
+
   return new xdr.TransactionResult({
     feeCharged: new xdr.Int64("187"),
-    result: xdr.TransactionResultResult.txSuccess([]),
+    result:
+      outcome === "success"
+        ? xdr.TransactionResultResult.txFeeBumpInnerSuccess(innerResultPair)
+        : xdr.TransactionResultResult.txFeeBumpInnerFailed(innerResultPair),
     ext: new xdr.TransactionResultExt(0),
   });
 }
 
+function successResult(): xdr.TransactionResult {
+  return feeBumpResult("success", "txSuccess");
+}
+
 function failedResult(): xdr.TransactionResult {
+  return feeBumpResult("failed", "txBadSeq");
+}
+
+function topLevelFailedResult(): xdr.TransactionResult {
   return new xdr.TransactionResult({
     feeCharged: new xdr.Int64("187"),
     result: xdr.TransactionResultResult.txBadSeq(),
     ext: new xdr.TransactionResultExt(0),
   });
+}
+
+function encodedResult(result: xdr.TransactionResult): string {
+  return result.toXDR("base64");
 }
 
 function rejectedResult(): xdr.TransactionResult {
@@ -108,7 +140,7 @@ function adapter(overrides: Parameters<typeof transport>[0] = {}) {
 function lookupResponse(
   hash: string,
   status: "SUCCESS" | "FAILED" = "SUCCESS",
-  resultXdr: xdr.TransactionResult = successResult(),
+  result: xdr.TransactionResult = successResult(),
 ) {
   return {
     status,
@@ -122,7 +154,7 @@ function lookupResponse(
     applicationOrder: 1,
     feeBump: true,
     envelopeXdr: OUTER.toEnvelope(),
-    resultXdr,
+    resultXdr: encodedResult(result),
     resultMetaXdr: OUTER.toEnvelope(),
     events: {
       transactionEventsXdr: [],
@@ -208,13 +240,29 @@ test("classifies pending, duplicate, retry-later, and rejection responses with o
       hash: FEE_BUMP.outerTransactionHash,
       latestLedger: 99,
       latestLedgerCloseTime: 1_000,
-      errorResult: failedResult(),
+      errorResultXdr: encodedResult(failedResult()),
     }),
   }).send(request());
   assert.deepEqual(badSequence, {
     status: "rejected",
     outerTransactionHash: FEE_BUMP.outerTransactionHash,
-    resultCode: "txBadSeq",
+    resultCode: "txFeeBumpInnerFailed",
+    innerResultCode: "txBadSeq",
+  });
+
+  const mismatchedInnerResult = await adapter({
+    sendTransaction: async () => ({
+      status: "ERROR",
+      hash: FEE_BUMP.outerTransactionHash,
+      latestLedger: 99,
+      latestLedgerCloseTime: 1_000,
+      errorResultXdr: encodedResult(feeBumpResult("failed", "txBadSeq", "a".repeat(64))),
+    }),
+  }).send(request());
+  assert.deepEqual(mismatchedInnerResult, {
+    status: "unknown",
+    outerTransactionHash: FEE_BUMP.outerTransactionHash,
+    reason: "malformed_response",
   });
 });
 
@@ -455,7 +503,8 @@ test("normalizes found success and bad-sequence lookup evidence", async () => {
     feeSource: FEE_BUMP.feeSource,
     feeStroops: 187n,
     ledger: 42,
-    resultCode: "txSuccess",
+    resultCode: "txFeeBumpInnerSuccess",
+    innerResultCode: "txSuccess",
   });
 
   const badSequence = await adapter({
@@ -468,8 +517,15 @@ test("normalizes found success and bad-sequence lookup evidence", async () => {
     feeSource: FEE_BUMP.feeSource,
     feeStroops: 187n,
     ledger: 42,
-    resultCode: "txBadSeq",
+    resultCode: "txFeeBumpInnerFailed",
+    innerResultCode: "txBadSeq",
   });
+
+  const mismatchedInnerResult = await adapter({
+    getTransaction: async (hash) =>
+      lookupResponse(hash, "FAILED", feeBumpResult("failed", "txBadSeq", "a".repeat(64))),
+  }).lookup(FEE_BUMP.outerTransactionHash);
+  assert.deepEqual(mismatchedInnerResult, { status: "malformed_response" });
 });
 
 test("classifies not-found, unavailable, malformed, mismatched, and inconsistent lookup responses", async () => {
@@ -494,7 +550,7 @@ test("classifies not-found, unavailable, malformed, mismatched, and inconsistent
   assert.deepEqual(mismatched, { status: "malformed_response" });
 
   const inconsistent = await adapter({
-    getTransaction: async (hash) => lookupResponse(hash, "SUCCESS", failedResult()),
+    getTransaction: async (hash) => lookupResponse(hash, "SUCCESS", topLevelFailedResult()),
   }).lookup(FEE_BUMP.outerTransactionHash);
   assert.deepEqual(inconsistent, { status: "malformed_response" });
 

@@ -262,6 +262,8 @@ export const gasExecutionAttempts = defineTable({
   leaseExpiresAt: v.optional(v.number()),
   sendCount: v.number(),
   nextCheckAt: v.number(),
+  /** Earliest authenticated resupply/send time for a transient retry. */
+  nextSendAt: v.optional(v.number()),
   firstPossibleSendAt: v.optional(v.number()),
   reconciliationDeadlineAt: v.optional(v.number()),
   reconciliationRequired: v.boolean(),

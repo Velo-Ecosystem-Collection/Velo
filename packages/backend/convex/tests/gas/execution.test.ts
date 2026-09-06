@@ -182,13 +182,22 @@ async function executeWithTransport(
     sendTransaction: (transaction: { hash(): Buffer }) => Promise<unknown>;
     getTransaction: (hash: string) => Promise<unknown>;
   },
+  onSleep?: (milliseconds: number) => void,
 ) {
   const result = await t.action(async (ctx) => {
     const execution = await executeGasExecution(
       ctx,
       { apiKeyHash, requestId, transactionHash, transactionXdr },
       undefined,
-      { rpcTransport: transport },
+      {
+        rpcTransport: transport,
+        clock: () => Date.now(),
+        sleep: async (milliseconds) => {
+          onSleep?.(milliseconds);
+          vi.advanceTimersByTime(milliseconds);
+        },
+        random: () => 0,
+      },
     );
     return execution.status === "claimed" ? execution.execution : execution;
   });
@@ -203,6 +212,7 @@ async function executeWithAdapterFactory(
   transactionXdr: string,
   rpcAdapterFactory: (
     authorizeSend: TestnetFeeBumpRpcAuthorizationHook,
+    rpcUrl?: string,
   ) => TestnetFeeBumpRpcAdapter,
 ) {
   const result = await t.action(async (ctx) => {
@@ -210,7 +220,14 @@ async function executeWithAdapterFactory(
       ctx,
       { apiKeyHash, requestId, transactionHash, transactionXdr },
       undefined,
-      { rpcAdapterFactory },
+      {
+        rpcAdapterFactory,
+        clock: () => Date.now(),
+        sleep: async (milliseconds) => {
+          vi.advanceTimersByTime(milliseconds);
+        },
+        random: () => 0,
+      },
     );
     return execution.status === "claimed" ? execution.execution : execution;
   });
@@ -543,6 +560,7 @@ test("records duplicate, rejection, retry, timeout, and malformed send classific
         }),
         expectedStatus: "submitted",
         expectedClassification: "duplicate",
+        expectedSendCount: 1,
       },
       {
         id: "rejection",
@@ -554,6 +572,7 @@ test("records duplicate, rejection, retry, timeout, and malformed send classific
         }),
         expectedStatus: "submission_unknown",
         expectedClassification: "rejected",
+        expectedSendCount: 1,
       },
       {
         id: "retry-later",
@@ -565,6 +584,7 @@ test("records duplicate, rejection, retry, timeout, and malformed send classific
         }),
         expectedStatus: "submission_unknown",
         expectedClassification: "retry_later",
+        expectedSendCount: 3,
       },
       {
         id: "timeout",
@@ -573,12 +593,14 @@ test("records duplicate, rejection, retry, timeout, and malformed send classific
         },
         expectedStatus: "submission_unknown",
         expectedClassification: "unknown",
+        expectedSendCount: 3,
       },
       {
         id: "malformed",
         response: (_hash: string) => ({ body: "must not persist" }),
         expectedStatus: "submission_unknown",
         expectedClassification: "unknown",
+        expectedSendCount: 1,
       },
       {
         id: "hash-mismatch",
@@ -590,6 +612,7 @@ test("records duplicate, rejection, retry, timeout, and malformed send classific
         }),
         expectedStatus: "submission_unknown",
         expectedClassification: "unknown",
+        expectedSendCount: 1,
       },
     ] as const;
 
@@ -634,19 +657,511 @@ test("records duplicate, rejection, retry, timeout, and malformed send classific
       );
 
       expect(result).toMatchObject({ status: sendCase.expectedStatus });
-      expect(sendCalls).toBe(1);
+      expect(sendCalls).toBe(sendCase.expectedSendCount);
       const state = await readState(t, scope.projectId);
       expect(state.attempts[0]).toMatchObject({
-        sendCount: 1,
+        sendCount: sendCase.expectedSendCount,
         lifecycle: sendCase.expectedStatus,
         outerFeeStroops: 200n,
         latestSendClassification: {
           status: sendCase.expectedClassification,
-          sendCount: 1,
+          sendCount: sendCase.expectedSendCount,
         },
       });
       expect(state.logs[0]?.lifecycle).toBe(sendCase.expectedStatus);
     }
+  });
+});
+
+test("retries transient failures with one pinned outer identity and stops at the durable send cap", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t, { suffix: "bounded-retry" });
+    const transactionXdr = gasMaxTimeEnvelopeFixtures.unbounded;
+    const sponsored = await sponsor(t, transactionXdr, "bounded-retry", scope.apiKeyHash);
+    expect(sponsored.status).toBe("success");
+    if (sponsored.status !== "success") throw new Error("Expected a reservation");
+    const transactionHash = sponsored.reservation.transactionHash;
+    if (transactionHash === null) throw new Error("Expected a transaction hash");
+
+    const outerHashes: string[] = [];
+    let sendCalls = 0;
+    const accepted = await withSignerConfiguration([scope.projectId], () =>
+      executeWithTransport(
+        t,
+        scope.apiKeyHash,
+        sponsored.reservation.requestId,
+        transactionHash,
+        transactionXdr,
+        {
+          getNetwork: async () => ({ passphrase: Networks.TESTNET }),
+          sendTransaction: async (outer) => {
+            sendCalls += 1;
+            outerHashes.push(outer.hash().toString("hex"));
+            if (sendCalls === 1) {
+              throw Object.assign(new Error("transient"), { name: "TimeoutError" });
+            }
+            return {
+              status: "PENDING",
+              hash: outer.hash().toString("hex"),
+              latestLedger: 99,
+              latestLedgerCloseTime: NOW,
+            };
+          },
+          getTransaction: async (hash) => ({
+            status: "NOT_FOUND",
+            txHash: hash,
+            latestLedger: 99,
+            latestLedgerCloseTime: NOW,
+            oldestLedger: 1,
+            oldestLedgerCloseTime: NOW,
+          }),
+        },
+      ),
+    );
+
+    expect(accepted).toMatchObject({ status: "submitted", reconciliationRequired: true });
+    expect(sendCalls).toBe(2);
+    expect(new Set(outerHashes).size).toBe(1);
+
+    const state = await readState(t, scope.projectId);
+    expect(state.attempts[0]).toMatchObject({
+      sendCount: 2,
+      outerFeeStroops: 200n,
+      reconciliationRequired: true,
+    });
+
+    const exhaustionScope = await createScope(t, {
+      suffix: "bounded-retry-exhaustion",
+      apiKeyHash: "d".repeat(64),
+    });
+    const exhaustion = await sponsor(
+      t,
+      transactionXdr,
+      "bounded-retry-exhaustion",
+      exhaustionScope.apiKeyHash,
+    );
+    expect(exhaustion.status).toBe("success");
+    if (exhaustion.status !== "success") throw new Error("Expected a reservation");
+    const exhaustionHash = exhaustion.reservation.transactionHash;
+    if (exhaustionHash === null) throw new Error("Expected a transaction hash");
+    const exhaustionOuterHashes: string[] = [];
+    let exhaustionSends = 0;
+    const exhausted = await withSignerConfiguration([exhaustionScope.projectId], () =>
+      executeWithTransport(
+        t,
+        exhaustionScope.apiKeyHash,
+        exhaustion.reservation.requestId,
+        exhaustionHash,
+        transactionXdr,
+        {
+          getNetwork: async () => ({ passphrase: Networks.TESTNET }),
+          sendTransaction: async (outer) => {
+            exhaustionSends += 1;
+            exhaustionOuterHashes.push(outer.hash().toString("hex"));
+            return {
+              status: "TRY_AGAIN_LATER",
+              hash: outer.hash().toString("hex"),
+              latestLedger: 99,
+              latestLedgerCloseTime: NOW,
+            };
+          },
+          getTransaction: async (hash) => ({
+            status: "NOT_FOUND",
+            txHash: hash,
+            latestLedger: 99,
+            latestLedgerCloseTime: NOW,
+            oldestLedger: 1,
+            oldestLedgerCloseTime: NOW,
+          }),
+        },
+      ),
+    );
+    expect(exhausted).toMatchObject({ status: "submission_unknown", reconciliationRequired: true });
+    expect(exhaustionSends).toBe(3);
+    expect(new Set(exhaustionOuterHashes).size).toBe(1);
+    const exhaustedState = await readState(t, exhaustionScope.projectId);
+    expect(exhaustedState.attempts[0]).toMatchObject({
+      sendCount: 3,
+      reconciliationRequired: true,
+    });
+    expect(exhaustedState.attempts[0]).not.toHaveProperty("nextSendAt");
+  });
+});
+
+test("recovers an expired pinned attempt from authenticated XDR without an audit row or new hold", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t, { suffix: "resupply-recovery" });
+    const transactionXdr = gasMaxTimeEnvelopeFixtures.unbounded;
+    const sponsored = await sponsor(t, transactionXdr, "resupply-recovery", scope.apiKeyHash);
+    expect(sponsored.status).toBe("success");
+    if (sponsored.status !== "success") throw new Error("Expected a reservation");
+    const transactionHash = sponsored.reservation.transactionHash;
+    if (transactionHash === null) throw new Error("Expected a transaction hash");
+
+    const crashed = await withSignerConfiguration([scope.projectId], () =>
+      executeWithAdapterFactory(
+        t,
+        scope.apiKeyHash,
+        sponsored.reservation.requestId,
+        transactionHash,
+        transactionXdr,
+        (authorizeSend) => ({
+          send: async (request) => {
+            if (!(await authorizeSend(request))) throw new Error("authorization denied");
+            throw new Error("crashed after durable authorization");
+          },
+          lookup: async () => ({ status: "not_found" as const }),
+        }),
+      ),
+    );
+    expect(crashed).toEqual({ status: "dependency_unavailable" });
+
+    const beforeRecovery = await readState(t, scope.projectId);
+    const originalAttempt = beforeRecovery.attempts[0];
+    if (!originalAttempt?.outerTransactionHash) throw new Error("Expected a pinned attempt");
+    expect(originalAttempt.sendCount).toBe(1);
+
+    await t.run(async (ctx) => {
+      const log = await ctx.db
+        .query("gasLogs")
+        .withIndex("by_project_id_and_request_id", (q) =>
+          q.eq("projectId", scope.projectId).eq("requestId", sponsored.reservation.requestId),
+        )
+        .unique();
+      if (!log) throw new Error("Expected the audit row");
+      await ctx.db.delete(log._id);
+    });
+    vi.setSystemTime(NOW + 31_000);
+    expect(await t.mutation(internal.gas.execution.recoverAbandoned, { limit: 25 })).toBe(1);
+
+    const recovered = (await readState(t, scope.projectId)).attempts[0];
+    expect(recovered).toMatchObject({
+      lifecycle: "submission_unknown",
+      sendCount: 1,
+      leaseGeneration: 2,
+      reconciliationRequired: true,
+    });
+    expect(recovered?.leaseToken).toBeUndefined();
+    expect(recovered?.outerTransactionHash).toBe(originalAttempt.outerTransactionHash);
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(recovered!._id, { nextSendAt: NOW + 60_000 });
+    });
+    const blockedResupply = await withSignerConfiguration([scope.projectId], () =>
+      executeWithTransport(
+        t,
+        scope.apiKeyHash,
+        sponsored.reservation.requestId,
+        transactionHash,
+        transactionXdr,
+        {
+          getNetwork: async () => ({ passphrase: Networks.TESTNET }),
+          sendTransaction: async () => {
+            throw new Error("backoff must not be bypassed");
+          },
+          getTransaction: async () => ({ status: "NOT_FOUND" }),
+        },
+      ),
+    );
+    expect(blockedResupply).toMatchObject({ status: "submission_unknown" });
+
+    vi.setSystemTime(NOW + 60_001);
+    let sendCalls = 0;
+    const resubmitted = await withSignerConfiguration([scope.projectId], () =>
+      executeWithTransport(
+        t,
+        scope.apiKeyHash,
+        sponsored.reservation.requestId,
+        transactionHash,
+        transactionXdr,
+        {
+          getNetwork: async () => ({ passphrase: Networks.TESTNET }),
+          sendTransaction: async (outer) => {
+            sendCalls += 1;
+            expect(outer.hash().toString("hex")).toBe(originalAttempt.outerTransactionHash);
+            return {
+              status: "PENDING",
+              hash: outer.hash().toString("hex"),
+              latestLedger: 100,
+              latestLedgerCloseTime: NOW,
+            };
+          },
+          getTransaction: async (hash) => ({
+            status: "NOT_FOUND",
+            txHash: hash,
+            latestLedger: 100,
+            latestLedgerCloseTime: NOW,
+            oldestLedger: 1,
+            oldestLedgerCloseTime: NOW,
+          }),
+        },
+      ),
+    );
+    expect(resubmitted).toMatchObject({ status: "submitted", reconciliationRequired: true });
+    expect(sendCalls).toBe(1);
+    const afterRecovery = await readState(t, scope.projectId);
+    expect(afterRecovery.attempts).toHaveLength(1);
+    expect(afterRecovery.attempts[0]).toMatchObject({
+      sendCount: 2,
+      outerTransactionHash: originalAttempt.outerTransactionHash,
+      outerFeeStroops: 200n,
+      leaseGeneration: 3,
+    });
+    expect(afterRecovery.policy?.outstandingHoldsStroops).toBe(
+      beforeRecovery.policy?.outstandingHoldsStroops,
+    );
+    expect(afterRecovery.logs).toHaveLength(0);
+  });
+});
+
+test("switches once to the configured fallback RPC without changing the FeeBump identity", async () => {
+  await withFixedTime(async () => {
+    const previousFallback = process.env.VELO_GAS_TESTNET_FALLBACK_RPC_URL;
+    process.env.VELO_GAS_TESTNET_FALLBACK_RPC_URL = "https://fallback.test.example";
+    try {
+      const t = convexTest(schema, modules);
+      const scope = await createScope(t, { suffix: "fallback-rpc" });
+      const transactionXdr = gasMaxTimeEnvelopeFixtures.unbounded;
+      const sponsored = await sponsor(t, transactionXdr, "fallback-rpc", scope.apiKeyHash);
+      expect(sponsored.status).toBe("success");
+      if (sponsored.status !== "success") throw new Error("Expected a reservation");
+      const transactionHash = sponsored.reservation.transactionHash;
+      if (transactionHash === null) throw new Error("Expected a transaction hash");
+
+      const endpoints: (string | undefined)[] = [];
+      const outerHashes: string[] = [];
+      const outerFees: bigint[] = [];
+      let authorizationCalls = 0;
+      const result = await withSignerConfiguration([scope.projectId], () =>
+        executeWithAdapterFactory(
+          t,
+          scope.apiKeyHash,
+          sponsored.reservation.requestId,
+          transactionHash,
+          transactionXdr,
+          (authorizeSend, endpoint) => {
+            endpoints.push(endpoint);
+            return {
+              send: async (request) => {
+                if (endpoint === "https://fallback.test.example") {
+                  authorizationCalls += 1;
+                  if (!(await authorizeSend(request))) throw new Error("authorization denied");
+                  outerHashes.push(request.expectedOuterHash);
+                  outerFees.push(request.approvedFeeCeilingStroops);
+                  return {
+                    status: "pending" as const,
+                    outerTransactionHash: request.expectedOuterHash,
+                  };
+                }
+                return {
+                  status: "preflight_failed" as const,
+                  code: "network_unavailable" as const,
+                };
+              },
+              lookup: async () => ({ status: "not_found" as const }),
+            };
+          },
+        ),
+      );
+
+      expect(result).toMatchObject({ status: "submitted" });
+      expect(endpoints).toEqual([undefined, "https://fallback.test.example"]);
+      expect(authorizationCalls).toBe(1);
+      expect(new Set(outerHashes).size).toBe(1);
+      expect(outerFees).toEqual([200n]);
+    } finally {
+      if (previousFallback === undefined) delete process.env.VELO_GAS_TESTNET_FALLBACK_RPC_URL;
+      else process.env.VELO_GAS_TESTNET_FALLBACK_RPC_URL = previousFallback;
+    }
+  });
+});
+
+test("stops transient retry sends when the reservation expires during backoff", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t, { suffix: "retry-expiry" });
+    const transactionXdr = gasMaxTimeEnvelopeFixtures.unbounded;
+    const sponsored = await sponsor(t, transactionXdr, "retry-expiry", scope.apiKeyHash);
+    expect(sponsored.status).toBe("success");
+    if (sponsored.status !== "success") throw new Error("Expected a reservation");
+    const transactionHash = sponsored.reservation.transactionHash;
+    if (transactionHash === null) throw new Error("Expected a transaction hash");
+
+    let sendCalls = 0;
+    let sleepCalls = 0;
+    const result = await withSignerConfiguration([scope.projectId], () =>
+      executeWithTransport(
+        t,
+        scope.apiKeyHash,
+        sponsored.reservation.requestId,
+        transactionHash,
+        transactionXdr,
+        {
+          getNetwork: async () => ({ passphrase: Networks.TESTNET }),
+          sendTransaction: async (outer) => {
+            sendCalls += 1;
+            return {
+              status: "TRY_AGAIN_LATER",
+              hash: outer.hash().toString("hex"),
+              latestLedger: 99,
+              latestLedgerCloseTime: NOW,
+            };
+          },
+          getTransaction: async (hash) => ({
+            status: "NOT_FOUND",
+            txHash: hash,
+            latestLedger: 99,
+            latestLedgerCloseTime: NOW,
+            oldestLedger: 1,
+            oldestLedgerCloseTime: NOW,
+          }),
+        },
+        () => {
+          sleepCalls += 1;
+          vi.setSystemTime(NOW + 15 * 60 * 1_000 + 1);
+        },
+      ),
+    );
+
+    expect(result).toEqual({ status: "reservation_expired" });
+    expect(sendCalls).toBe(1);
+    expect(sleepCalls).toBe(1);
+    const state = await readState(t, scope.projectId);
+    expect(state.attempts[0]).toMatchObject({
+      lifecycle: "submission_unknown",
+      sendCount: 1,
+      latestSendClassification: { status: "retry_later", sendCount: 1 },
+    });
+    expect(state.attempts[0]).toHaveProperty("nextSendAt");
+  });
+});
+
+test("does not send through a fallback that fails Testnet preflight", async () => {
+  await withFixedTime(async () => {
+    const previousFallback = process.env.VELO_GAS_TESTNET_FALLBACK_RPC_URL;
+    process.env.VELO_GAS_TESTNET_FALLBACK_RPC_URL = "https://fallback.test.example";
+    try {
+      const t = convexTest(schema, modules);
+      const scope = await createScope(t, { suffix: "fallback-wrong-network" });
+      const transactionXdr = gasMaxTimeEnvelopeFixtures.unbounded;
+      const sponsored = await sponsor(
+        t,
+        transactionXdr,
+        "fallback-wrong-network",
+        scope.apiKeyHash,
+      );
+      expect(sponsored.status).toBe("success");
+      if (sponsored.status !== "success") throw new Error("Expected a reservation");
+      const transactionHash = sponsored.reservation.transactionHash;
+      if (transactionHash === null) throw new Error("Expected a transaction hash");
+
+      const endpoints: (string | undefined)[] = [];
+      let fallbackCalls = 0;
+      const result = await withSignerConfiguration([scope.projectId], () =>
+        executeWithAdapterFactory(
+          t,
+          scope.apiKeyHash,
+          sponsored.reservation.requestId,
+          transactionHash,
+          transactionXdr,
+          (_authorizeSend, endpoint) => {
+            endpoints.push(endpoint);
+            return {
+              send: async () => {
+                if (endpoint === "https://fallback.test.example") {
+                  fallbackCalls += 1;
+                  return { status: "preflight_failed" as const, code: "wrong_network" as const };
+                }
+                return {
+                  status: "preflight_failed" as const,
+                  code: "network_unavailable" as const,
+                };
+              },
+              lookup: async () => ({ status: "not_found" as const }),
+            };
+          },
+        ),
+      );
+
+      expect(result).toEqual({ status: "wrong_network" });
+      expect(endpoints).toEqual([undefined, "https://fallback.test.example"]);
+      expect(fallbackCalls).toBe(1);
+      const state = await readState(t, scope.projectId);
+      expect(state.attempts[0]).toMatchObject({ lifecycle: "claimed", sendCount: 0 });
+      expect(state.attempts[0]).not.toHaveProperty("outerTransactionHash");
+    } finally {
+      if (previousFallback === undefined) delete process.env.VELO_GAS_TESTNET_FALLBACK_RPC_URL;
+      else process.env.VELO_GAS_TESTNET_FALLBACK_RPC_URL = previousFallback;
+    }
+  });
+});
+
+test("recovers expired leases in batches of 25 and schedules only bounded metadata", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t, { suffix: "recovery-batch" });
+    await t.run(async (ctx) => {
+      for (let index = 0; index < 26; index += 1) {
+        await ctx.db.insert("gasExecutionAttempts", {
+          projectId: scope.projectId,
+          network: GAS_NETWORK,
+          requestId: `recovery-batch-${index}`,
+          idempotencyKeyHash: "a".repeat(64),
+          requestFingerprint: "b".repeat(64),
+          innerTransactionHash: "c".repeat(64),
+          sourceWallet: GAS_TEST_SOURCE_KEYPAIR.publicKey(),
+          targetContractIds: ["CAK6TTLMWJI3CDXHUC5ANDEB3BOUFGPQ4XO4JNE7R3VZ4LWLCXRUAQWK"],
+          innerMaxFeeStroops: 100n,
+          originalReservationStroops: 200n,
+          reservationCreatedAt: NOW,
+          reservationExpiresAt: NOW + 15 * 60 * 1_000,
+          accountingDayKey: "2026-09-03",
+          lifecycle: "claimed",
+          approvedHoldStroops: 200n,
+          feeCeilingStroops: 200n,
+          relayerPublicKey: RELAYER_PUBLIC_KEY,
+          leaseToken: `lease-${index}`,
+          leaseGeneration: 1,
+          leaseExpiresAt: NOW - 1,
+          sendCount: 0,
+          nextCheckAt: NOW,
+          reconciliationRequired: false,
+          createdAt: NOW,
+          updatedAt: NOW,
+        });
+      }
+    });
+
+    const recovered = await t.mutation(internal.gas.execution.recoverAbandoned, { limit: 25 });
+    expect(recovered).toBe(25);
+    const scheduled = await t.run(async (ctx) =>
+      ctx.db.system.query("_scheduled_functions").collect(),
+    );
+    expect(scheduled).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "gas/execution:recoverAbandoned",
+          scheduledTime: NOW,
+          state: { kind: "pending" },
+          args: [{ limit: 25 }],
+        }),
+      ]),
+    );
+    expect(JSON.stringify(scheduled)).not.toContain("transactionXdr");
+    expect(JSON.stringify(scheduled)).not.toContain("secretKey");
+
+    await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+    const attempts = await t.run(async (ctx) =>
+      ctx.db
+        .query("gasExecutionAttempts")
+        .withIndex("by_project_id_and_request_id", (q) => q.eq("projectId", scope.projectId))
+        .take(30),
+    );
+    expect(attempts).toHaveLength(26);
+    expect(attempts.every((attempt) => attempt.leaseToken === undefined)).toBe(true);
+    expect(attempts.every((attempt) => attempt.leaseGeneration === 2)).toBe(true);
   });
 });
 
@@ -1336,6 +1851,29 @@ test("stale, conflicting, and regressive outcome writes are fenced", async () =>
       leaseToken: attempt.leaseToken,
       leaseGeneration: attempt.leaseGeneration,
     };
+    const duplicateOutcome = await t.mutation(internal.gas.execution.recordSendOutcome, {
+      ...base,
+      classification: {
+        status: "pending",
+        outerTransactionHash: attempt.outerTransactionHash,
+        sendCount: 1,
+      },
+    });
+    expect(duplicateOutcome).toMatchObject({
+      status: "recorded",
+      sendCount: 1,
+      idempotent: true,
+    });
+    const conflictingOutcome = await t.mutation(internal.gas.execution.recordSendOutcome, {
+      ...base,
+      classification: {
+        status: "rejected",
+        outerTransactionHash: attempt.outerTransactionHash,
+        sendCount: 1,
+        resultCode: "txFailed",
+      },
+    });
+    expect(conflictingOutcome).toEqual({ status: "invalid_lifecycle" });
     const staleFence = await t.mutation(internal.gas.execution.recordSendOutcome, {
       ...base,
       leaseToken: "stale-fence",

@@ -9,6 +9,9 @@ export const GAS_MAX_STROOPS = 2n ** 63n - 1n;
 /** D1 reservation overhead added to the inner transaction maximum fee. */
 export const GAS_FEE_OVERHEAD_STROOPS = 100n;
 
+/** Maximum number of durable FeeBump sends for one execution identity. */
+export const GAS_MAX_SEND_COUNT = 3;
+
 /** Maximum number of contract IDs accepted in a Gas Station allowlist. */
 export const GAS_MAX_ALLOWED_CONTRACT_IDS = 20;
 

@@ -31,6 +31,7 @@ type Env = {
   readonly VELO_CONVEX_TELEMETRY_ENABLED: string | undefined;
   readonly VELO_DEPLOYMENT_ENVIRONMENT: "development" | "preview" | "production" | undefined;
   readonly VELO_ENABLE_RATE_LIMIT_BENCHMARK: string | undefined;
+  readonly VELO_GAS_TESTNET_FALLBACK_RPC_URL: string | undefined;
   readonly VELO_GAS_TESTNET_RELAYER_SIGNERS_JSON: string | undefined;
   readonly VELO_MAINNET_USDC_ISSUER: string | undefined;
   readonly VELO_PLAYGROUND_PERSISTENCE_SECRET: string | undefined;

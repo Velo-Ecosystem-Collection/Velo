@@ -28,10 +28,11 @@ import type {
 } from "./execution";
 
 import { internal } from "../_generated/api";
-import { internalAction } from "../_generated/server";
+import { env, internalAction } from "../_generated/server";
 import { deriveGasTransactionFacts } from "./envelope";
 import { gasSubmitResultProjectionValidator } from "./projections";
 import { RelayerCustodyError, withTestnetRelayerSigner } from "./relayer";
+import { GAS_MAX_SEND_COUNT } from "./types";
 import {
   GAS_MAX_TRANSACTION_XDR_BYTES,
   normalizeGasRequestId,
@@ -213,7 +214,14 @@ export type GasExecutionDependencies = Readonly<{
   /** Optional adapter factory used by deterministic integration harnesses. */
   rpcAdapterFactory?: (
     authorizeSend: TestnetFeeBumpRpcAuthorizationHook,
+    rpcUrl?: string,
   ) => TestnetFeeBumpRpcAdapter;
+  /** Injected transport for deterministic fallback-endpoint tests. */
+  fallbackRpcTransport?: TestnetFeeBumpRpcTransport;
+  /** Injected action clock, sleep, and jitter source. */
+  clock?: () => number;
+  sleep?: (milliseconds: number) => Promise<void>;
+  random?: () => number;
 }>;
 
 type GasClaimFailure = Exclude<GasClaimResult, { status: "claimed" }>;
@@ -270,11 +278,13 @@ function mapRpcPreflightError(code: TestnetFeeBumpRpcPreflightErrorCode): GasCla
 
 function mapAuthorizationFailure(result: GasSendAuthorizationResult): GasClaimFailure {
   if (result.status === "authorized") return { status: "invalid_internal_input" };
+  if (result.status === "not_due") return { status: "dependency_unavailable" };
   return result;
 }
 
 function sendClassification(
   outcome: Exclude<TestnetFeeBumpSendOutcome, { status: "preflight_failed" }>,
+  sendCount: number,
 ) {
   switch (outcome.status) {
     case "pending":
@@ -283,13 +293,13 @@ function sendClassification(
       return {
         status: outcome.status,
         outerTransactionHash: outcome.outerTransactionHash,
-        sendCount: 1,
+        sendCount,
       } as const;
     case "rejected":
       return {
         status: outcome.status,
         outerTransactionHash: outcome.outerTransactionHash,
-        sendCount: 1,
+        sendCount,
         ...(outcome.resultCode === undefined ? {} : { resultCode: outcome.resultCode }),
         ...(outcome.innerResultCode === undefined
           ? {}
@@ -299,7 +309,7 @@ function sendClassification(
       return {
         status: outcome.status,
         outerTransactionHash: outcome.outerTransactionHash,
-        sendCount: 1,
+        sendCount,
         reason: outcome.reason,
       } as const;
   }
@@ -375,6 +385,41 @@ function rpcUrl(): string | undefined {
   return process.env.STELLAR_RPC_URL ?? process.env.NEXT_PUBLIC_STELLAR_RPC_URL;
 }
 
+function fallbackRpcUrl(): string | undefined {
+  const configured = env.VELO_GAS_TESTNET_FALLBACK_RPC_URL?.trim();
+  return configured === "" ? undefined : configured;
+}
+
+function isFallbackEligible(
+  outcome: TestnetFeeBumpSendOutcome,
+): outcome is Extract<TestnetFeeBumpSendOutcome, { status: "preflight_failed" }> {
+  return (
+    outcome.status === "preflight_failed" &&
+    (outcome.code === "network_timeout" || outcome.code === "network_unavailable")
+  );
+}
+
+function isRetryableOutcome(
+  outcome: Exclude<TestnetFeeBumpSendOutcome, { status: "preflight_failed" }>,
+): boolean {
+  return (
+    outcome.status === "retry_later" ||
+    (outcome.status === "unknown" &&
+      (outcome.reason === "timeout" || outcome.reason === "transport_failure"))
+  );
+}
+
+function retryDelayMs(sendCount: number, random: () => number): number | null {
+  if (sendCount >= GAS_MAX_SEND_COUNT) return null;
+  const base = sendCount === 1 ? 1_000 : 2_000;
+  const jitter = Math.min(1, Math.max(0, random()));
+  return Math.floor(base * (1 + jitter * 0.5));
+}
+
+async function defaultSleep(milliseconds: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+}
+
 /**
  * Claim and execute one newly granted attempt. Replays stop at the current
  * safe projection and never re-enter custody, signing, or transport.
@@ -388,27 +433,99 @@ export async function executeGasExecution(
   const scope = await authorizedScope(ctx, args.apiKeyHash, providedScope);
   if ("status" in scope) return scope;
 
-  const claim = await claimGasExecution(ctx, args, scope);
-  if (claim.status !== "claimed") return claim;
-  if (claim.replayed) return claim;
-  if (claim.leaseToken === null || claim.relayerPublicKey === "") {
-    return { status: "invalid_internal_input" };
-  }
-
   let requestId: string;
   let requestFingerprint: string;
   let facts: ReturnType<typeof deriveGasTransactionFacts>;
   let quote: ReturnType<typeof quoteTestnetFeeBump>;
+  let normalizedXdr: string;
   try {
-    const normalizedXdr = normalizeXdr(args.transactionXdr);
-    if (!normalizedXdr.ok) return { status: normalizedXdr.status };
+    const normalized = normalizeXdr(args.transactionXdr);
+    if (!normalized.ok) return { status: normalized.status };
+    normalizedXdr = normalized.value;
     requestId = normalizeGasRequestId(args.requestId);
-    requestFingerprint = await sha256(normalizedXdr.value);
-    facts = deriveGasTransactionFacts(normalizedXdr.value);
-    quote = quoteTestnetFeeBump(normalizedXdr.value);
+    requestFingerprint = await sha256(normalizedXdr);
+    facts = deriveGasTransactionFacts(normalizedXdr);
+    quote = quoteTestnetFeeBump(normalizedXdr);
   } catch (error) {
     if (error instanceof TestnetTransactionEnvelopeError) return { status: error.code };
     if (error instanceof TestnetFeeBumpError) return mapFeeBumpError(error);
+    return { status: "invalid_internal_input" };
+  }
+
+  let claim = await claimGasExecution(ctx, args, scope);
+  if (claim.status !== "claimed") return claim;
+
+  if (claim.replayed) {
+    let recovery: GasClaimResult | { status: "relayer_preflight_required" };
+    try {
+      recovery = await ctx.runMutation(internal.gas.execution.recoverClaim, {
+        apiKeyId: scope.apiKeyId,
+        projectId: scope.projectId,
+        apiKeyHash: args.apiKeyHash,
+        network: facts.network,
+        operation: facts.operation,
+        requestId,
+        requestFingerprint,
+        innerTransactionHash: facts.transactionHash,
+        sourceWallet: facts.sourceWallet,
+        targetContractIds: [...facts.targetContractIds],
+        innerMaxFeeStroops: facts.innerMaxFeeStroops,
+        ...(facts.innerMaxTime === undefined ? {} : { innerMaxTime: facts.innerMaxTime }),
+        quote,
+      });
+    } catch {
+      return { status: "dependency_unavailable" };
+    }
+
+    if (recovery.status === "relayer_preflight_required") {
+      let readiness;
+      try {
+        readiness = await ctx.runAction(internal.gas.relayer.readiness, {
+          projectId: scope.projectId,
+        });
+      } catch {
+        return { status: "dependency_unavailable" };
+      }
+      if (
+        readiness.status !== "ready" ||
+        readiness.network !== facts.network ||
+        readiness.publicKey === null
+      ) {
+        return { status: "relayer_unavailable" };
+      }
+      try {
+        recovery = await ctx.runMutation(internal.gas.execution.recoverClaim, {
+          apiKeyId: scope.apiKeyId,
+          projectId: scope.projectId,
+          apiKeyHash: args.apiKeyHash,
+          network: facts.network,
+          operation: facts.operation,
+          requestId,
+          requestFingerprint,
+          innerTransactionHash: facts.transactionHash,
+          sourceWallet: facts.sourceWallet,
+          targetContractIds: [...facts.targetContractIds],
+          innerMaxFeeStroops: facts.innerMaxFeeStroops,
+          ...(facts.innerMaxTime === undefined ? {} : { innerMaxTime: facts.innerMaxTime }),
+          quote,
+          expectedRelayerPublicKey: readiness.publicKey,
+        });
+      } catch {
+        return { status: "dependency_unavailable" };
+      }
+    }
+
+    if (recovery.status !== "claimed") {
+      if (recovery.status === "relayer_preflight_required") {
+        return { status: "dependency_unavailable" };
+      }
+      return recovery;
+    }
+    claim = recovery;
+    if (claim.replayed) return claim;
+  }
+
+  if (claim.leaseToken === null || claim.relayerPublicKey === "") {
     return { status: "invalid_internal_input" };
   }
 
@@ -421,153 +538,218 @@ export async function executeGasExecution(
     return { status: "invalid_internal_input" };
   }
 
-  let continuation:
-    | { status: "recorded"; outcome: Extract<GasSendOutcomeResult, { status: "recorded" }> }
-    | GasClaimFailure;
+  const clock = dependencies.clock ?? Date.now;
+  const sleep = dependencies.sleep ?? defaultSleep;
+  const random = dependencies.random ?? Math.random;
+  const primaryUrl = rpcUrl();
+  const fallbackUrl = fallbackRpcUrl();
+  const canUseFallback = fallbackUrl !== undefined && fallbackUrl !== primaryUrl;
+
   try {
-    continuation = await withTestnetRelayerSigner(ctx, scope.projectId, async (signer) => {
-      if (signer.publicKey !== claim.relayerPublicKey) {
-        return { status: "relayer_unavailable" };
-      }
+    const continuation = await withTestnetRelayerSigner(
+      ctx,
+      scope.projectId,
+      async (signer): Promise<GasClaimResult> => {
+        if (signer.publicKey !== claim.relayerPublicKey) {
+          return { status: "relayer_unavailable" } as GasClaimFailure;
+        }
 
-      let built;
-      try {
-        built = buildTestnetFeeBumpTransaction(
-          args.transactionXdr,
-          quote.baseFeeStroops,
-          claim.approvedHoldStroops,
-          signer,
-        );
-      } catch (error) {
-        return error instanceof TestnetFeeBumpError
-          ? mapFeeBumpError(error)
-          : ({ status: "invalid_internal_input" } as const);
-      }
+        let currentClaim = claim;
+        let fallbackSwitched = false;
 
-      if (built.innerTransactionHash !== quote.innerTransactionHash) {
-        return { status: "invalid_internal_input" };
-      }
-      if (
-        built.outerMaxFeeStroops > claim.approvedHoldStroops ||
-        built.feeSource !== claim.relayerPublicKey
-      ) {
-        return { status: "invalid_internal_input" };
-      }
+        for (;;) {
+          let built;
+          try {
+            built = buildTestnetFeeBumpTransaction(
+              normalizedXdr,
+              quote.baseFeeStroops,
+              currentClaim.approvedHoldStroops,
+              signer,
+            );
+          } catch (error) {
+            return error instanceof TestnetFeeBumpError
+              ? mapFeeBumpError(error)
+              : ({ status: "invalid_internal_input" } as const);
+          }
 
-      let authorization: GasSendAuthorizationResult | null = null;
-      const authorize: TestnetFeeBumpRpcAuthorizationHook = async () => {
-        try {
-          authorization = await ctx.runMutation(internal.gas.execution.authorizeSend, {
-            apiKeyId: scope.apiKeyId,
-            projectId: scope.projectId,
-            apiKeyHash: args.apiKeyHash,
-            executionAttemptId: claim.executionAttemptId,
-            network: facts.network,
-            operation: facts.operation,
-            requestId,
-            requestFingerprint,
-            innerTransactionHash: facts.transactionHash,
-            sourceWallet: facts.sourceWallet,
-            targetContractIds: [...facts.targetContractIds],
-            innerMaxFeeStroops: facts.innerMaxFeeStroops,
-            ...(facts.innerMaxTime === undefined ? {} : { innerMaxTime: facts.innerMaxTime }),
-            outerTransactionHash: built.outerTransactionHash,
-            outerFeeStroops: built.outerMaxFeeStroops,
+          if (
+            built.innerTransactionHash !== quote.innerTransactionHash ||
+            built.outerMaxFeeStroops !== currentClaim.approvedHoldStroops ||
+            built.feeSource !== currentClaim.relayerPublicKey ||
+            (currentClaim.outerTransactionHash !== null &&
+              built.outerTransactionHash !== currentClaim.outerTransactionHash)
+          ) {
+            return { status: "invalid_internal_input" };
+          }
+
+          let authorization: GasSendAuthorizationResult | null = null;
+          const authorize: TestnetFeeBumpRpcAuthorizationHook = async () => {
+            try {
+              authorization = await ctx.runMutation(internal.gas.execution.authorizeSend, {
+                apiKeyId: scope.apiKeyId,
+                projectId: scope.projectId,
+                apiKeyHash: args.apiKeyHash,
+                executionAttemptId: currentClaim.executionAttemptId,
+                network: facts.network,
+                operation: facts.operation,
+                requestId,
+                requestFingerprint,
+                innerTransactionHash: facts.transactionHash,
+                sourceWallet: facts.sourceWallet,
+                targetContractIds: [...facts.targetContractIds],
+                innerMaxFeeStroops: facts.innerMaxFeeStroops,
+                ...(facts.innerMaxTime === undefined ? {} : { innerMaxTime: facts.innerMaxTime }),
+                outerTransactionHash: built.outerTransactionHash,
+                outerFeeStroops: built.outerMaxFeeStroops,
+                feeSource: built.feeSource,
+                leaseToken: currentClaim.leaseToken!,
+                leaseGeneration: currentClaim.leaseGeneration,
+                expectedSendCount: currentClaim.sendCount,
+              });
+            } catch {
+              authorization = null;
+              throw new Error("send authorization unavailable");
+            }
+            return authorization.status === "authorized";
+          };
+
+          const makeAdapter = (
+            endpoint: string | undefined,
+            transport?: TestnetFeeBumpRpcTransport,
+          ) =>
+            dependencies.rpcAdapterFactory?.(authorize, endpoint) ??
+            createTestnetFeeBumpRpcAdapter({
+              ...(endpoint === undefined ? {} : { rpcUrl: endpoint }),
+              ...(transport === undefined ? {} : { transport }),
+              authorizeSend: authorize,
+            });
+
+          const sendRequest = {
+            signedOuterXdr: built.signedOuterXdr,
+            expectedOuterHash: built.outerTransactionHash,
+            expectedInnerHash: built.innerTransactionHash,
             feeSource: built.feeSource,
-            leaseToken: claim.leaseToken!,
-            leaseGeneration: claim.leaseGeneration,
-          });
-        } catch {
-          authorization = null;
-          throw new Error("send authorization unavailable");
+            approvedFeeCeilingStroops: currentClaim.approvedHoldStroops,
+          };
+          let adapter: TestnetFeeBumpRpcAdapter;
+          let outcome: TestnetFeeBumpSendOutcome;
+          const usingFallback = fallbackSwitched && canUseFallback;
+          try {
+            adapter = makeAdapter(
+              usingFallback ? fallbackUrl : primaryUrl,
+              usingFallback ? dependencies.fallbackRpcTransport : dependencies.rpcTransport,
+            );
+            outcome = await adapter.send(sendRequest);
+            if (!usingFallback && isFallbackEligible(outcome) && canUseFallback) {
+              fallbackSwitched = true;
+              adapter = makeAdapter(fallbackUrl, dependencies.fallbackRpcTransport);
+              outcome = await adapter.send(sendRequest);
+            }
+          } catch {
+            return { status: "dependency_unavailable" } as GasClaimFailure;
+          }
+          if (outcome.status === "preflight_failed") {
+            if (outcome.code === "send_authorization_denied" && authorization !== null) {
+              return mapAuthorizationFailure(authorization);
+            }
+            return mapRpcPreflightError(outcome.code);
+          }
+          const authorized = authorization as GasSendAuthorizationResult | null;
+          if (authorized === null || authorized.status !== "authorized") {
+            return { status: "dependency_unavailable" };
+          }
+
+          const sendCount = authorized.sendCount;
+          const delay = isRetryableOutcome(outcome) ? retryDelayMs(sendCount, random) : null;
+          const nextSendAt = delay === null ? undefined : clock() + delay;
+          let recorded: GasSendOutcomeResult;
+          try {
+            recorded = await ctx.runMutation(internal.gas.execution.recordSendOutcome, {
+              executionAttemptId: currentClaim.executionAttemptId,
+              projectId: scope.projectId,
+              outerTransactionHash: built.outerTransactionHash,
+              sendCount,
+              leaseToken: currentClaim.leaseToken!,
+              leaseGeneration: currentClaim.leaseGeneration,
+              ...(nextSendAt === undefined ? {} : { nextSendAt }),
+              classification: sendClassification(outcome, sendCount),
+            });
+          } catch {
+            return { status: "dependency_unavailable" } as GasClaimFailure;
+          }
+          if (recorded.status !== "recorded") return recorded;
+
+          if (outcome.status === "rejected" && outcome.innerResultCode === "txBadSeq") {
+            let lookupOutcome: TestnetFeeBumpLookupOutcome;
+            try {
+              lookupOutcome = await adapter.lookup(built.outerTransactionHash);
+            } catch {
+              lookupOutcome = { status: "unavailable" };
+            }
+
+            let diagnosis: GasSequenceDiagnosisResult;
+            try {
+              diagnosis = await ctx.runMutation(internal.gas.execution.recordSequenceDiagnosis, {
+                executionAttemptId: currentClaim.executionAttemptId,
+                projectId: scope.projectId,
+                outerTransactionHash: built.outerTransactionHash,
+                sendCount: recorded.sendCount,
+                leaseToken: currentClaim.leaseToken!,
+                leaseGeneration: currentClaim.leaseGeneration,
+                diagnosis: sequenceDiagnosisInput(lookupOutcome),
+              });
+            } catch {
+              return { status: "dependency_unavailable" } as GasClaimFailure;
+            }
+            if (diagnosis.status !== "recorded") return diagnosis;
+          }
+
+          if (
+            isRetryableOutcome(outcome) &&
+            recorded.sendCount < GAS_MAX_SEND_COUNT &&
+            nextSendAt !== undefined
+          ) {
+            if (
+              fallbackSwitched === false &&
+              outcome.status === "unknown" &&
+              (outcome.reason === "timeout" || outcome.reason === "transport_failure") &&
+              canUseFallback
+            ) {
+              fallbackSwitched = true;
+            }
+            const reservationExpiresAt = Date.parse(recorded.execution.expiresAt);
+            if (clock() >= reservationExpiresAt) {
+              return {
+                ...currentClaim,
+                outerTransactionHash: recorded.execution.outerTransactionHash,
+                sendCount: recorded.sendCount,
+                execution: recorded.execution,
+              };
+            }
+            await sleep(Math.max(0, nextSendAt - clock()));
+            currentClaim = {
+              ...currentClaim,
+              outerTransactionHash: recorded.execution.outerTransactionHash,
+              sendCount: recorded.sendCount,
+              execution: recorded.execution,
+            };
+            continue;
+          }
+
+          return {
+            ...currentClaim,
+            outerTransactionHash: recorded.execution.outerTransactionHash,
+            sendCount: recorded.sendCount,
+            execution: recorded.execution,
+          };
         }
-        return authorization.status === "authorized";
-      };
-
-      let adapter: TestnetFeeBumpRpcAdapter;
-      try {
-        adapter =
-          dependencies.rpcAdapterFactory?.(authorize) ??
-          createTestnetFeeBumpRpcAdapter({
-            ...(rpcUrl() === undefined ? {} : { rpcUrl: rpcUrl() }),
-            ...(dependencies.rpcTransport === undefined
-              ? {}
-              : { transport: dependencies.rpcTransport }),
-            authorizeSend: authorize,
-          });
-      } catch {
-        return { status: "dependency_unavailable" };
-      }
-
-      const outcome = await adapter.send({
-        signedOuterXdr: built.signedOuterXdr,
-        expectedOuterHash: built.outerTransactionHash,
-        expectedInnerHash: built.innerTransactionHash,
-        feeSource: built.feeSource,
-        approvedFeeCeilingStroops: claim.approvedHoldStroops,
-      });
-      if (outcome.status === "preflight_failed") {
-        if (outcome.code === "send_authorization_denied" && authorization !== null) {
-          return mapAuthorizationFailure(authorization);
-        }
-        return mapRpcPreflightError(outcome.code);
-      }
-
-      let recorded: GasSendOutcomeResult;
-      try {
-        recorded = await ctx.runMutation(internal.gas.execution.recordSendOutcome, {
-          executionAttemptId: claim.executionAttemptId,
-          projectId: scope.projectId,
-          outerTransactionHash: built.outerTransactionHash,
-          sendCount: 1,
-          leaseToken: claim.leaseToken!,
-          leaseGeneration: claim.leaseGeneration,
-          classification: sendClassification(outcome),
-        });
-      } catch {
-        return { status: "dependency_unavailable" };
-      }
-      if (recorded.status !== "recorded") return recorded;
-
-      if (outcome.status === "rejected" && outcome.innerResultCode === "txBadSeq") {
-        let lookupOutcome: TestnetFeeBumpLookupOutcome;
-        try {
-          lookupOutcome = await adapter.lookup(built.outerTransactionHash);
-        } catch {
-          lookupOutcome = { status: "unavailable" };
-        }
-
-        let diagnosis: GasSequenceDiagnosisResult;
-        try {
-          diagnosis = await ctx.runMutation(internal.gas.execution.recordSequenceDiagnosis, {
-            executionAttemptId: claim.executionAttemptId,
-            projectId: scope.projectId,
-            outerTransactionHash: built.outerTransactionHash,
-            sendCount: 1,
-            leaseToken: claim.leaseToken!,
-            leaseGeneration: claim.leaseGeneration,
-            diagnosis: sequenceDiagnosisInput(lookupOutcome),
-          });
-        } catch {
-          return { status: "dependency_unavailable" };
-        }
-        if (diagnosis.status !== "recorded") return diagnosis;
-      }
-
-      return { status: "recorded", outcome: recorded };
-    });
+      },
+    );
+    return continuation;
   } catch (error) {
     if (error instanceof RelayerCustodyError) return { status: "relayer_unavailable" };
     return { status: "dependency_unavailable" };
   }
-
-  if (continuation.status !== "recorded") return continuation;
-  return {
-    ...claim,
-    outerTransactionHash: continuation.outcome.execution.outerTransactionHash,
-    sendCount: continuation.outcome.sendCount,
-    execution: continuation.outcome.execution,
-  };
 }
 
 async function claimHandler(ctx: ActionCtx, args: GasClaimActionArgs): Promise<GasClaimResult> {

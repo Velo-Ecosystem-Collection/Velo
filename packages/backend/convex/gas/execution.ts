@@ -1,3 +1,4 @@
+import { makeFunctionReference } from "convex/server";
 import { v } from "convex/values";
 
 import type { Doc } from "../_generated/dataModel";
@@ -23,6 +24,7 @@ import {
 } from "./schema";
 import {
   GAS_FEE_OVERHEAD_STROOPS,
+  GAS_MAX_SEND_COUNT,
   GAS_LIFECYCLE_STATES,
   GAS_NETWORK,
   GAS_SUPPORTED_OPERATION,
@@ -53,6 +55,7 @@ const LEASE_MS = 30 * 1_000;
 const RECONCILIATION_WINDOW_MS = 24 * 60 * 60 * 1_000;
 const SHA256_HASH_PATTERN = /^[a-f0-9]{64}$/;
 const RESULT_CODE_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
+const recoverAbandonedRef = makeFunctionReference<"mutation">("gas/execution:recoverAbandoned");
 
 export type GasClaimResult =
   | { status: "unauthorized" }
@@ -122,6 +125,7 @@ export type GasSendAuthorizationResult =
       firstPossibleSendAt: number;
       reconciliationDeadlineAt: number;
     }
+  | { status: "not_due"; nextSendAt: number }
   | { status: "unauthorized" }
   | { status: "invalid_internal_input" }
   | { status: "resource_not_found" }
@@ -139,6 +143,7 @@ export const gasSendAuthorizationResultValidator = v.union(
     firstPossibleSendAt: v.number(),
     reconciliationDeadlineAt: v.number(),
   }),
+  v.object({ status: v.literal("not_due"), nextSendAt: v.number() }),
   v.object({ status: v.literal("unauthorized") }),
   v.object({ status: v.literal("invalid_internal_input") }),
   v.object({ status: v.literal("resource_not_found") }),
@@ -153,6 +158,7 @@ export type GasSendOutcomeResult =
       status: "recorded";
       lifecycle: "submission_unknown" | "submitted";
       sendCount: number;
+      idempotent: boolean;
       execution: GasSubmitResultProjection;
     }
   | { status: "invalid_internal_input" }
@@ -164,6 +170,7 @@ export const gasSendOutcomeResultValidator = v.union(
     status: v.literal("recorded"),
     lifecycle: v.union(v.literal("submission_unknown"), v.literal("submitted")),
     sendCount: v.number(),
+    idempotent: v.boolean(),
     execution: gasSubmitResultProjectionValidator,
   }),
   v.object({ status: v.literal("invalid_internal_input") }),
@@ -511,7 +518,8 @@ export function hasLiveGasExecutionFence(
   now: number,
 ): boolean {
   return (
-    attempt.lifecycle === GAS_LIFECYCLE_STATES.claimed &&
+    (attempt.lifecycle === GAS_LIFECYCLE_STATES.claimed ||
+      attempt.lifecycle === GAS_LIFECYCLE_STATES.submissionUnknown) &&
     attempt.leaseToken === fence.leaseToken &&
     attempt.leaseGeneration === fence.leaseGeneration &&
     attempt.leaseExpiresAt !== undefined &&
@@ -751,6 +759,206 @@ export const claim = internalMutation({
   },
 });
 
+const gasRecoveryClaimResultValidator = v.union(
+  gasClaimResultValidator,
+  v.object({ status: v.literal("relayer_preflight_required") }),
+);
+
+type GasRecoveryClaimResult = GasClaimResult | { status: "relayer_preflight_required" };
+
+/**
+ * Reclaim one abandoned execution without creating a new reservation or
+ * execution identity. The first call may request relayer preflight; only the
+ * second call, with the verified pinned public key, grants a new lease.
+ */
+export const recoverClaim = internalMutation({
+  args: {
+    apiKeyId: v.id("apiKeys"),
+    projectId: v.id("projects"),
+    apiKeyHash: v.string(),
+    network: gasNetworkValidator,
+    operation: v.string(),
+    requestId: v.string(),
+    idempotencyKeyHash: v.optional(v.string()),
+    requestFingerprint: v.string(),
+    innerTransactionHash: v.string(),
+    sourceWallet: v.string(),
+    targetContractIds: v.array(v.string()),
+    innerMaxFeeStroops: v.int64(),
+    innerMaxTime: v.optional(v.number()),
+    quote: gasFeeBumpQuoteValidator,
+    expectedRelayerPublicKey: v.optional(v.string()),
+  },
+  returns: gasRecoveryClaimResultValidator,
+  handler: async (ctx, args): Promise<GasRecoveryClaimResult> => {
+    if (!(await revalidateGasApiKeyScope(ctx, args))) return { status: "unauthorized" };
+
+    let normalized: {
+      requestId: string;
+      requestFingerprint: string;
+      innerTransactionHash: string;
+      sourceWallet: string;
+      targetContractIds: string[];
+      innerMaxFeeStroops: bigint;
+      innerMaxTime?: number;
+      expectedRelayerPublicKey?: string;
+    };
+    try {
+      if (
+        args.network !== GAS_NETWORK ||
+        args.operation !== GAS_SUPPORTED_OPERATION ||
+        !isSha256Hash(args.apiKeyHash) ||
+        !isSha256Hash(args.requestFingerprint) ||
+        !isSha256Hash(args.innerTransactionHash) ||
+        (args.idempotencyKeyHash !== undefined && !isSha256Hash(args.idempotencyKeyHash))
+      ) {
+        return { status: "invalid_internal_input" };
+      }
+      normalized = {
+        requestId: normalizeGasRequestId(args.requestId),
+        requestFingerprint: args.requestFingerprint,
+        innerTransactionHash: normalizeTransactionHash(args.innerTransactionHash),
+        sourceWallet: normalizeWalletAddress(args.sourceWallet),
+        targetContractIds: args.targetContractIds.map(normalizeContractId),
+        innerMaxFeeStroops: assertValidStroopValue(args.innerMaxFeeStroops),
+        ...(args.innerMaxTime === undefined
+          ? {}
+          : { innerMaxTime: assertValidInnerMaxTime(args.innerMaxTime) }),
+        ...(args.expectedRelayerPublicKey === undefined
+          ? {}
+          : { expectedRelayerPublicKey: normalizeRelayerPublicKey(args.expectedRelayerPublicKey) }),
+      };
+      if (
+        normalized.targetContractIds.length !== 1 ||
+        !validateQuote(args.quote) ||
+        args.quote.innerTransactionHash !== normalized.innerTransactionHash ||
+        args.quote.innerMaxFeeStroops !== normalized.innerMaxFeeStroops
+      ) {
+        return { status: "invalid_internal_input" };
+      }
+    } catch {
+      return { status: "invalid_internal_input" };
+    }
+
+    const attempt = await findExecutionAttemptByRequestId(
+      ctx,
+      args.projectId,
+      normalized.requestId,
+    );
+    const innerAttempt = await findExecutionAttemptByInnerTransactionHash(
+      ctx,
+      args.projectId,
+      normalized.innerTransactionHash,
+    );
+    if (attempt === "ambiguous" || innerAttempt === "ambiguous") {
+      return { status: "invalid_internal_input" };
+    }
+    const existing = attempt ?? innerAttempt;
+    if (existing === null) return { status: "resource_not_found" };
+    if (
+      (attempt !== null && innerAttempt !== null && attempt._id !== innerAttempt._id) ||
+      !attemptMatchesClaim(existing, {
+        requestId: normalized.requestId,
+        idempotencyKeyHash: existing.idempotencyKeyHash,
+        requestFingerprint: normalized.requestFingerprint,
+        innerTransactionHash: normalized.innerTransactionHash,
+      }) ||
+      existing.requestFingerprint !== normalized.requestFingerprint ||
+      existing.sourceWallet !== normalized.sourceWallet ||
+      existing.targetContractIds.length !== normalized.targetContractIds.length ||
+      existing.targetContractIds.some(
+        (target, index) => target !== normalized.targetContractIds[index],
+      ) ||
+      existing.innerMaxFeeStroops !== normalized.innerMaxFeeStroops ||
+      existing.approvedHoldStroops !== args.quote.outerMaxFeeStroops ||
+      existing.feeCeilingStroops !== args.quote.outerMaxFeeStroops
+    ) {
+      return { status: "invalid_lifecycle" };
+    }
+
+    const now = Date.now();
+    if (!validateExecutionAttempt(existing)) return { status: "invalid_internal_input" };
+    if (existing.reservationExpiresAt <= now && isRecoverableAttempt(existing, now)) {
+      return { status: "reservation_expired" };
+    }
+    if (!isRecoverableAttempt(existing, now)) {
+      return claimResult(existing, true, false);
+    }
+    if (existing.nextSendAt !== undefined && existing.nextSendAt > now) {
+      return claimResult(existing, true, false);
+    }
+    if (normalized.expectedRelayerPublicKey === undefined) {
+      return { status: "relayer_preflight_required" };
+    }
+
+    const policy = await findPolicy(ctx, args.projectId);
+    if (policy === null || policy === "ambiguous") return { status: "invalid_internal_input" };
+    const accounting = await ensureGasAccounting(ctx, policy, now, { persist: false });
+    if (!accounting.ok) return { status: "invalid_internal_input" };
+    try {
+      assertValidGasPolicyState(accounting.snapshot.policy);
+      if (
+        !accounting.snapshot.policy.enabled ||
+        accounting.snapshot.policy.network !== GAS_NETWORK ||
+        !accounting.snapshot.policy.allowedContractIds.includes(existing.targetContractIds[0]!) ||
+        accounting.snapshot.effectiveUsageStroops > accounting.snapshot.policy.dailyCapStroops ||
+        existing.approvedHoldStroops > accounting.snapshot.policy.dailyCapStroops ||
+        accounting.snapshot.effectiveUsageStroops < existing.approvedHoldStroops
+      ) {
+        return { status: "policy_denied" };
+      }
+    } catch {
+      return { status: "invalid_internal_input" };
+    }
+
+    const relayer = await findRelayer(ctx, args.projectId);
+    if (
+      relayer === null ||
+      relayer === "ambiguous" ||
+      relayer.status !== "active" ||
+      relayer.network !== GAS_NETWORK ||
+      relayer.publicKey !== existing.relayerPublicKey ||
+      relayer.publicKey !== normalized.expectedRelayerPublicKey
+    ) {
+      return { status: "relayer_unavailable" };
+    }
+
+    const leaseToken = crypto.randomUUID();
+    const leaseExpiresAt = Math.min(now + LEASE_MS, existing.reservationExpiresAt);
+    if (!isValidTimestamp(leaseExpiresAt) || leaseExpiresAt <= now) {
+      return { status: "reservation_expired" };
+    }
+    const nextLifecycle =
+      existing.outerTransactionHash === undefined
+        ? GAS_LIFECYCLE_STATES.claimed
+        : GAS_LIFECYCLE_STATES.submissionUnknown;
+    const nextGeneration = existing.leaseGeneration + 1;
+    if (!Number.isSafeInteger(nextGeneration)) return { status: "invalid_internal_input" };
+
+    const audit = await findClaimAuditLog(ctx, args.projectId, existing.requestId);
+    if (audit === "ambiguous") return { status: "invalid_internal_input" };
+    if (audit !== null && !validateClaimAuditLog(audit, existing)) {
+      return { status: "invalid_lifecycle" };
+    }
+
+    await ctx.db.patch(existing._id, {
+      lifecycle: nextLifecycle,
+      leaseToken,
+      leaseGeneration: nextGeneration,
+      leaseExpiresAt,
+      nextSendAt: undefined,
+      updatedAt: now,
+    });
+    if (audit !== null) {
+      await ctx.db.patch(audit._id, { lifecycle: nextLifecycle, updatedAt: now });
+    }
+
+    const recovered = await ctx.db.get("gasExecutionAttempts", existing._id);
+    if (!recovered) return { status: "resource_not_found" };
+    return claimResult(recovered, false, true);
+  },
+});
+
 function isValidTimestamp(value: number): boolean {
   return (
     Number.isSafeInteger(value) &&
@@ -783,38 +991,32 @@ function validateClaimAuditLog(log: Doc<"gasLogs">, attempt: Doc<"gasExecutionAt
     log.reservedStroops === attempt.originalReservationStroops &&
     log.decisionCode === "reserved" &&
     log.rejectionCode === undefined &&
-    log.lifecycle === GAS_LIFECYCLE_STATES.claimed &&
+    log.lifecycle === attempt.lifecycle &&
     log.expiresAt === attempt.reservationExpiresAt &&
     log.actualFeeStroops === undefined
   );
 }
 
-function validateClaimAttempt(attempt: Doc<"gasExecutionAttempts">): boolean {
+function validateExecutionAttempt(attempt: Doc<"gasExecutionAttempts">): boolean {
   if (
     attempt.network !== GAS_NETWORK ||
     !isSha256Hash(attempt.idempotencyKeyHash) ||
     !isSha256Hash(attempt.requestFingerprint) ||
     !isSha256Hash(attempt.innerTransactionHash) ||
     attempt.targetContractIds.length !== 1 ||
-    attempt.lifecycle !== GAS_LIFECYCLE_STATES.claimed ||
-    attempt.outerTransactionHash !== undefined ||
-    attempt.outerFeeStroops !== undefined ||
-    attempt.leaseToken === undefined ||
-    attempt.leaseToken.trim() === "" ||
     attempt.leaseGeneration < 1 ||
     !Number.isSafeInteger(attempt.leaseGeneration) ||
-    attempt.leaseExpiresAt === undefined ||
-    !isValidTimestamp(attempt.leaseExpiresAt) ||
-    attempt.sendCount !== 0 ||
-    attempt.firstPossibleSendAt !== undefined ||
-    attempt.reconciliationDeadlineAt !== undefined ||
-    attempt.reconciliationRequired ||
-    attempt.actualFeeStroops !== undefined ||
-    attempt.settledAt !== undefined ||
+    !Number.isSafeInteger(attempt.sendCount) ||
+    attempt.sendCount < 0 ||
+    attempt.sendCount > GAS_MAX_SEND_COUNT ||
     !isValidTimestamp(attempt.reservationCreatedAt) ||
     !isValidTimestamp(attempt.reservationExpiresAt) ||
     attempt.reservationExpiresAt <= attempt.reservationCreatedAt ||
-    attempt.accountingDayKey !== utcDayKey(attempt.reservationCreatedAt)
+    attempt.accountingDayKey !== utcDayKey(attempt.reservationCreatedAt) ||
+    !isValidTimestamp(attempt.nextCheckAt) ||
+    (attempt.nextSendAt !== undefined && !isValidTimestamp(attempt.nextSendAt)) ||
+    attempt.actualFeeStroops !== undefined ||
+    attempt.settledAt !== undefined
   ) {
     return false;
   }
@@ -824,20 +1026,86 @@ function validateClaimAttempt(attempt: Doc<"gasExecutionAttempts">): boolean {
     const originalReservationStroops = assertValidStroopValue(attempt.originalReservationStroops);
     const approvedHoldStroops = assertValidStroopValue(attempt.approvedHoldStroops);
     const feeCeilingStroops = assertValidStroopValue(attempt.feeCeilingStroops);
-    return (
-      normalizeGasRequestId(attempt.requestId) === attempt.requestId &&
-      normalizeWalletAddress(attempt.sourceWallet) === attempt.sourceWallet &&
-      normalizeContractId(attempt.targetContractIds[0]!) === attempt.targetContractIds[0] &&
-      normalizeRelayerPublicKey(attempt.relayerPublicKey) === attempt.relayerPublicKey &&
-      addStroopValues(innerMaxFeeStroops, GAS_FEE_OVERHEAD_STROOPS) ===
-        originalReservationStroops &&
-      approvedHoldStroops === feeCeilingStroops &&
-      approvedHoldStroops >= originalReservationStroops &&
-      attempt.leaseExpiresAt !== undefined
-    );
+    if (
+      normalizeGasRequestId(attempt.requestId) !== attempt.requestId ||
+      normalizeWalletAddress(attempt.sourceWallet) !== attempt.sourceWallet ||
+      normalizeContractId(attempt.targetContractIds[0]!) !== attempt.targetContractIds[0] ||
+      normalizeRelayerPublicKey(attempt.relayerPublicKey) !== attempt.relayerPublicKey ||
+      addStroopValues(innerMaxFeeStroops, GAS_FEE_OVERHEAD_STROOPS) !==
+        originalReservationStroops ||
+      approvedHoldStroops !== feeCeilingStroops ||
+      approvedHoldStroops < originalReservationStroops
+    ) {
+      return false;
+    }
+
+    if (attempt.sendCount === 0) {
+      return (
+        attempt.lifecycle === GAS_LIFECYCLE_STATES.claimed &&
+        attempt.outerTransactionHash === undefined &&
+        attempt.outerFeeStroops === undefined &&
+        attempt.firstPossibleSendAt === undefined &&
+        attempt.reconciliationDeadlineAt === undefined &&
+        attempt.latestSendClassification === undefined &&
+        !attempt.reconciliationRequired
+      );
+    }
+
+    if (
+      attempt.lifecycle !== GAS_LIFECYCLE_STATES.submissionUnknown &&
+      attempt.lifecycle !== GAS_LIFECYCLE_STATES.submitted &&
+      attempt.lifecycle !== GAS_LIFECYCLE_STATES.succeeded &&
+      attempt.lifecycle !== GAS_LIFECYCLE_STATES.failed &&
+      attempt.lifecycle !== GAS_LIFECYCLE_STATES.cancelled
+    ) {
+      return false;
+    }
+    if (
+      attempt.outerTransactionHash === undefined ||
+      attempt.outerFeeStroops === undefined ||
+      !isSha256Hash(attempt.outerTransactionHash) ||
+      attempt.outerFeeStroops < 1n ||
+      attempt.outerFeeStroops > feeCeilingStroops ||
+      attempt.firstPossibleSendAt === undefined ||
+      !isValidTimestamp(attempt.firstPossibleSendAt) ||
+      attempt.reconciliationDeadlineAt === undefined ||
+      !isValidTimestamp(attempt.reconciliationDeadlineAt) ||
+      attempt.reconciliationDeadlineAt < attempt.firstPossibleSendAt
+    ) {
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }
+}
+
+type GasRetryableClassification = { status: string; reason?: string } | undefined;
+
+function isRetryableSendClassification(classification: GasRetryableClassification): boolean {
+  return (
+    classification?.status === "retry_later" ||
+    (classification?.status === "unknown" &&
+      (classification.reason === "timeout" || classification.reason === "transport_failure"))
+  );
+}
+
+function isRecoverableAttempt(attempt: Doc<"gasExecutionAttempts">, now: number): boolean {
+  if (attempt.leaseExpiresAt !== undefined && attempt.leaseExpiresAt > now) return false;
+  if (attempt.sendCount === 0) {
+    return (
+      attempt.lifecycle === GAS_LIFECYCLE_STATES.claimed &&
+      attempt.outerTransactionHash === undefined
+    );
+  }
+  return (
+    attempt.lifecycle === GAS_LIFECYCLE_STATES.submissionUnknown &&
+    attempt.outerTransactionHash !== undefined &&
+    attempt.outerFeeStroops !== undefined &&
+    attempt.sendCount < GAS_MAX_SEND_COUNT &&
+    (attempt.latestSendClassification === undefined ||
+      isRetryableSendClassification(attempt.latestSendClassification))
+  );
 }
 
 type GasSendClassificationInput =
@@ -925,6 +1193,25 @@ function storedSendClassification(
     ...classification,
     recordedAt,
   };
+}
+
+function sameSendClassification(
+  stored: NonNullable<Doc<"gasExecutionAttempts">["latestSendClassification"]>,
+  next: NonNullable<ReturnType<typeof normalizedSendClassification>>,
+): boolean {
+  if (
+    stored.status !== next.status ||
+    stored.outerTransactionHash !== next.outerTransactionHash ||
+    stored.sendCount !== next.sendCount
+  ) {
+    return false;
+  }
+  if (stored.status === "rejected" && next.status === "rejected") {
+    return stored.resultCode === next.resultCode && stored.innerResultCode === next.innerResultCode;
+  }
+  return (
+    stored.status !== "unknown" || (next.status === "unknown" && stored.reason === next.reason)
+  );
 }
 
 type GasSequenceDiagnosisEvidence = {
@@ -1175,6 +1462,7 @@ export const authorizeSend = internalMutation({
     feeSource: v.string(),
     leaseToken: v.string(),
     leaseGeneration: v.number(),
+    expectedSendCount: v.number(),
   },
   returns: gasSendAuthorizationResultValidator,
   handler: async (ctx, args): Promise<GasSendAuthorizationResult> => {
@@ -1229,8 +1517,16 @@ export const authorizeSend = internalMutation({
     if (attempt.projectId !== args.projectId) return { status: "invalid_lifecycle" };
 
     const now = Date.now();
-    if (!validateClaimAttempt(attempt)) return { status: "invalid_internal_input" };
+    if (!validateExecutionAttempt(attempt)) return { status: "invalid_internal_input" };
     if (attempt.reservationExpiresAt <= now) return { status: "reservation_expired" };
+    if (
+      !Number.isSafeInteger(args.expectedSendCount) ||
+      args.expectedSendCount < 0 ||
+      args.expectedSendCount >= GAS_MAX_SEND_COUNT ||
+      attempt.sendCount !== args.expectedSendCount
+    ) {
+      return { status: "invalid_lifecycle" };
+    }
     if (
       attempt.requestId !== normalized.requestId ||
       attempt.requestFingerprint !== normalized.requestFingerprint ||
@@ -1253,6 +1549,23 @@ export const authorizeSend = internalMutation({
       )
     ) {
       return { status: "invalid_lifecycle" };
+    }
+
+    if (
+      args.expectedSendCount === 0
+        ? attempt.lifecycle !== GAS_LIFECYCLE_STATES.claimed ||
+          attempt.outerTransactionHash !== undefined ||
+          attempt.outerFeeStroops !== undefined
+        : attempt.lifecycle !== GAS_LIFECYCLE_STATES.submissionUnknown ||
+          attempt.outerTransactionHash !== normalized.outerTransactionHash ||
+          attempt.outerFeeStroops !== normalized.outerFeeStroops ||
+          (attempt.latestSendClassification !== undefined &&
+            !isRetryableSendClassification(attempt.latestSendClassification))
+    ) {
+      return { status: "invalid_lifecycle" };
+    }
+    if (attempt.nextSendAt !== undefined && attempt.nextSendAt > now) {
+      return { status: "not_due", nextSendAt: attempt.nextSendAt };
     }
 
     try {
@@ -1313,20 +1626,29 @@ export const authorizeSend = internalMutation({
     // counter and the send-boundary record in the same Convex transaction.
     const persistedAccounting = await ensureGasAccounting(ctx, policy, now, { persist: true });
     if (!persistedAccounting.ok) return { status: "invalid_internal_input" };
-    const reconciliationDeadlineAt = now + RECONCILIATION_WINDOW_MS;
+    const firstPossibleSendAt = attempt.firstPossibleSendAt ?? now;
+    const reconciliationDeadlineAt =
+      attempt.reconciliationDeadlineAt ?? now + RECONCILIATION_WINDOW_MS;
     if (!Number.isSafeInteger(reconciliationDeadlineAt)) {
+      return { status: "invalid_internal_input" };
+    }
+    if (!isValidTimestamp(firstPossibleSendAt) || reconciliationDeadlineAt < firstPossibleSendAt) {
       return { status: "invalid_internal_input" };
     }
 
     await ctx.db.patch(attempt._id, {
-      outerTransactionHash: normalized.outerTransactionHash,
-      outerFeeStroops: normalized.outerFeeStroops,
+      ...(attempt.outerTransactionHash === undefined
+        ? {
+            outerTransactionHash: normalized.outerTransactionHash,
+            outerFeeStroops: normalized.outerFeeStroops,
+          }
+        : {}),
       lifecycle: GAS_LIFECYCLE_STATES.submissionUnknown,
-      sendCount: 1,
-      nextCheckAt: now,
-      firstPossibleSendAt: now,
+      sendCount: args.expectedSendCount + 1,
+      nextCheckAt: attempt.nextCheckAt,
+      nextSendAt: undefined,
+      firstPossibleSendAt,
       reconciliationDeadlineAt,
-      reconciliationRequired: false,
       updatedAt: now,
     });
     if (audit !== null) {
@@ -1340,8 +1662,8 @@ export const authorizeSend = internalMutation({
       status: "authorized",
       outerTransactionHash: normalized.outerTransactionHash,
       outerFeeStroops: normalized.outerFeeStroops,
-      sendCount: 1,
-      firstPossibleSendAt: now,
+      sendCount: args.expectedSendCount + 1,
+      firstPossibleSendAt,
       reconciliationDeadlineAt,
     };
   },
@@ -1356,6 +1678,7 @@ export const recordSendOutcome = internalMutation({
     sendCount: v.number(),
     leaseToken: v.string(),
     leaseGeneration: v.number(),
+    nextSendAt: v.optional(v.number()),
     classification: gasSendClassificationInputValidator,
   },
   returns: gasSendOutcomeResultValidator,
@@ -1372,10 +1695,10 @@ export const recordSendOutcome = internalMutation({
 
     const attempt = await ctx.db.get("gasExecutionAttempts", args.executionAttemptId);
     if (!attempt) return { status: "resource_not_found" };
+    const now = Date.now();
+    if (!validateExecutionAttempt(attempt)) return { status: "invalid_internal_input" };
     if (
       attempt.projectId !== args.projectId ||
-      (attempt.lifecycle !== GAS_LIFECYCLE_STATES.submissionUnknown &&
-        attempt.lifecycle !== GAS_LIFECYCLE_STATES.submitted) ||
       attempt.outerTransactionHash !== outerTransactionHash ||
       attempt.sendCount !== args.sendCount ||
       attempt.leaseToken !== args.leaseToken ||
@@ -1389,17 +1712,74 @@ export const recordSendOutcome = internalMutation({
       return { status: "invalid_lifecycle" };
     }
 
+    if (
+      attempt.latestSendClassification !== undefined &&
+      sameSendClassification(attempt.latestSendClassification, classification)
+    ) {
+      return {
+        status: "recorded",
+        lifecycle:
+          attempt.lifecycle === GAS_LIFECYCLE_STATES.submitted
+            ? GAS_LIFECYCLE_STATES.submitted
+            : GAS_LIFECYCLE_STATES.submissionUnknown,
+        sendCount: attempt.sendCount,
+        idempotent: true,
+        execution: projectGasExecutionAttempt({
+          requestId: attempt.requestId,
+          innerTransactionHash: attempt.innerTransactionHash,
+          outerTransactionHash: attempt.outerTransactionHash,
+          lifecycle: attempt.lifecycle,
+          approvedHoldStroops: attempt.approvedHoldStroops,
+          actualFeeStroops: attempt.actualFeeStroops,
+          reservationExpiresAt: attempt.reservationExpiresAt,
+          reconciliationRequired: attempt.reconciliationRequired,
+        }),
+      };
+    }
+
+    if (
+      attempt.latestSendClassification !== undefined &&
+      attempt.latestSendClassification.sendCount === args.sendCount
+    ) {
+      return { status: "invalid_lifecycle" };
+    }
+
+    if (
+      attempt.lifecycle !== GAS_LIFECYCLE_STATES.submissionUnknown ||
+      !hasLiveGasExecutionFence(
+        attempt,
+        { leaseToken: args.leaseToken, leaseGeneration: args.leaseGeneration },
+        now,
+      )
+    ) {
+      return { status: "invalid_lifecycle" };
+    }
+
     const becomesSubmitted =
       classification.status === "pending" || classification.status === "duplicate";
-    if (attempt.lifecycle === GAS_LIFECYCLE_STATES.submitted && !becomesSubmitted) {
-      return { status: "invalid_lifecycle" };
+    const retryable = isRetryableSendClassification(classification);
+    const shouldRetry = retryable && args.sendCount < GAS_MAX_SEND_COUNT;
+    if (shouldRetry) {
+      if (
+        args.nextSendAt === undefined ||
+        !isValidTimestamp(args.nextSendAt) ||
+        args.nextSendAt <= now
+      ) {
+        return { status: "invalid_internal_input" };
+      }
+    } else if (args.nextSendAt !== undefined) {
+      return { status: "invalid_internal_input" };
     }
 
     const nextLifecycle = becomesSubmitted
       ? GAS_LIFECYCLE_STATES.submitted
       : GAS_LIFECYCLE_STATES.submissionUnknown;
-    const now = Date.now();
     const nextClassification = storedSendClassification(classification, now);
+    const reconciliationRequired =
+      attempt.reconciliationRequired ||
+      classification.status === "unknown" ||
+      (retryable && !shouldRetry);
+    const nextCheckAt = classification.status === "unknown" ? now : (args.nextSendAt ?? now);
     const audit = await findClaimAuditLog(ctx, args.projectId, attempt.requestId);
     if (audit === "ambiguous") return { status: "invalid_internal_input" };
     if (
@@ -1413,6 +1793,9 @@ export const recordSendOutcome = internalMutation({
     await ctx.db.patch(attempt._id, {
       lifecycle: nextLifecycle,
       latestSendClassification: nextClassification,
+      nextSendAt: shouldRetry ? args.nextSendAt : undefined,
+      nextCheckAt,
+      reconciliationRequired,
       updatedAt: now,
     });
     if (audit !== null) {
@@ -1423,6 +1806,7 @@ export const recordSendOutcome = internalMutation({
       status: "recorded",
       lifecycle: nextLifecycle,
       sendCount: attempt.sendCount,
+      idempotent: false,
       execution: projectGasExecutionAttempt({
         requestId: attempt.requestId,
         innerTransactionHash: attempt.innerTransactionHash,
@@ -1431,8 +1815,90 @@ export const recordSendOutcome = internalMutation({
         approvedHoldStroops: attempt.approvedHoldStroops,
         actualFeeStroops: attempt.actualFeeStroops,
         reservationExpiresAt: attempt.reservationExpiresAt,
-        reconciliationRequired: attempt.reconciliationRequired,
+        reconciliationRequired,
       }),
     };
+  },
+});
+
+const MAX_RECOVERY_BATCH = 25;
+
+function normalizeRecoveryLimit(value: number | undefined): number {
+  if (value !== undefined && (!Number.isSafeInteger(value) || value <= 0)) {
+    throw new Error("Gas recovery batch size must be a positive safe integer");
+  }
+  return Math.min(value ?? MAX_RECOVERY_BATCH, MAX_RECOVERY_BATCH);
+}
+
+/**
+ * Invalidate expired execution leases in bounded pages. This worker deliberately
+ * does not call RPC, release holds, or accept XDR; it only makes the durable
+ * reconciliation/resupply state safe for a later worker.
+ */
+export const recoverAbandoned = internalMutation({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const limit = normalizeRecoveryLimit(args.limit);
+    const now = Date.now();
+    const claimed = await ctx.db
+      .query("gasExecutionAttempts")
+      .withIndex("by_lifecycle_and_lease_expires_at", (q) =>
+        q.eq("lifecycle", GAS_LIFECYCLE_STATES.claimed).lte("leaseExpiresAt", now),
+      )
+      .filter((q) => q.neq(q.field("leaseExpiresAt"), undefined))
+      .take(limit);
+    const remaining = limit - claimed.length;
+    const unresolved =
+      remaining === 0
+        ? []
+        : await ctx.db
+            .query("gasExecutionAttempts")
+            .withIndex("by_lifecycle_and_lease_expires_at", (q) =>
+              q.eq("lifecycle", GAS_LIFECYCLE_STATES.submissionUnknown).lte("leaseExpiresAt", now),
+            )
+            .filter((q) => q.neq(q.field("leaseExpiresAt"), undefined))
+            .take(remaining);
+    const rows = [...claimed, ...unresolved];
+
+    for (const attempt of rows) {
+      if (
+        attempt.leaseExpiresAt === undefined ||
+        attempt.leaseExpiresAt > now ||
+        !validateExecutionAttempt(attempt)
+      ) {
+        continue;
+      }
+
+      const pinned = attempt.outerTransactionHash !== undefined;
+      const nextGeneration = attempt.leaseGeneration + 1;
+      if (!Number.isSafeInteger(nextGeneration)) continue;
+
+      const nextLifecycle = pinned
+        ? GAS_LIFECYCLE_STATES.submissionUnknown
+        : GAS_LIFECYCLE_STATES.claimed;
+      await ctx.db.patch(attempt._id, {
+        lifecycle: nextLifecycle,
+        leaseToken: undefined,
+        leaseExpiresAt: undefined,
+        leaseGeneration: nextGeneration,
+        ...(pinned
+          ? {
+              nextCheckAt: now,
+              reconciliationRequired: true,
+            }
+          : {}),
+        updatedAt: now,
+      });
+
+      const audit = await findClaimAuditLog(ctx, attempt.projectId, attempt.requestId);
+      if (audit !== null && audit !== "ambiguous" && validateClaimAuditLog(audit, attempt)) {
+        await ctx.db.patch(audit._id, { lifecycle: nextLifecycle, updatedAt: now });
+      }
+    }
+
+    if (rows.length === limit) {
+      await ctx.scheduler.runAfter(0, recoverAbandonedRef, { limit });
+    }
+    return rows.length;
   },
 });

@@ -31,6 +31,19 @@ export const GAS_LIFECYCLE_STATES = {
 
 export type GasLifecycleState = (typeof GAS_LIFECYCLE_STATES)[keyof typeof GAS_LIFECYCLE_STATES];
 
+/** Execution states safe to return from the authenticated submit boundary. */
+export const GAS_EXECUTION_STATUSES = {
+  claimed: GAS_LIFECYCLE_STATES.claimed,
+  submissionUnknown: GAS_LIFECYCLE_STATES.submissionUnknown,
+  submitted: GAS_LIFECYCLE_STATES.submitted,
+  succeeded: GAS_LIFECYCLE_STATES.succeeded,
+  failed: GAS_LIFECYCLE_STATES.failed,
+  cancelled: GAS_LIFECYCLE_STATES.cancelled,
+} as const;
+
+export type GasExecutionStatus =
+  (typeof GAS_EXECUTION_STATUSES)[keyof typeof GAS_EXECUTION_STATUSES];
+
 /** Decisions persisted by the D1 gas admission log. */
 export const GAS_DECISION_CODES = {
   reserved: "reserved",

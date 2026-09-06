@@ -14,12 +14,19 @@ import { v } from "convex/values";
 
 import type { ActionCtx } from "../_generated/server";
 import type { GasAdmissionResult } from "./admission";
+import type { GasClaimResult } from "./execution";
+import type { GasSubmitResultProjection } from "./projections";
 import type { GasSubmitResult as GasSubmitMutationResult } from "./submit";
 
 import { internal } from "../_generated/api";
 import { action } from "../_generated/server";
 import { deriveGasTransactionFacts } from "./envelope";
-import { gasLogProjectionValidator, type GasLogProjection } from "./projections";
+import { claimGasExecution } from "./execution_action";
+import {
+  gasLogProjectionValidator,
+  gasSubmitResultProjectionValidator,
+  type GasLogProjection,
+} from "./projections";
 import { gasRejectionCodeValidator } from "./schema";
 import {
   GAS_MAX_IDEMPOTENCY_KEY_BYTES,
@@ -49,12 +56,20 @@ export type GasSponsorResult =
   | { status: "internal_error" };
 
 export type GasSubmitResult =
+  | GasSubmitResultProjection
   | { status: "handoff_unavailable" }
   | { status: "reservation_expired" }
   | { status: "invalid_lifecycle" }
   | { status: "resource_not_found" }
   | { status: "unauthorized" }
+  | { status: "invalid_lifecycle" }
   | { status: "invalid_request" }
+  | { status: "invalid_signature" }
+  | { status: "wrong_network" }
+  | { status: "unsupported_transaction" }
+  | { status: "payload_too_large" }
+  | { status: "policy_denied" }
+  | { status: "relayer_unavailable" }
   | { status: "dependency_unavailable" }
   | { status: "internal_error" };
 
@@ -87,12 +102,20 @@ export const gasSponsorResultValidator = v.union(
 );
 
 export const gasSubmitResultValidator = v.union(
+  gasSubmitResultProjectionValidator,
   v.object({ status: v.literal("handoff_unavailable") }),
   v.object({ status: v.literal("reservation_expired") }),
   v.object({ status: v.literal("invalid_lifecycle") }),
   v.object({ status: v.literal("resource_not_found") }),
   v.object({ status: v.literal("unauthorized") }),
+  v.object({ status: v.literal("invalid_lifecycle") }),
   v.object({ status: v.literal("invalid_request") }),
+  v.object({ status: v.literal("invalid_signature") }),
+  v.object({ status: v.literal("wrong_network") }),
+  v.object({ status: v.literal("unsupported_transaction") }),
+  v.object({ status: v.literal("payload_too_large") }),
+  v.object({ status: v.literal("policy_denied") }),
+  v.object({ status: v.literal("relayer_unavailable") }),
   v.object({ status: v.literal("dependency_unavailable") }),
   v.object({ status: v.literal("internal_error") }),
 );
@@ -263,6 +286,8 @@ function isValidTimestamp(value: number | null): value is number {
 }
 
 function mapSubmitResult(result: GasSubmitMutationResult): GasSubmitResult {
+  if ("object" in result) return result;
+
   switch (result.status) {
     case "unauthorized":
       return { status: "unauthorized" };
@@ -279,6 +304,12 @@ function mapSubmitResult(result: GasSubmitMutationResult): GasSubmitResult {
     case "handoff_unavailable":
       return { status: "handoff_unavailable" };
   }
+}
+
+function mapClaimResult(result: GasClaimResult): GasSubmitResult {
+  if (result.status === "claimed") return result.execution;
+  if (result.status === "invalid_internal_input") return { status: "internal_error" };
+  return { status: result.status };
 }
 
 async function authorize(ctx: ActionCtx, apiKeyHash: string) {
@@ -363,6 +394,7 @@ export const submit = action({
     apiKeyHash: v.string(),
     requestId: v.string(),
     transactionHash: v.string(),
+    transactionXdr: v.optional(v.string()),
   },
   returns: gasSubmitResultValidator,
   handler: async (ctx, args): Promise<GasSubmitResult> => {
@@ -383,6 +415,31 @@ export const submit = action({
       transactionHash = normalizeTransactionHash(args.transactionHash);
     } catch {
       return { status: "invalid_request" };
+    }
+
+    if (args.transactionXdr !== undefined) {
+      const transactionXdr = normalizeRequiredValue(
+        args.transactionXdr,
+        GAS_MAX_TRANSACTION_XDR_BYTES,
+      );
+      if (!transactionXdr.ok) return { status: transactionXdr.status };
+
+      let claim: GasClaimResult;
+      try {
+        claim = await claimGasExecution(
+          ctx,
+          {
+            apiKeyHash: args.apiKeyHash,
+            requestId,
+            transactionHash,
+            transactionXdr: transactionXdr.value,
+          },
+          scope,
+        );
+      } catch {
+        return { status: "dependency_unavailable" };
+      }
+      return mapClaimResult(claim);
     }
 
     let result: GasSubmitMutationResult;

@@ -6,6 +6,7 @@ import {
   createGasSubmitHandler,
   GAS_SUBMIT_MAX_BODY_BYTES,
   GAS_SUBMIT_MAX_REQUEST_ID_BYTES,
+  GAS_SUBMIT_MAX_XDR_BYTES,
   type GasSubmitCaller,
   type GasSubmitResult,
 } from "../../core/api/gas-route-handlers.ts";
@@ -106,6 +107,102 @@ test("submit forwards only normalized authoritative fields and preserves credent
   assert.equal(malformedBearer.calls.length, 0);
 });
 
+test("submit forwards bounded XDR only with the strict XDR field set", async () => {
+  const claimed = {
+    object: "gas_submit_result" as const,
+    requestId: CORRELATION_ID,
+    transactionHash: TRANSACTION_HASH,
+    outerTransactionHash: null,
+    status: "claimed" as const,
+    reservedStroops: "200",
+    actualFeeStroops: null,
+    expiresAt: "2026-09-03T12:49:56.789Z",
+    reconciliationRequired: false,
+  };
+  const valid = await invoke(claimed, {
+    body: JSON.stringify({
+      requestId: ` ${CORRELATION_ID} `,
+      transactionHash: TRANSACTION_HASH.toUpperCase(),
+      transactionXdr: "signed-xdr",
+    }),
+  });
+  assert.equal(valid.response.status, 202);
+  assert.deepEqual(await responseBody(valid.response), claimed);
+  assert.deepEqual(valid.calls[0]?.args, {
+    apiKeyHash: hashApiKey(API_KEY),
+    requestId: CORRELATION_ID,
+    transactionHash: TRANSACTION_HASH,
+    transactionXdr: "signed-xdr",
+  });
+  assertRouteHeaders(valid.response);
+
+  const extra = await invoke(claimed, {
+    body: JSON.stringify({
+      requestId: CORRELATION_ID,
+      transactionHash: TRANSACTION_HASH,
+      transactionXdr: "signed-xdr",
+      projectId: "forged-project",
+    }),
+  });
+  assert.equal(extra.response.status, 400);
+  assert.equal((await responseBody(extra.response)).error?.code, "invalid_request");
+  assert.equal(extra.calls.length, 0);
+
+  const empty = await invoke(claimed, {
+    body: JSON.stringify({
+      requestId: CORRELATION_ID,
+      transactionHash: TRANSACTION_HASH,
+      transactionXdr: "  ",
+    }),
+  });
+  assert.equal(empty.response.status, 400);
+  assert.equal(empty.calls.length, 0);
+
+  const oversized = await invoke(claimed, {
+    body: JSON.stringify({
+      requestId: CORRELATION_ID,
+      transactionHash: TRANSACTION_HASH,
+      transactionXdr: "x".repeat(GAS_SUBMIT_MAX_XDR_BYTES + 1),
+    }),
+  });
+  assert.equal(oversized.response.status, 413);
+  assert.equal(oversized.calls.length, 0);
+});
+
+test("submit maps safe execution DTOs to running and terminal HTTP responses", async () => {
+  const base = {
+    object: "gas_submit_result" as const,
+    requestId: CORRELATION_ID,
+    transactionHash: TRANSACTION_HASH,
+    outerTransactionHash: null,
+    reservedStroops: "200",
+    actualFeeStroops: null,
+    expiresAt: "2026-09-03T12:49:56.789Z",
+    reconciliationRequired: false,
+  };
+
+  const running = await invoke(
+    { ...base, status: "submitted" },
+    { body: JSON.stringify({ requestId: REQUEST_ID, transactionHash: TRANSACTION_HASH }) },
+  );
+  assert.equal(running.response.status, 202);
+  assert.equal((await responseBody(running.response)).status, "submitted");
+  assert.equal(running.response.headers.get("cache-control"), "no-store");
+
+  const terminal = await invoke(
+    {
+      ...base,
+      status: "succeeded",
+      actualFeeStroops: "175",
+      outerTransactionHash: "b".repeat(64),
+    },
+    { body: JSON.stringify({ requestId: REQUEST_ID, transactionHash: TRANSACTION_HASH }) },
+  );
+  assert.equal(terminal.response.status, 200);
+  assert.equal((await responseBody(terminal.response)).actualFeeStroops, "175");
+  assertRouteHeaders(terminal.response);
+});
+
 test("submit rejects malformed credentials, JSON, identifiers, hashes, and body bounds before Convex", async () => {
   const credentials = await invoke(
     { status: "handoff_unavailable" },
@@ -201,6 +298,16 @@ test("every submit outcome maps to the stable HTTP contract", async () => {
     { result: { status: "resource_not_found" }, status: 404, code: "resource_not_found" },
     { result: { status: "unauthorized" }, status: 401, code: "invalid_api_key" },
     { result: { status: "invalid_request" }, status: 400, code: "invalid_request" },
+    { result: { status: "invalid_signature" }, status: 400, code: "invalid_signature" },
+    { result: { status: "wrong_network" }, status: 400, code: "wrong_network" },
+    {
+      result: { status: "unsupported_transaction" },
+      status: 400,
+      code: "unsupported_transaction",
+    },
+    { result: { status: "payload_too_large" }, status: 413, code: "invalid_request" },
+    { result: { status: "policy_denied" }, status: 403, code: "policy_denied" },
+    { result: { status: "relayer_unavailable" }, status: 503, code: "relayer_unavailable" },
     { result: { status: "dependency_unavailable" }, status: 503, code: "dependency_unavailable" },
     { result: { status: "internal_error" }, status: 500, code: "internal_error" },
   ];
@@ -211,6 +318,24 @@ test("every submit outcome maps to the stable HTTP contract", async () => {
     assertRouteHeaders(response);
     assert.equal((await responseBody(response)).error?.code, testCase.code);
   }
+});
+
+test("submit rejects unsafe execution DTOs without exposing internal fields", async () => {
+  const unsafe = await invoke({
+    object: "gas_submit_result",
+    requestId: CORRELATION_ID,
+    transactionHash: TRANSACTION_HASH,
+    outerTransactionHash: null,
+    status: "claimed",
+    reservedStroops: "200",
+    actualFeeStroops: null,
+    expiresAt: "2026-09-03T12:49:56.789Z",
+    reconciliationRequired: false,
+    executionAttemptId: "secret-internal-id",
+  } as unknown as GasSubmitResult);
+  assert.equal(unsafe.response.status, 500);
+  const body = JSON.stringify(await responseBody(unsafe.response));
+  assert.equal(body.includes("secret-internal-id"), false);
 });
 
 test("transport failures are dependency errors and redact secrets/raw payloads", async () => {

@@ -11,6 +11,11 @@ import {
   reservationExpiryForClaim,
 } from "./accounting";
 import { revalidateGasApiKeyScope } from "./authorization";
+import {
+  gasSubmitResultProjectionValidator,
+  projectGasExecutionAttempt,
+  type GasSubmitResultProjection,
+} from "./projections";
 import { gasNetworkValidator } from "./schema";
 import {
   GAS_FEE_OVERHEAD_STROOPS,
@@ -44,8 +49,15 @@ const SHA256_HASH_PATTERN = /^[a-f0-9]{64}$/;
 export type GasClaimResult =
   | { status: "unauthorized" }
   | { status: "invalid_internal_input" }
+  | { status: "invalid_request" }
+  | { status: "invalid_signature" }
+  | { status: "wrong_network" }
+  | { status: "unsupported_transaction" }
+  | { status: "payload_too_large" }
+  | { status: "dependency_unavailable" }
   | { status: "resource_not_found" }
   | { status: "reservation_expired" }
+  | { status: "invalid_lifecycle" }
   | { status: "policy_denied" }
   | { status: "relayer_unavailable" }
   | {
@@ -59,13 +71,21 @@ export type GasClaimResult =
       leaseGeneration: number;
       leaseExpiresAt: number | null;
       sendCount: number;
+      execution: GasSubmitResultProjection;
     };
 
 const gasClaimResultValidator = v.union(
   v.object({ status: v.literal("unauthorized") }),
   v.object({ status: v.literal("invalid_internal_input") }),
+  v.object({ status: v.literal("invalid_request") }),
+  v.object({ status: v.literal("invalid_signature") }),
+  v.object({ status: v.literal("wrong_network") }),
+  v.object({ status: v.literal("unsupported_transaction") }),
+  v.object({ status: v.literal("payload_too_large") }),
+  v.object({ status: v.literal("dependency_unavailable") }),
   v.object({ status: v.literal("resource_not_found") }),
   v.object({ status: v.literal("reservation_expired") }),
+  v.object({ status: v.literal("invalid_lifecycle") }),
   v.object({ status: v.literal("policy_denied") }),
   v.object({ status: v.literal("relayer_unavailable") }),
   v.object({
@@ -79,6 +99,7 @@ const gasClaimResultValidator = v.union(
     leaseGeneration: v.number(),
     leaseExpiresAt: v.union(v.number(), v.null()),
     sendCount: v.number(),
+    execution: gasSubmitResultProjectionValidator,
   }),
 );
 
@@ -209,11 +230,53 @@ async function findRelayer(
   return matches[0] ?? null;
 }
 
-function validateReservation(
+function validateStoredReservation(reservation: Doc<"gasLogs">): boolean {
+  if (
+    reservation.decisionCode !== "reserved" ||
+    reservation.lifecycle !== GAS_LIFECYCLE_STATES.reserved ||
+    reservation.rejectionCode !== undefined ||
+    reservation.transactionHash === undefined ||
+    reservation.sourceWallet === undefined ||
+    reservation.targetContractIds === undefined ||
+    reservation.targetContractIds.length !== 1 ||
+    reservation.innerMaxFeeStroops === undefined ||
+    reservation.reservedStroops === undefined ||
+    reservation.expiresAt === undefined ||
+    !Number.isSafeInteger(reservation.createdAt) ||
+    !Number.isSafeInteger(reservation.updatedAt) ||
+    !Number.isSafeInteger(reservation.expiresAt) ||
+    reservation.updatedAt < reservation.createdAt ||
+    reservation.expiresAt <= reservation.createdAt ||
+    reservation.actualFeeStroops !== undefined ||
+    !isSha256Hash(reservation.idempotencyKeyHash) ||
+    !isSha256Hash(reservation.requestFingerprint)
+  ) {
+    return false;
+  }
+
+  try {
+    const innerMaxFeeStroops = assertValidStroopValue(reservation.innerMaxFeeStroops);
+    const reservedStroops = assertValidStroopValue(reservation.reservedStroops);
+    if (
+      reservedStroops <= 0n ||
+      addStroopValues(innerMaxFeeStroops, GAS_FEE_OVERHEAD_STROOPS) !== reservedStroops ||
+      normalizeGasRequestId(reservation.requestId) !== reservation.requestId ||
+      normalizeTransactionHash(reservation.transactionHash) !== reservation.transactionHash ||
+      normalizeWalletAddress(reservation.sourceWallet) !== reservation.sourceWallet ||
+      reservation.targetContractIds.some((target) => normalizeContractId(target) !== target)
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function matchesReservation(
   reservation: Doc<"gasLogs">,
   args: {
     requestId: string;
-    idempotencyKeyHash: string;
     requestFingerprint: string;
     innerTransactionHash: string;
     sourceWallet: string;
@@ -224,7 +287,6 @@ function validateReservation(
 ): boolean {
   if (
     reservation.requestId !== args.requestId ||
-    reservation.idempotencyKeyHash !== args.idempotencyKeyHash ||
     reservation.requestFingerprint !== args.requestFingerprint ||
     reservation.transactionHash !== args.innerTransactionHash ||
     reservation.sourceWallet !== args.sourceWallet ||
@@ -235,8 +297,7 @@ function validateReservation(
     reservation.innerMaxFeeStroops !== args.innerMaxFeeStroops ||
     reservation.decisionCode !== "reserved" ||
     reservation.rejectionCode !== undefined ||
-    reservation.actualFeeStroops !== undefined ||
-    reservation.expiresAt === undefined
+    reservation.actualFeeStroops !== undefined
   ) {
     return false;
   }
@@ -245,11 +306,6 @@ function validateReservation(
     const originalReservation = assertValidStroopValue(reservation.reservedStroops ?? -1n);
     if (
       addStroopValues(args.innerMaxFeeStroops, GAS_FEE_OVERHEAD_STROOPS) !== originalReservation ||
-      normalizeGasRequestId(reservation.requestId) !== reservation.requestId ||
-      normalizeTransactionHash(reservation.transactionHash) !== reservation.transactionHash ||
-      normalizeWalletAddress(reservation.sourceWallet) !== reservation.sourceWallet ||
-      reservation.targetContractIds?.some((target) => normalizeContractId(target) !== target) ||
-      reservation.lifecycle !== GAS_LIFECYCLE_STATES.reserved ||
       reservation.expiresAt !== reservationExpiryForClaim(reservation.createdAt, args.innerMaxTime)
     ) {
       return false;
@@ -305,6 +361,7 @@ function claimResult(
   replayed: boolean,
   includeLease: boolean,
 ): GasClaimResult {
+  const execution = projectGasExecutionAttempt(attempt);
   return {
     status: "claimed",
     replayed,
@@ -316,6 +373,7 @@ function claimResult(
     leaseGeneration: attempt.leaseGeneration,
     leaseExpiresAt: includeLease ? (attempt.leaseExpiresAt ?? null) : null,
     sendCount: attempt.sendCount,
+    execution,
   };
 }
 
@@ -443,14 +501,17 @@ export const claim = internalMutation({
     );
     const existing = uniqueAttempts[0];
     if (existing) {
-      if (
-        uniqueAttempts.some((attempt) => attempt._id !== existing._id) ||
-        !uniqueAttempts.every((attempt) => attemptMatchesClaim(attempt, normalized)) ||
-        !attemptMatchesClaim(existing, normalized)
-      ) {
+      if (uniqueAttempts.some((attempt) => attempt._id !== existing._id)) {
         return { status: "invalid_internal_input" };
       }
-      return claimResult(existing, true, false);
+      if (!attemptMatchesClaim(existing, normalized)) {
+        return { status: "invalid_lifecycle" };
+      }
+      try {
+        return claimResult(existing, true, false);
+      } catch {
+        return { status: "invalid_internal_input" };
+      }
     }
 
     const reservation = await findReservation(ctx, args.projectId, normalized.requestId);
@@ -460,7 +521,8 @@ export const claim = internalMutation({
         : { status: "invalid_internal_input" };
     }
     const now = Date.now();
-    if (!validateReservation(reservation, normalized)) return { status: "invalid_internal_input" };
+    if (!validateStoredReservation(reservation)) return { status: "invalid_internal_input" };
+    if (!matchesReservation(reservation, normalized)) return { status: "invalid_lifecycle" };
     if (reservation.expiresAt === undefined || reservation.expiresAt <= now) {
       return { status: "reservation_expired" };
     }

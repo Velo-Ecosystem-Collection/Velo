@@ -8,6 +8,11 @@ import { internalMutation } from "../_generated/server";
 import { ensureGasAccounting, releaseGasOutstandingHold } from "./accounting";
 import { revalidateGasApiKeyScope } from "./authorization";
 import { findExecutionAttemptByRequestId } from "./execution";
+import {
+  gasSubmitResultProjectionValidator,
+  projectGasExecutionAttempt,
+  type GasSubmitResultProjection,
+} from "./projections";
 import { GAS_FEE_OVERHEAD_STROOPS, GAS_LIFECYCLE_STATES } from "./types";
 import {
   addStroopValues,
@@ -20,6 +25,7 @@ import {
 } from "./validation";
 
 export type GasSubmitResult =
+  | GasSubmitResultProjection
   | { status: "unauthorized" }
   | { status: "invalid_internal_input" }
   | { status: "dependency_unavailable" }
@@ -29,6 +35,7 @@ export type GasSubmitResult =
   | { status: "handoff_unavailable" };
 
 export const gasSubmitMutationResultValidator = v.union(
+  gasSubmitResultProjectionValidator,
   v.object({ status: v.literal("unauthorized") }),
   v.object({ status: v.literal("invalid_internal_input") }),
   v.object({ status: v.literal("dependency_unavailable") }),
@@ -164,6 +171,19 @@ export const submit = internalMutation({
       return { status: "invalid_internal_input" };
     }
 
+    const existingAttempt = await findExecutionAttemptByRequestId(ctx, args.projectId, requestId);
+    if (existingAttempt === "ambiguous") return { status: "invalid_internal_input" };
+    if (existingAttempt !== null) {
+      try {
+        if (existingAttempt.innerTransactionHash !== transactionHash) {
+          return { status: "invalid_lifecycle" };
+        }
+        return projectGasExecutionAttempt(existingAttempt);
+      } catch {
+        return { status: "invalid_internal_input" };
+      }
+    }
+
     const reservation = await findReservation(ctx, args.projectId, requestId);
     if (reservation === null) return { status: "resource_not_found" };
     if (reservation === "ambiguous") return { status: "invalid_internal_input" };
@@ -198,9 +218,7 @@ export const submit = internalMutation({
       } catch {
         return { status: "invalid_internal_input" };
       }
-      // Public XDR transport and status DTOs are deliberately deferred. Do not
-      // let the legacy seam release or mutate an execution-owned hold.
-      return { status: "handoff_unavailable" };
+      return { status: "invalid_internal_input" };
     }
     if (reservation.lifecycle !== GAS_LIFECYCLE_STATES.reserved) {
       return { status: "invalid_internal_input" };

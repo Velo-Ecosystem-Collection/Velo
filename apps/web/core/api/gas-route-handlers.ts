@@ -33,6 +33,25 @@ const GAS_LOG_PROJECTION_KEYS = [
   "transactionHash",
   "updatedAt",
 ].sort();
+const GAS_SUBMIT_RESULT_KEYS = [
+  "actualFeeStroops",
+  "expiresAt",
+  "object",
+  "outerTransactionHash",
+  "reconciliationRequired",
+  "requestId",
+  "reservedStroops",
+  "status",
+  "transactionHash",
+].sort();
+const GAS_EXECUTION_STATUSES = new Set([
+  "claimed",
+  "submission_unknown",
+  "submitted",
+  "succeeded",
+  "failed",
+  "cancelled",
+]);
 const GAS_REJECTION_CODES = new Set([
   "policy_disabled",
   "contract_not_whitelisted",
@@ -51,6 +70,7 @@ export const GAS_SPONSOR_MAX_XDR_BYTES = TESTNET_TRANSACTION_ENVELOPE_MAX_XDR_BY
 export const GAS_SPONSOR_MAX_IDEMPOTENCY_KEY_BYTES = 255;
 export const GAS_SUBMIT_MAX_BODY_BYTES = GAS_MAX_BODY_BYTES;
 export const GAS_SUBMIT_MAX_REQUEST_ID_BYTES = 128;
+export const GAS_SUBMIT_MAX_XDR_BYTES = TESTNET_TRANSACTION_ENVELOPE_MAX_XDR_BYTES;
 
 type SponsorFunction = typeof api.gas.public_api.sponsor;
 type SponsorArgs = FunctionArgs<SponsorFunction>;
@@ -110,6 +130,19 @@ type ParsedSponsorBody = {
 type ParsedSubmitBody = {
   requestId: string;
   transactionHash: string;
+  transactionXdr?: string;
+};
+
+type GasSubmitResultDto = {
+  object: "gas_submit_result";
+  requestId: string;
+  transactionHash: string;
+  outerTransactionHash: string | null;
+  status: string;
+  reservedStroops: string;
+  actualFeeStroops: string | null;
+  expiresAt: string;
+  reconciliationRequired: boolean;
 };
 
 /** Build the shared Gas sponsor handler around an injectable Convex caller. */
@@ -229,7 +262,7 @@ export function createGasSubmitHandler(convex: GasSubmitCaller) {
       const parsedBody = parseSubmitBody(rawBody.bytes);
       if (!parsedBody.ok) {
         return gasError(telemetry, {
-          status: 400,
+          status: parsedBody.reason === "too_large" ? 413 : 400,
           type: "validation_error",
           code: "invalid_request",
           message: parsedBody.message,
@@ -241,6 +274,9 @@ export function createGasSubmitHandler(convex: GasSubmitCaller) {
         apiKeyHash: hashApiKey(apiKey),
         requestId: parsedBody.value.requestId,
         transactionHash: parsedBody.value.transactionHash,
+        ...(parsedBody.value.transactionXdr === undefined
+          ? {}
+          : { transactionXdr: parsedBody.value.transactionXdr }),
       };
 
       let result: GasSubmitResult;
@@ -412,17 +448,21 @@ function parseSponsorBody(
   return { ok: true, value: { transactionXdr: normalizedXdr } };
 }
 
-function parseSubmitBody(
-  bytes: Uint8Array,
-):
+function parseSubmitBody(bytes: Uint8Array):
   | { ok: true; value: ParsedSubmitBody }
-  | { ok: false; message: string; param: "requestId" | "transactionHash" } {
+  | {
+      ok: false;
+      reason: "invalid" | "too_large";
+      message: string;
+      param: "requestId" | "transactionHash" | "transactionXdr";
+    } {
   let decoded: string;
   try {
     decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     return {
       ok: false,
+      reason: "invalid",
       message: "Request body must be valid UTF-8 JSON.",
       param: "requestId",
     };
@@ -434,6 +474,7 @@ function parseSubmitBody(
   } catch {
     return {
       ok: false,
+      reason: "invalid",
       message: "Request body must be valid JSON.",
       param: "requestId",
     };
@@ -442,8 +483,24 @@ function parseSubmitBody(
   if (!isRecord(body)) {
     return {
       ok: false,
+      reason: "invalid",
       message: "Request body must be a JSON object.",
       param: "requestId",
+    };
+  }
+
+  const hasTransactionXdr = Object.prototype.hasOwnProperty.call(body, "transactionXdr");
+  if (
+    hasTransactionXdr &&
+    Object.keys(body).some(
+      (key) => key !== "requestId" && key !== "transactionHash" && key !== "transactionXdr",
+    )
+  ) {
+    return {
+      ok: false,
+      reason: "invalid",
+      message: "Requests containing transactionXdr may not include extra fields.",
+      param: "transactionXdr",
     };
   }
 
@@ -451,6 +508,7 @@ function parseSubmitBody(
   if (typeof requestId !== "string" || requestId.trim() === "") {
     return {
       ok: false,
+      reason: "invalid",
       message: "requestId is required and must be a non-empty string.",
       param: "requestId",
     };
@@ -460,6 +518,7 @@ function parseSubmitBody(
   if (new TextEncoder().encode(normalizedRequestId).byteLength > GAS_SUBMIT_MAX_REQUEST_ID_BYTES) {
     return {
       ok: false,
+      reason: "invalid",
       message: "requestId must be at most 128 UTF-8 bytes.",
       param: "requestId",
     };
@@ -469,6 +528,7 @@ function parseSubmitBody(
   if (typeof transactionHash !== "string" || transactionHash.trim() === "") {
     return {
       ok: false,
+      reason: "invalid",
       message: "transactionHash is required and must be a 64-character hex string.",
       param: "transactionHash",
     };
@@ -480,8 +540,40 @@ function parseSubmitBody(
   } catch {
     return {
       ok: false,
+      reason: "invalid",
       message: "transactionHash must be a 64-character hex string.",
       param: "transactionHash",
+    };
+  }
+
+  if (hasTransactionXdr) {
+    const transactionXdr = body.transactionXdr;
+    if (typeof transactionXdr !== "string" || transactionXdr.trim() === "") {
+      return {
+        ok: false,
+        reason: "invalid",
+        message: "transactionXdr must be a non-empty string.",
+        param: "transactionXdr",
+      };
+    }
+
+    const normalizedTransactionXdr = transactionXdr.trim();
+    if (new TextEncoder().encode(normalizedTransactionXdr).byteLength > GAS_SUBMIT_MAX_XDR_BYTES) {
+      return {
+        ok: false,
+        reason: "too_large",
+        message: "transactionXdr is too large.",
+        param: "transactionXdr",
+      };
+    }
+
+    return {
+      ok: true,
+      value: {
+        requestId: normalizedRequestId,
+        transactionHash: normalizedTransactionHash,
+        transactionXdr: normalizedTransactionXdr,
+      },
     };
   }
 
@@ -583,6 +675,18 @@ function mapGasSubmitResult(result: GasSubmitResult, telemetry: RouteTelemetry):
     return internalError(telemetry);
   }
 
+  if ("object" in result && result.object === "gas_submit_result") {
+    if (!isGasSubmitResultDto(result)) return internalError(telemetry);
+    const isRunning =
+      result.status === "claimed" ||
+      result.status === "submission_unknown" ||
+      result.status === "submitted";
+    return Response.json(result, {
+      status: isRunning ? 202 : 200,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+
   switch (result.status) {
     case "handoff_unavailable":
       return gasError(telemetry, {
@@ -626,6 +730,48 @@ function mapGasSubmitResult(result: GasSubmitResult, telemetry: RouteTelemetry):
         code: "invalid_request",
         message: "The submit request is invalid.",
       });
+    case "invalid_signature":
+      return gasError(telemetry, {
+        status: 400,
+        type: "validation_error",
+        code: "invalid_signature",
+        message: "The transaction signature is invalid.",
+      });
+    case "wrong_network":
+      return gasError(telemetry, {
+        status: 400,
+        type: "validation_error",
+        code: "wrong_network",
+        message: "Only Testnet transactions are supported.",
+      });
+    case "unsupported_transaction":
+      return gasError(telemetry, {
+        status: 400,
+        type: "validation_error",
+        code: "unsupported_transaction",
+        message: "The transaction type is not supported.",
+      });
+    case "payload_too_large":
+      return gasError(telemetry, {
+        status: 413,
+        type: "validation_error",
+        code: "invalid_request",
+        message: "The transaction request is too large.",
+      });
+    case "policy_denied":
+      return gasError(telemetry, {
+        status: 403,
+        type: "validation_error",
+        code: "policy_denied",
+        message: "Gas sponsorship is not allowed for this transaction.",
+      });
+    case "relayer_unavailable":
+      return gasError(telemetry, {
+        status: 503,
+        type: "api_error",
+        code: "relayer_unavailable",
+        message: "The Gas relayer is temporarily unavailable.",
+      });
     case "dependency_unavailable":
       return gasError(telemetry, {
         status: 503,
@@ -638,6 +784,38 @@ function mapGasSubmitResult(result: GasSubmitResult, telemetry: RouteTelemetry):
     default:
       return internalError(telemetry);
   }
+}
+
+function isGasSubmitResultDto(value: Record<string, unknown>): value is GasSubmitResultDto {
+  if (Object.keys(value).sort().join("\u0000") !== GAS_SUBMIT_RESULT_KEYS.join("\u0000")) {
+    return false;
+  }
+
+  return (
+    value.object === "gas_submit_result" &&
+    typeof value.requestId === "string" &&
+    isCorrelationId(value.requestId) &&
+    new TextEncoder().encode(value.requestId).byteLength <= GAS_SUBMIT_MAX_REQUEST_ID_BYTES &&
+    typeof value.transactionHash === "string" &&
+    isCanonicalTransactionHash(value.transactionHash) &&
+    (value.outerTransactionHash === null ||
+      (typeof value.outerTransactionHash === "string" &&
+        isCanonicalTransactionHash(value.outerTransactionHash))) &&
+    typeof value.status === "string" &&
+    GAS_EXECUTION_STATUSES.has(value.status) &&
+    typeof value.reservedStroops === "string" &&
+    isCanonicalStroop(value.reservedStroops) &&
+    (value.actualFeeStroops === null ||
+      (typeof value.actualFeeStroops === "string" && isCanonicalStroop(value.actualFeeStroops))) &&
+    typeof value.expiresAt === "string" &&
+    isCanonicalIsoTimestamp(value.expiresAt) &&
+    typeof value.reconciliationRequired === "boolean"
+  );
+}
+
+function isCanonicalIsoTimestamp(value: string): boolean {
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value;
 }
 
 function mapRejection(

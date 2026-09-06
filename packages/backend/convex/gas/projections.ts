@@ -1,8 +1,10 @@
+import { isCorrelationId } from "@repo/observability";
 import { v } from "convex/values";
 
 import type { Doc } from "../_generated/dataModel";
 import type {
   GasDecisionCode,
+  GasExecutionStatus,
   GasLifecycleState,
   GasNetwork,
   GasRejectionCode,
@@ -11,11 +13,17 @@ import type {
 
 import {
   gasDecisionCodeValidator,
+  gasExecutionStatusValidator,
   gasLifecycleValidator,
   gasNetworkValidator,
   gasRejectionCodeValidator,
   gasRelayerStatusValidator,
 } from "./schema";
+import {
+  assertValidStroopValue,
+  normalizeGasRequestId,
+  normalizeTransactionHash,
+} from "./validation";
 
 /** Fields safe for project-scoped policy views and API responses. */
 export type GasPolicyProjection = {
@@ -58,6 +66,19 @@ export type RelayerAccountProjection = {
   updatedAt: number;
 };
 
+/** Fields safe for authenticated submit/replay status responses. */
+export type GasSubmitResultProjection = {
+  object: "gas_submit_result";
+  requestId: string;
+  transactionHash: string;
+  outerTransactionHash: string | null;
+  status: GasExecutionStatus;
+  reservedStroops: string;
+  actualFeeStroops: string | null;
+  expiresAt: string;
+  reconciliationRequired: boolean;
+};
+
 /** Explicit public return validator for safe Gas policy projections. */
 export const gasPolicyProjectionValidator = v.object({
   enabled: v.boolean(),
@@ -97,6 +118,19 @@ export const relayerAccountProjectionValidator = v.object({
   balanceUpdatedAt: v.union(v.number(), v.null()),
   createdAt: v.number(),
   updatedAt: v.number(),
+});
+
+/** Exact ADR-0003 public execution DTO validator. */
+export const gasSubmitResultProjectionValidator = v.object({
+  object: v.literal("gas_submit_result"),
+  requestId: v.string(),
+  transactionHash: v.string(),
+  outerTransactionHash: v.union(v.string(), v.null()),
+  status: gasExecutionStatusValidator,
+  reservedStroops: v.string(),
+  actualFeeStroops: v.union(v.string(), v.null()),
+  expiresAt: v.string(),
+  reconciliationRequired: v.boolean(),
 });
 
 function decimalStroops(value: bigint | undefined): string | null {
@@ -148,4 +182,62 @@ export function projectRelayerAccount(account: Doc<"relayerAccounts">): RelayerA
     createdAt: account.createdAt,
     updatedAt: account.updatedAt,
   };
+}
+
+/** Project a stored execution attempt without exposing internal claim state. */
+export function projectGasExecutionAttempt(
+  attempt: Pick<
+    Doc<"gasExecutionAttempts">,
+    | "requestId"
+    | "innerTransactionHash"
+    | "outerTransactionHash"
+    | "lifecycle"
+    | "approvedHoldStroops"
+    | "actualFeeStroops"
+    | "reservationExpiresAt"
+    | "reconciliationRequired"
+  >,
+): GasSubmitResultProjection {
+  try {
+    if (
+      !isCorrelationId(attempt.requestId) ||
+      normalizeGasRequestId(attempt.requestId) !== attempt.requestId ||
+      normalizeTransactionHash(attempt.innerTransactionHash) !== attempt.innerTransactionHash ||
+      !Number.isSafeInteger(attempt.reservationExpiresAt) ||
+      attempt.reservationExpiresAt <= 0 ||
+      !Number.isFinite(new Date(attempt.reservationExpiresAt).getTime()) ||
+      (attempt.lifecycle !== "claimed" &&
+        attempt.lifecycle !== "submission_unknown" &&
+        attempt.lifecycle !== "submitted" &&
+        attempt.lifecycle !== "succeeded" &&
+        attempt.lifecycle !== "failed" &&
+        attempt.lifecycle !== "cancelled")
+    ) {
+      throw new Error("Invalid Gas execution projection");
+    }
+
+    const approvedHoldStroops = assertValidStroopValue(attempt.approvedHoldStroops);
+    const actualFeeStroops =
+      attempt.actualFeeStroops === undefined
+        ? null
+        : assertValidStroopValue(attempt.actualFeeStroops);
+    const outerTransactionHash =
+      attempt.outerTransactionHash === undefined
+        ? null
+        : normalizeTransactionHash(attempt.outerTransactionHash);
+
+    return {
+      object: "gas_submit_result",
+      requestId: attempt.requestId,
+      transactionHash: attempt.innerTransactionHash,
+      outerTransactionHash,
+      status: attempt.lifecycle,
+      reservedStroops: approvedHoldStroops.toString(),
+      actualFeeStroops: actualFeeStroops?.toString() ?? null,
+      expiresAt: new Date(attempt.reservationExpiresAt).toISOString(),
+      reconciliationRequired: attempt.reconciliationRequired,
+    };
+  } catch {
+    throw new Error("Invalid Gas execution projection");
+  }
 }

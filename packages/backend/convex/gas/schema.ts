@@ -3,6 +3,7 @@ import { v } from "convex/values";
 
 import {
   GAS_DECISION_CODES,
+  GAS_EXECUTION_STATUSES,
   GAS_LIFECYCLE_STATES,
   GAS_NETWORK,
   GAS_REJECTION_CODES,
@@ -37,6 +38,15 @@ export const gasLifecycleValidator = v.union(
   v.literal(GAS_LIFECYCLE_STATES.succeeded),
   v.literal(GAS_LIFECYCLE_STATES.failed),
   v.literal(GAS_LIFECYCLE_STATES.cancelled),
+);
+
+export const gasExecutionStatusValidator = v.union(
+  v.literal(GAS_EXECUTION_STATUSES.claimed),
+  v.literal(GAS_EXECUTION_STATUSES.submissionUnknown),
+  v.literal(GAS_EXECUTION_STATUSES.submitted),
+  v.literal(GAS_EXECUTION_STATUSES.succeeded),
+  v.literal(GAS_EXECUTION_STATUSES.failed),
+  v.literal(GAS_EXECUTION_STATUSES.cancelled),
 );
 
 export const gasRelayerStatusValidator = v.union(

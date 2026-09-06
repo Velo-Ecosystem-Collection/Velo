@@ -283,7 +283,7 @@ test("revoked scope, disabled relayers, malformed XDR, and cross-project identit
       requestId: sponsored.reservation.requestId,
       transactionXdr: "not-an-xdr",
     });
-    expect(malformed).toEqual({ status: "invalid_internal_input" });
+    expect(malformed).toEqual({ status: "invalid_request" });
     expect((await readState(t, first.projectId)).attempts).toHaveLength(0);
 
     await t.run(async (ctx) => {
@@ -313,5 +313,154 @@ test("revoked scope, disabled relayers, malformed XDR, and cross-project identit
       }),
     );
     expect(disabled).toEqual({ status: "relayer_unavailable" });
+  });
+});
+
+test("public submit claims transient XDR and replays one safe DTO without new exposure", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const { projectId } = await createScope(t, { suffix: "public-submit" });
+    const transactionXdr = gasMaxTimeEnvelopeFixtures.unbounded;
+    const sponsored = await sponsor(t, transactionXdr, "public-submit-idempotency");
+    expect(sponsored.status).toBe("success");
+    if (sponsored.status !== "success") throw new Error("Expected a sponsor reservation");
+    const transactionHash = sponsored.reservation.transactionHash;
+    if (transactionHash === null) throw new Error("Expected a reservation transaction hash");
+
+    await withSignerConfiguration([projectId], async () => {
+      const first = await t.action(api.gas.public_api.submit, {
+        apiKeyHash: API_KEY_HASH,
+        requestId: ` ${sponsored.reservation.requestId} `,
+        transactionHash: transactionHash.toUpperCase(),
+        transactionXdr: ` ${transactionXdr} `,
+      });
+      const expected = {
+        object: "gas_submit_result",
+        requestId: sponsored.reservation.requestId,
+        transactionHash,
+        outerTransactionHash: null,
+        status: "claimed",
+        reservedStroops: "200",
+        actualFeeStroops: null,
+        expiresAt: new Date(NOW + 15 * 60 * 1_000).toISOString(),
+        reconciliationRequired: false,
+      };
+      expect(first).toEqual(expected);
+      expect(Object.keys(first).sort()).toEqual(Object.keys(expected).sort());
+
+      const afterClaim = await readState(t, projectId);
+      expect(afterClaim.attempts).toHaveLength(1);
+      expect(afterClaim.policy?.outstandingHoldsStroops).toBe(200n);
+      expect(afterClaim.logs[0]?.lifecycle).toBe("claimed");
+
+      const beforeReplay = await readState(t, projectId);
+      const replay = await t.action(api.gas.public_api.submit, {
+        apiKeyHash: API_KEY_HASH,
+        requestId: sponsored.reservation.requestId,
+        transactionHash,
+        transactionXdr,
+      });
+      expect(replay).toEqual(expected);
+      expect(await readState(t, projectId)).toEqual(beforeReplay);
+
+      const noXdrStatus = await t.action(api.gas.public_api.submit, {
+        apiKeyHash: API_KEY_HASH,
+        requestId: sponsored.reservation.requestId,
+        transactionHash,
+      });
+      expect(noXdrStatus).toEqual(expected);
+      expect(await readState(t, projectId)).toEqual(beforeReplay);
+
+      const invalidResupply = await t.action(api.gas.public_api.submit, {
+        apiKeyHash: API_KEY_HASH,
+        requestId: sponsored.reservation.requestId,
+        transactionHash,
+        transactionXdr: gasMaxTimeEnvelopeFixtures.later,
+      });
+      expect(invalidResupply).toEqual({ status: "invalid_lifecycle" });
+      expect(await readState(t, projectId)).toEqual(beforeReplay);
+    });
+  });
+});
+
+test("public submit keeps authorization, policy, custody, and payload failures sanitized", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t, { suffix: "public-failures" });
+    const transactionXdr = gasMaxTimeEnvelopeFixtures.unbounded;
+    const sponsored = await sponsor(t, transactionXdr, "public-failure-idempotency");
+    expect(sponsored.status).toBe("success");
+    if (sponsored.status !== "success") throw new Error("Expected a sponsor reservation");
+    const transactionHash = sponsored.reservation.transactionHash;
+    if (transactionHash === null) throw new Error("Expected a reservation transaction hash");
+
+    const before = await readState(t, scope.projectId);
+    const oversized = await t.action(api.gas.public_api.submit, {
+      apiKeyHash: scope.apiKeyHash,
+      requestId: sponsored.reservation.requestId,
+      transactionHash,
+      transactionXdr: "x".repeat(64 * 1_024 + 1),
+    });
+    expect(oversized).toEqual({ status: "payload_too_large" });
+    expect(await readState(t, scope.projectId)).toEqual(before);
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(scope.apiKeyId, { revoked: true });
+    });
+    const revoked = await t.action(api.gas.public_api.submit, {
+      apiKeyHash: scope.apiKeyHash,
+      requestId: sponsored.reservation.requestId,
+      transactionHash,
+      transactionXdr,
+    });
+    expect(revoked).toEqual({ status: "unauthorized" });
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(scope.apiKeyId, { revoked: false });
+      const policy = await ctx.db
+        .query("gasPolicies")
+        .withIndex("by_project_id", (q) => q.eq("projectId", scope.projectId))
+        .unique();
+      if (!policy) throw new Error("Missing policy");
+      await ctx.db.patch(policy._id, { enabled: false });
+    });
+
+    const denied = await withSignerConfiguration([scope.projectId], () =>
+      t.action(api.gas.public_api.submit, {
+        apiKeyHash: scope.apiKeyHash,
+        requestId: sponsored.reservation.requestId,
+        transactionHash,
+        transactionXdr,
+      }),
+    );
+    expect(denied).toEqual({ status: "policy_denied" });
+    expect((await readState(t, scope.projectId)).attempts).toHaveLength(0);
+
+    await t.run(async (ctx) => {
+      const policy = await ctx.db
+        .query("gasPolicies")
+        .withIndex("by_project_id", (q) => q.eq("projectId", scope.projectId))
+        .unique();
+      const relayer = await ctx.db
+        .query("relayerAccounts")
+        .withIndex("by_project_id_and_network", (q) =>
+          q.eq("projectId", scope.projectId).eq("network", GAS_NETWORK),
+        )
+        .unique();
+      if (!policy || !relayer) throw new Error("Missing Gas records");
+      await ctx.db.patch(policy._id, { enabled: true });
+      await ctx.db.patch(relayer._id, { status: "disabled" });
+    });
+
+    const unavailable = await withSignerConfiguration([scope.projectId], () =>
+      t.action(api.gas.public_api.submit, {
+        apiKeyHash: scope.apiKeyHash,
+        requestId: sponsored.reservation.requestId,
+        transactionHash,
+        transactionXdr,
+      }),
+    );
+    expect(unavailable).toEqual({ status: "relayer_unavailable" });
+    expect((await readState(t, scope.projectId)).attempts).toHaveLength(0);
   });
 });

@@ -5,6 +5,7 @@ export * from "./contract-arguments.ts";
 export * from "./contract-spec.ts";
 export * from "./event-monitor.ts";
 export * from "./fee-bump.ts";
+export * from "./fee-bump-rpc.ts";
 export * from "./registry.ts";
 export * from "./transaction-debugger.ts";
 export * from "./transaction-envelope.ts";

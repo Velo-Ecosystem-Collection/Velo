@@ -4,6 +4,7 @@ import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
 import { internalMutation } from "../_generated/server";
+import { ensureGasAccounting, increaseGasOutstandingHold } from "./accounting";
 import { revalidateGasApiKeyScope } from "./authorization";
 import { evaluateGasPolicy } from "./policy";
 import { gasLogProjectionValidator, projectGasLog, type GasLogProjection } from "./projections";
@@ -15,7 +16,6 @@ import {
 } from "./types";
 import {
   addStroopValues,
-  assertValidGasPolicyState,
   assertValidInnerMaxTime,
   assertValidStroopValue,
   normalizeContractId,
@@ -64,10 +64,6 @@ type NormalizedAdmissionInput = Readonly<{
 
 function isSha256Hash(value: string): boolean {
   return SHA256_HASH_PATTERN.test(value);
-}
-
-function utcDayKey(timestamp: number): string {
-  return new Date(timestamp).toISOString().slice(0, 10);
 }
 
 function utcHourKey(timestamp: number): string {
@@ -133,6 +129,19 @@ function normalizeAdmissionInput(args: {
 }
 
 function decisionResult(log: Doc<"gasLogs">, replayed: boolean): GasAdmissionResult {
+  if (replayed && log.decisionCode === GAS_DECISION_CODES.reserved) {
+    // D1 sponsor replay is immutable admission data. Execution lifecycle and
+    // mutable exposure are owned by gasExecutionAttempts, never by replay.
+    return {
+      status: "decision",
+      replayed,
+      log: projectGasLog({
+        ...log,
+        lifecycle: GAS_LIFECYCLE_STATES.reserved,
+        actualFeeStroops: undefined,
+      }),
+    };
+  }
   return { status: "decision", replayed, log: projectGasLog(log) };
 }
 
@@ -266,26 +275,16 @@ export const reserve = internalMutation({
     if (policyMatches.length > 1) return { status: "invalid_internal_input" };
     const policy = policyMatches[0] ?? null;
 
+    let accounting = null;
     if (policy) {
-      try {
-        assertValidGasPolicyState(policy);
-        if (
-          policy.dailyWindowKey === utcDayKey(Date.now()) &&
-          policy.dailyReservedStroops > policy.dailyCapStroops
-        ) {
-          return { status: "invalid_internal_input" };
-        }
-      } catch {
-        return { status: "invalid_internal_input" };
-      }
+      const result = await ensureGasAccounting(ctx, policy, now, { persist: false });
+      if (!result.ok) return { status: "invalid_internal_input" };
+      accounting = result.snapshot;
     }
-
-    const currentDayKey = utcDayKey(now);
-    const policyForEvaluation = policy
+    const policyForEvaluation = accounting
       ? {
-          ...policy,
-          dailyReservedStroops:
-            policy.dailyWindowKey === currentDayKey ? policy.dailyReservedStroops : 0n,
+          ...accounting.policy,
+          dailyReservedStroops: accounting.effectiveUsageStroops,
         }
       : null;
 
@@ -324,14 +323,6 @@ export const reserve = internalMutation({
     const retentionExpiresAt = now + RETENTION_PERIOD_MS;
 
     if (decision.decisionCode === GAS_DECISION_CODES.rejected) {
-      if (policy && policy.dailyWindowKey !== currentDayKey) {
-        await ctx.db.patch(policy._id, {
-          dailyReservedStroops: 0n,
-          dailyWindowKey: currentDayKey,
-          updatedAt: now,
-        });
-      }
-
       const logId = await ctx.db.insert("gasLogs", {
         projectId: args.projectId,
         requestId,
@@ -354,11 +345,14 @@ export const reserve = internalMutation({
 
     if (!policy) return { status: "invalid_internal_input" };
 
-    await ctx.db.patch(policy._id, {
-      dailyReservedStroops: decision.reason.nextDailyReservedStroops,
-      dailyWindowKey: currentDayKey,
-      updatedAt: now,
-    });
+    if (!accounting) return { status: "invalid_internal_input" };
+    const reservationIncrease = await increaseGasOutstandingHold(
+      ctx,
+      accounting,
+      decision.requiredReservationStroops,
+      now,
+    );
+    if (!reservationIncrease) return { status: "invalid_internal_input" };
 
     const walletScopeKey = gasWalletBucketScopeKey(args.projectId, input.sourceWallet);
     if (walletBucket) {

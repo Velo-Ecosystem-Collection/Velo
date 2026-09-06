@@ -3,6 +3,7 @@ import { v } from "convex/values";
 import type { GasPolicyProjection, RelayerAccountProjection } from "./projections";
 
 import { mutation } from "../_generated/server";
+import { ensureGasAccounting } from "./accounting";
 import { requireGasConsoleAccess } from "./authorization";
 import {
   gasPolicyProjectionValidator,
@@ -14,8 +15,6 @@ import { gasRelayerStatusValidator } from "./schema";
 import { GAS_NETWORK } from "./types";
 import {
   assertNonNegativeSafeInteger,
-  assertValidGasPolicyState,
-  assertValidStroopValue,
   normalizeContractAllowlist,
   normalizeRelayerPublicKey,
   parseStroopAmount,
@@ -54,18 +53,15 @@ export const updatePolicy = mutation({
     const currentDayKey = utcDayKey(now);
 
     if (existing) {
-      assertValidGasPolicyState(existing);
-      if (
-        existing.dailyWindowKey === currentDayKey &&
-        existing.dailyReservedStroops > existing.dailyCapStroops
-      ) {
-        throw new Error("Current-day Gas policy accounting is invalid");
+      const accounting = await ensureGasAccounting(ctx, existing, now);
+      if (!accounting.ok) {
+        throw new Error(
+          accounting.reason === "overflow"
+            ? "Gas policy accounting has too many legacy rows"
+            : "Current-day Gas policy accounting is invalid",
+        );
       }
-      const dailyReservedStroops =
-        existing.dailyWindowKey === currentDayKey
-          ? assertValidStroopValue(existing.dailyReservedStroops)
-          : 0n;
-      if (dailyCapStroops < dailyReservedStroops) {
+      if (dailyCapStroops < accounting.snapshot.effectiveUsageStroops) {
         throw new Error("Daily Gas cap cannot be lower than current-day reservations");
       }
 
@@ -73,8 +69,11 @@ export const updatePolicy = mutation({
         enabled: args.enabled,
         network: GAS_NETWORK,
         dailyCapStroops,
-        dailyReservedStroops,
+        dailyReservedStroops: accounting.snapshot.effectiveUsageStroops,
         dailyWindowKey: currentDayKey,
+        outstandingHoldsStroops: accounting.snapshot.outstandingHoldsStroops,
+        dailyConfirmedSpendStroops: accounting.snapshot.dailyConfirmedSpendStroops,
+        accountingState: "initialized",
         walletHourlyLimit,
         allowedContractIds,
         updatedAt: now,
@@ -92,6 +91,9 @@ export const updatePolicy = mutation({
       dailyCapStroops,
       dailyReservedStroops: 0n,
       dailyWindowKey: utcDayKey(now),
+      outstandingHoldsStroops: 0n,
+      dailyConfirmedSpendStroops: 0n,
+      accountingState: "initialized",
       walletHourlyLimit,
       allowedContractIds,
       createdAt: now,

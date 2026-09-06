@@ -51,6 +51,10 @@ export const gasPolicies = defineTable({
   dailyCapStroops: v.int64(),
   dailyReservedStroops: v.int64(),
   dailyWindowKey: v.string(),
+  /** D2 accounting fields are optional so pre-D2 policies initialize lazily. */
+  outstandingHoldsStroops: v.optional(v.int64()),
+  dailyConfirmedSpendStroops: v.optional(v.int64()),
+  accountingState: v.optional(v.union(v.literal("initialized"), v.literal("overflow"))),
   walletHourlyLimit: v.number(),
   allowedContractIds: v.array(v.string()),
   createdAt: v.number(),

@@ -5,7 +5,9 @@ import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
 import { internalMutation } from "../_generated/server";
+import { ensureGasAccounting, releaseGasOutstandingHold } from "./accounting";
 import { revalidateGasApiKeyScope } from "./authorization";
+import { findExecutionAttemptByRequestId } from "./execution";
 import { GAS_FEE_OVERHEAD_STROOPS, GAS_LIFECYCLE_STATES } from "./types";
 import {
   addStroopValues,
@@ -180,6 +182,26 @@ export const submit = internalMutation({
       }
       return { status: "reservation_expired" };
     }
+    if (
+      reservation.lifecycle === GAS_LIFECYCLE_STATES.claimed ||
+      reservation.lifecycle === GAS_LIFECYCLE_STATES.submissionUnknown ||
+      reservation.lifecycle === GAS_LIFECYCLE_STATES.submitted ||
+      reservation.lifecycle === GAS_LIFECYCLE_STATES.succeeded ||
+      reservation.lifecycle === GAS_LIFECYCLE_STATES.failed ||
+      reservation.lifecycle === GAS_LIFECYCLE_STATES.cancelled
+    ) {
+      if (reservation.transactionHash === undefined) return { status: "invalid_internal_input" };
+      try {
+        if (normalizeTransactionHash(reservation.transactionHash) !== transactionHash) {
+          return { status: "invalid_lifecycle" };
+        }
+      } catch {
+        return { status: "invalid_internal_input" };
+      }
+      // Public XDR transport and status DTOs are deliberately deferred. Do not
+      // let the legacy seam release or mutate an execution-owned hold.
+      return { status: "handoff_unavailable" };
+    }
     if (reservation.lifecycle !== GAS_LIFECYCLE_STATES.reserved) {
       return { status: "invalid_internal_input" };
     }
@@ -201,27 +223,39 @@ export const submit = internalMutation({
       return { status: "handoff_unavailable" };
     }
 
+    const executionAttempt = await findExecutionAttemptByRequestId(
+      ctx,
+      args.projectId,
+      reservation.requestId,
+    );
+    if (executionAttempt === "ambiguous") return { status: "invalid_internal_input" };
+    if (executionAttempt !== null) return { status: "handoff_unavailable" };
+
     const policy = await findPolicy(ctx, args.projectId);
     if (policy === null || policy === "ambiguous" || !validatePolicy(policy)) {
       return { status: "invalid_internal_input" };
     }
 
     const currentDayKey = utcDayKey(now);
-    let nextDailyReservedStroops: bigint | null = null;
-    const reservationBelongsToCurrentDay = utcDayKey(reservation.createdAt) === currentDayKey;
-    if (policy.dailyWindowKey === currentDayKey && reservationBelongsToCurrentDay) {
-      if (policy.dailyReservedStroops < reservedStroops) {
-        return { status: "invalid_internal_input" };
-      }
-      nextDailyReservedStroops = policy.dailyReservedStroops - reservedStroops;
-    }
-
-    // All reservation and accounting checks finish before either patch is issued.
-    if (nextDailyReservedStroops !== null) {
-      await ctx.db.patch(policy._id, {
-        dailyReservedStroops: nextDailyReservedStroops,
+    // A pre-D2 old-day row was never represented in the D1 current-day counter.
+    // Expiring it should preserve the legacy policy document byte-for-byte; a
+    // later authenticated claim will initialize carry-outstanding accounting.
+    const hasD2Accounting =
+      policy.accountingState !== undefined ||
+      policy.outstandingHoldsStroops !== undefined ||
+      policy.dailyConfirmedSpendStroops !== undefined;
+    if (!hasD2Accounting && utcDayKey(reservation.createdAt) !== currentDayKey) {
+      await ctx.db.patch(reservation._id, {
+        lifecycle: GAS_LIFECYCLE_STATES.expired,
         updatedAt: now,
       });
+      return { status: "reservation_expired" };
+    }
+
+    const accounting = await ensureGasAccounting(ctx, policy, now, { persist: false });
+    if (!accounting.ok) return { status: "invalid_internal_input" };
+    if (!releaseGasOutstandingHold(ctx, accounting.snapshot, reservedStroops, now)) {
+      return { status: "invalid_internal_input" };
     }
     await ctx.db.patch(reservation._id, {
       lifecycle: GAS_LIFECYCLE_STATES.expired,

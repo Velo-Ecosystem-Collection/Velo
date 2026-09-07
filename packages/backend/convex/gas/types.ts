@@ -12,6 +12,19 @@ export const GAS_FEE_OVERHEAD_STROOPS = 100n;
 /** Maximum number of durable FeeBump sends for one execution identity. */
 export const GAS_MAX_SEND_COUNT = 3;
 
+/** Reconciliation workers claim no more than this many attempts per page. */
+export const GAS_RECONCILIATION_BATCH_LIMIT = 25;
+
+/** Reconciliation lookup leases are independent from execution leases. */
+export const GAS_RECONCILIATION_LEASE_MS = 30 * 1_000;
+
+/** Maximum number of concurrent Testnet reconciliation lookups. */
+export const GAS_RECONCILIATION_LOOKUP_CONCURRENCY = 5;
+
+/** Initial and maximum delay between unresolved reconciliation lookups. */
+export const GAS_RECONCILIATION_INITIAL_DELAY_MS = 60 * 1_000;
+export const GAS_RECONCILIATION_MAX_DELAY_MS = 5 * 60 * 1_000;
+
 /** Maximum number of contract IDs accepted in a Gas Station allowlist. */
 export const GAS_MAX_ALLOWED_CONTRACT_IDS = 20;
 
@@ -68,6 +81,18 @@ export const GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS = {
 
 export type GasSequenceLookupClassification =
   (typeof GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS)[keyof typeof GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS];
+
+/** Sanitized outcomes retained by the durable FeeBump reconciliation worker. */
+export const GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS = {
+  found: "found",
+  notFound: "not_found",
+  unavailable: "unavailable",
+  malformedResponse: "malformed_response",
+  wrongNetwork: "wrong_network",
+} as const;
+
+export type GasReconciliationLookupClassification =
+  (typeof GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS)[keyof typeof GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS];
 
 /** Decisions persisted by the D1 gas admission log. */
 export const GAS_DECISION_CODES = {

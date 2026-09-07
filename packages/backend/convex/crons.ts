@@ -22,6 +22,9 @@ const expirePlaygroundExecutions = makeFunctionReference<"mutation">(
 );
 const expireGasLogs = makeFunctionReference<"mutation">("gas/retention:expireLogs");
 const recoverGasExecution = makeFunctionReference<"mutation">("gas/execution:recoverAbandoned");
+const reconcileGasExecution = makeFunctionReference<"action">(
+  "gas/reconciliation_action:reconcileDue",
+);
 const recoverBillingReservations = makeFunctionReference<"mutation">(
   "billing/mutations:recoverExpiredReservations",
 );
@@ -48,6 +51,9 @@ crons.interval("expire project playground history", { hours: 1 }, expirePlaygrou
 });
 crons.interval("expire retained gas logs", { hours: 1 }, expireGasLogs, { limit: 100 });
 crons.interval("recover abandoned Gas executions", { minutes: 1 }, recoverGasExecution, {
+  limit: SCHEDULED_WORKER_PAGE_SIZE,
+});
+crons.interval("reconcile pending Gas FeeBumps", { minutes: 1 }, reconcileGasExecution, {
   limit: SCHEDULED_WORKER_PAGE_SIZE,
 });
 crons.interval("recover expired billing reservations", { minutes: 1 }, recoverBillingReservations, {

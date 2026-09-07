@@ -7,6 +7,7 @@ import {
   GAS_LIFECYCLE_STATES,
   GAS_NETWORK,
   GAS_REJECTION_CODES,
+  GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS,
   GAS_RELAYER_STATUSES,
   GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS,
   GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS,
@@ -86,6 +87,54 @@ const gasSequenceDiagnosisEvidenceValidator = v.object({
   resultCode: v.string(),
   innerResultCode: v.optional(v.string()),
 });
+
+const gasReconciliationLookupClassificationValidator = v.union(
+  v.literal(GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS.found),
+  v.literal(GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS.notFound),
+  v.literal(GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS.unavailable),
+  v.literal(GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS.malformedResponse),
+  v.literal(GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS.wrongNetwork),
+);
+
+/** Normalized ledger evidence retained after a trusted FeeBump lookup. */
+export const gasReconciliationEvidenceValidator = v.object({
+  outerTransactionHash: v.string(),
+  innerTransactionHash: v.string(),
+  feeSource: v.string(),
+  ledger: v.number(),
+  resultCode: v.string(),
+  innerResultCode: v.optional(v.string()),
+  chargedStroops: v.int64(),
+  observedAt: v.number(),
+});
+
+const gasReconciliationOutcomeValidator = v.object({
+  status: gasReconciliationLookupClassificationValidator,
+  observedAt: v.number(),
+});
+
+export const gasReconciliationOutcomeInputValidator = v.union(
+  v.object({
+    status: v.literal(GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS.found),
+    evidence: v.optional(
+      v.object({
+        outerTransactionHash: v.string(),
+        innerTransactionHash: v.string(),
+        feeSource: v.string(),
+        ledger: v.number(),
+        resultCode: v.string(),
+        innerResultCode: v.optional(v.string()),
+        chargedStroops: v.int64(),
+      }),
+    ),
+  }),
+  v.object({ status: v.literal(GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS.notFound) }),
+  v.object({ status: v.literal(GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS.unavailable) }),
+  v.object({
+    status: v.literal(GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS.malformedResponse),
+  }),
+  v.object({ status: v.literal(GAS_RECONCILIATION_LOOKUP_CLASSIFICATIONS.wrongNetwork) }),
+);
 
 export const gasSequenceDiagnosisInputValidator = v.object({
   lookupClassification: gasSequenceLookupClassificationValidator,
@@ -268,6 +317,12 @@ export const gasExecutionAttempts = defineTable({
   reconciliationDeadlineAt: v.optional(v.number()),
   reconciliationRequired: v.boolean(),
   latestSendClassification: v.optional(gasSendClassificationValidator),
+  reconciliationLeaseToken: v.optional(v.string()),
+  reconciliationLeaseGeneration: v.optional(v.number()),
+  reconciliationLeaseExpiresAt: v.optional(v.number()),
+  reconciliationPollCount: v.optional(v.number()),
+  reconciliationLastOutcome: v.optional(gasReconciliationOutcomeValidator),
+  verifiedLedgerEvidence: v.optional(gasReconciliationEvidenceValidator),
   /** One bounded, internal diagnosis of an inner bad-sequence rejection. */
   sequenceDiagnosis: v.optional(gasSequenceDiagnosisValidator),
   actualFeeStroops: v.optional(v.int64()),

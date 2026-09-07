@@ -1091,6 +1091,7 @@ function isRetryableSendClassification(classification: GasRetryableClassificatio
 }
 
 function isRecoverableAttempt(attempt: Doc<"gasExecutionAttempts">, now: number): boolean {
+  if (attempt.verifiedLedgerEvidence !== undefined) return false;
   if (attempt.leaseExpiresAt !== undefined && attempt.leaseExpiresAt > now) return false;
   if (attempt.sendCount === 0) {
     return (
@@ -1518,6 +1519,7 @@ export const authorizeSend = internalMutation({
 
     const now = Date.now();
     if (!validateExecutionAttempt(attempt)) return { status: "invalid_internal_input" };
+    if (attempt.verifiedLedgerEvidence !== undefined) return { status: "invalid_lifecycle" };
     if (attempt.reservationExpiresAt <= now) return { status: "reservation_expired" };
     if (
       !Number.isSafeInteger(args.expectedSendCount) ||
@@ -1697,6 +1699,7 @@ export const recordSendOutcome = internalMutation({
     if (!attempt) return { status: "resource_not_found" };
     const now = Date.now();
     if (!validateExecutionAttempt(attempt)) return { status: "invalid_internal_input" };
+    if (attempt.verifiedLedgerEvidence !== undefined) return { status: "invalid_lifecycle" };
     if (
       attempt.projectId !== args.projectId ||
       attempt.outerTransactionHash !== outerTransactionHash ||
@@ -1864,6 +1867,7 @@ export const recoverAbandoned = internalMutation({
       if (
         attempt.leaseExpiresAt === undefined ||
         attempt.leaseExpiresAt > now ||
+        attempt.verifiedLedgerEvidence !== undefined ||
         !validateExecutionAttempt(attempt)
       ) {
         continue;

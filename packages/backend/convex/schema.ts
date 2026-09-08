@@ -32,7 +32,13 @@ import {
 } from "./billing/schema";
 import contractEvents from "./contract_events/schema";
 import feedback from "./feedback/schema";
-import { gasExecutionAttempts, gasLogs, gasPolicies, relayerAccounts } from "./gas/schema";
+import {
+  gasDailyAccounting,
+  gasExecutionAttempts,
+  gasLogs,
+  gasPolicies,
+  relayerAccounts,
+} from "./gas/schema";
 import journeyStages from "./journey_stages/schema";
 import organizations from "./organizations/schema";
 import paymentIntentIdempotencyKeys from "./payment_intent_idempotency_keys/schema";
@@ -94,6 +100,7 @@ export default defineSchema({
   contractEvents,
   feedback,
   gasExecutionAttempts,
+  gasDailyAccounting,
   gasLogs,
   gasPolicies,
   journeyStages,

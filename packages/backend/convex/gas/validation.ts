@@ -12,6 +12,7 @@ import {
   GAS_MAX_STROOPS,
   GAS_MIN_STROOPS,
   GAS_NETWORK,
+  GAS_ACCOUNTING_BLOCK_REASONS,
 } from "./types";
 
 const CANONICAL_UNSIGNED_DECIMAL = /^(?:0|[1-9][0-9]*)$/;
@@ -61,6 +62,11 @@ export function assertValidGasPolicyState(policy: {
   dailyCapStroops: bigint;
   dailyReservedStroops: bigint;
   dailyWindowKey: string;
+  outstandingHoldsStroops?: bigint;
+  dailyConfirmedSpendStroops?: bigint;
+  accountingState?: "initialized" | "overflow";
+  accountingBlockReason?: string;
+  accountingBlockedAt?: number;
   walletHourlyLimit: number;
   allowedContractIds: readonly string[];
 }): void {
@@ -70,6 +76,26 @@ export function assertValidGasPolicyState(policy: {
 
   assertValidStroopValue(policy.dailyCapStroops);
   assertValidStroopValue(policy.dailyReservedStroops);
+  if (policy.outstandingHoldsStroops !== undefined) {
+    assertValidStroopValue(policy.outstandingHoldsStroops);
+  }
+  if (policy.dailyConfirmedSpendStroops !== undefined) {
+    assertValidStroopValue(policy.dailyConfirmedSpendStroops);
+  }
+  if (
+    policy.accountingBlockReason !== undefined &&
+    !Object.values(GAS_ACCOUNTING_BLOCK_REASONS).includes(
+      policy.accountingBlockReason as (typeof GAS_ACCOUNTING_BLOCK_REASONS)[keyof typeof GAS_ACCOUNTING_BLOCK_REASONS],
+    )
+  ) {
+    throw new Error(INVALID_GAS_POLICY);
+  }
+  if (
+    policy.accountingBlockedAt !== undefined &&
+    (!Number.isSafeInteger(policy.accountingBlockedAt) || policy.accountingBlockedAt <= 0)
+  ) {
+    throw new Error(INVALID_GAS_POLICY);
+  }
   assertNonNegativeSafeInteger(policy.walletHourlyLimit, "walletHourlyLimit");
 
   const normalizedContractIds = normalizeContractAllowlist(policy.allowedContractIds);

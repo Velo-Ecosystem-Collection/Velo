@@ -11,6 +11,7 @@ import {
   GAS_RELAYER_STATUSES,
   GAS_SEQUENCE_DIAGNOSIS_DISPOSITIONS,
   GAS_SEQUENCE_LOOKUP_CLASSIFICATIONS,
+  GAS_ACCOUNTING_BLOCK_REASONS,
 } from "./types";
 
 export const gasNetworkValidator = v.literal(GAS_NETWORK);
@@ -55,6 +56,13 @@ export const gasExecutionStatusValidator = v.union(
 export const gasRelayerStatusValidator = v.union(
   v.literal(GAS_RELAYER_STATUSES.active),
   v.literal(GAS_RELAYER_STATUSES.disabled),
+);
+
+export const gasAccountingBlockReasonValidator = v.union(
+  v.literal(GAS_ACCOUNTING_BLOCK_REASONS.inconsistentCounters),
+  v.literal(GAS_ACCOUNTING_BLOCK_REASONS.overflow),
+  v.literal(GAS_ACCOUNTING_BLOCK_REASONS.ambiguousAccountingIdentity),
+  v.literal(GAS_ACCOUNTING_BLOCK_REASONS.feeExceedsApprovedExposure),
 );
 
 const gasSendUnknownReasonValidator = v.union(
@@ -228,6 +236,8 @@ export const gasPolicies = defineTable({
   outstandingHoldsStroops: v.optional(v.int64()),
   dailyConfirmedSpendStroops: v.optional(v.int64()),
   accountingState: v.optional(v.union(v.literal("initialized"), v.literal("overflow"))),
+  accountingBlockReason: v.optional(gasAccountingBlockReasonValidator),
+  accountingBlockedAt: v.optional(v.number()),
   walletHourlyLimit: v.number(),
   allowedContractIds: v.array(v.string()),
   createdAt: v.number(),
@@ -334,4 +344,14 @@ export const gasExecutionAttempts = defineTable({
   .index("by_project_id_and_idempotency_key_hash", ["projectId", "idempotencyKeyHash"])
   .index("by_project_id_and_inner_transaction_hash", ["projectId", "innerTransactionHash"])
   .index("by_lifecycle_and_next_check_at", ["lifecycle", "nextCheckAt"])
-  .index("by_lifecycle_and_lease_expires_at", ["lifecycle", "leaseExpiresAt"]);
+  .index("by_lifecycle_and_lease_expires_at", ["lifecycle", "leaseExpiresAt"])
+  .index("by_lifecycle_and_reservation_expires_at", ["lifecycle", "reservationExpiresAt"]);
+
+/** Confirmed Gas spend for one project and pinned UTC accounting day. */
+export const gasDailyAccounting = defineTable({
+  projectId: v.id("projects"),
+  accountingDayKey: v.string(),
+  confirmedSpendStroops: v.int64(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+}).index("by_project_id_and_accounting_day_key", ["projectId", "accountingDayKey"]);

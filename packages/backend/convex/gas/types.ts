@@ -25,6 +25,17 @@ export const GAS_RECONCILIATION_LOOKUP_CONCURRENCY = 5;
 export const GAS_RECONCILIATION_INITIAL_DELAY_MS = 60 * 1_000;
 export const GAS_RECONCILIATION_MAX_DELAY_MS = 5 * 60 * 1_000;
 
+/** Persistent reasons that stop new sponsorship until an operator repairs accounting. */
+export const GAS_ACCOUNTING_BLOCK_REASONS = {
+  inconsistentCounters: "inconsistent_counters",
+  overflow: "overflow",
+  ambiguousAccountingIdentity: "ambiguous_accounting_identity",
+  feeExceedsApprovedExposure: "fee_exceeds_approved_exposure",
+} as const;
+
+export type GasAccountingBlockReason =
+  (typeof GAS_ACCOUNTING_BLOCK_REASONS)[keyof typeof GAS_ACCOUNTING_BLOCK_REASONS];
+
 /** Maximum number of contract IDs accepted in a Gas Station allowlist. */
 export const GAS_MAX_ALLOWED_CONTRACT_IDS = 20;
 

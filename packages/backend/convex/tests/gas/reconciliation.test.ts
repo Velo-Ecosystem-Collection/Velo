@@ -366,7 +366,6 @@ test("trusts a fee-bearing inner failure and rejects every normalized evidence m
       { resultCode: "not a result code" },
       { resultCode: "txFeeBumpInnerSuccess", innerResultCode: "txContractFailed" },
       { chargedStroops: -1n },
-      { chargedStroops: QUOTE.outerMaxFeeStroops + 1n },
     ];
     for (const [index, evidenceOverrides] of malformedCases.entries()) {
       const projectId = await createProject(t, `malformed-${index}`);

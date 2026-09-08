@@ -408,6 +408,12 @@ test("revoked keys and corrupt accounting fail closed without partial writes", a
       transactionHash: TRANSACTION_HASH,
     });
     expect(corruptAccounting).toEqual({ status: "internal_error" });
-    expect(await readState(t, scope.projectId)).toEqual(beforeCorruptAccounting);
+    const afterCorruptAccounting = await readState(t, scope.projectId);
+    expect(afterCorruptAccounting.policy).toMatchObject({
+      accountingBlockReason: "inconsistent_counters",
+      accountingBlockedAt: NOW,
+    });
+    expect(afterCorruptAccounting.logs).toEqual(beforeCorruptAccounting.logs);
+    expect(afterCorruptAccounting.bucket).toEqual(beforeCorruptAccounting.bucket);
   });
 });

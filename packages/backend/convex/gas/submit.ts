@@ -272,7 +272,7 @@ export const submit = internalMutation({
 
     const accounting = await ensureGasAccounting(ctx, policy, now, { persist: false });
     if (!accounting.ok) return { status: "invalid_internal_input" };
-    if (!releaseGasOutstandingHold(ctx, accounting.snapshot, reservedStroops, now)) {
+    if (!(await releaseGasOutstandingHold(ctx, accounting.snapshot, reservedStroops, now))) {
       return { status: "invalid_internal_input" };
     }
     await ctx.db.patch(reservation._id, {

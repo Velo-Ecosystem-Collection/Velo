@@ -50,7 +50,7 @@ export const expireLogs = internalMutation({
           const accounting = await ensureGasAccounting(ctx, policy, now, { persist: false });
           if (
             !accounting.ok ||
-            !releaseGasOutstandingHold(ctx, accounting.snapshot, row.reservedStroops, now)
+            !(await releaseGasOutstandingHold(ctx, accounting.snapshot, row.reservedStroops, now))
           ) {
             continue;
           }

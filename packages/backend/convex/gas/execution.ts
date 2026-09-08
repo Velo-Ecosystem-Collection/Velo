@@ -22,6 +22,7 @@ import {
   gasSendClassificationInputValidator,
   gasSequenceDiagnosisInputValidator,
 } from "./schema";
+import { expireGasUnsentExecutionAttempt } from "./settlement";
 import {
   GAS_FEE_OVERHEAD_STROOPS,
   GAS_MAX_SEND_COUNT,
@@ -501,6 +502,9 @@ export const findClaimReplay = internalQuery({
     }
 
     try {
+      if (existing.lifecycle === GAS_LIFECYCLE_STATES.expired) {
+        return { status: "reservation_expired" };
+      }
       return claimResult(existing, true, false);
     } catch {
       return { status: "invalid_internal_input" };
@@ -878,6 +882,9 @@ export const recoverClaim = internalMutation({
 
     const now = Date.now();
     if (!validateExecutionAttempt(existing)) return { status: "invalid_internal_input" };
+    if (existing.lifecycle === GAS_LIFECYCLE_STATES.expired) {
+      return { status: "reservation_expired" };
+    }
     if (existing.reservationExpiresAt <= now && isRecoverableAttempt(existing, now)) {
       return { status: "reservation_expired" };
     }
@@ -998,6 +1005,11 @@ function validateClaimAuditLog(log: Doc<"gasLogs">, attempt: Doc<"gasExecutionAt
 }
 
 function validateExecutionAttempt(attempt: Doc<"gasExecutionAttempts">): boolean {
+  const terminal =
+    attempt.lifecycle === GAS_LIFECYCLE_STATES.succeeded ||
+    attempt.lifecycle === GAS_LIFECYCLE_STATES.failed ||
+    attempt.lifecycle === GAS_LIFECYCLE_STATES.cancelled ||
+    attempt.lifecycle === GAS_LIFECYCLE_STATES.expired;
   if (
     attempt.network !== GAS_NETWORK ||
     !isSha256Hash(attempt.idempotencyKeyHash) ||
@@ -1015,8 +1027,8 @@ function validateExecutionAttempt(attempt: Doc<"gasExecutionAttempts">): boolean
     attempt.accountingDayKey !== utcDayKey(attempt.reservationCreatedAt) ||
     !isValidTimestamp(attempt.nextCheckAt) ||
     (attempt.nextSendAt !== undefined && !isValidTimestamp(attempt.nextSendAt)) ||
-    attempt.actualFeeStroops !== undefined ||
-    attempt.settledAt !== undefined
+    (attempt.actualFeeStroops !== undefined) !== (attempt.settledAt !== undefined) ||
+    (attempt.settledAt !== undefined && (!terminal || !isValidTimestamp(attempt.settledAt)))
   ) {
     return false;
   }
@@ -1040,6 +1052,23 @@ function validateExecutionAttempt(attempt: Doc<"gasExecutionAttempts">): boolean
     }
 
     if (attempt.sendCount === 0) {
+      if (attempt.settledAt !== undefined) {
+        return (
+          (attempt.lifecycle === GAS_LIFECYCLE_STATES.cancelled ||
+            attempt.lifecycle === GAS_LIFECYCLE_STATES.expired) &&
+          attempt.outerTransactionHash === undefined &&
+          attempt.outerFeeStroops === undefined &&
+          attempt.firstPossibleSendAt === undefined &&
+          attempt.reconciliationDeadlineAt === undefined &&
+          attempt.latestSendClassification === undefined &&
+          attempt.nextSendAt === undefined &&
+          attempt.reconciliationLeaseToken === undefined &&
+          attempt.reconciliationLeaseExpiresAt === undefined &&
+          attempt.reconciliationLastOutcome === undefined &&
+          attempt.actualFeeStroops === 0n &&
+          !attempt.reconciliationRequired
+        );
+      }
       return (
         attempt.lifecycle === GAS_LIFECYCLE_STATES.claimed &&
         attempt.outerTransactionHash === undefined &&
@@ -1047,6 +1076,10 @@ function validateExecutionAttempt(attempt: Doc<"gasExecutionAttempts">): boolean
         attempt.firstPossibleSendAt === undefined &&
         attempt.reconciliationDeadlineAt === undefined &&
         attempt.latestSendClassification === undefined &&
+        attempt.nextSendAt === undefined &&
+        attempt.reconciliationLeaseToken === undefined &&
+        attempt.reconciliationLeaseExpiresAt === undefined &&
+        attempt.reconciliationLastOutcome === undefined &&
         !attempt.reconciliationRequired
       );
     }
@@ -1073,6 +1106,15 @@ function validateExecutionAttempt(attempt: Doc<"gasExecutionAttempts">): boolean
       attempt.reconciliationDeadlineAt < attempt.firstPossibleSendAt
     ) {
       return false;
+    }
+    if (attempt.settledAt !== undefined) {
+      if (
+        attempt.lifecycle !== GAS_LIFECYCLE_STATES.succeeded &&
+        attempt.lifecycle !== GAS_LIFECYCLE_STATES.failed
+      ) {
+        return false;
+      }
+      if (attempt.verifiedLedgerEvidence === undefined) return false;
     }
     return true;
   } catch {
@@ -1834,9 +1876,9 @@ function normalizeRecoveryLimit(value: number | undefined): number {
 }
 
 /**
- * Invalidate expired execution leases in bounded pages. This worker deliberately
- * does not call RPC, release holds, or accept XDR; it only makes the durable
- * reconciliation/resupply state safe for a later worker.
+ * Recover expired execution leases in bounded pages. A zero-send attempt can
+ * expire only when its durable record proves no send was possible; pinned or
+ * otherwise uncertain attempts retain their exposure for reconciliation.
  */
 export const recoverAbandoned = internalMutation({
   args: { limit: v.optional(v.number()) },
@@ -1861,9 +1903,42 @@ export const recoverAbandoned = internalMutation({
             )
             .filter((q) => q.neq(q.field("leaseExpiresAt"), undefined))
             .take(remaining);
-    const rows = [...claimed, ...unresolved];
+    const expiredUnsent =
+      limit - claimed.length - unresolved.length <= 0
+        ? []
+        : await ctx.db
+            .query("gasExecutionAttempts")
+            .withIndex("by_lifecycle_and_reservation_expires_at", (q) =>
+              q.eq("lifecycle", GAS_LIFECYCLE_STATES.claimed).lte("reservationExpiresAt", now),
+            )
+            .take(limit - claimed.length - unresolved.length);
+    const rows = Array.from(
+      new Map(
+        [...claimed, ...unresolved, ...expiredUnsent].map((attempt) => [attempt._id, attempt]),
+      ).values(),
+    ).slice(0, limit);
 
     for (const attempt of rows) {
+      if (
+        attempt.lifecycle === GAS_LIFECYCLE_STATES.claimed &&
+        attempt.reservationExpiresAt <= now &&
+        attempt.sendCount === 0 &&
+        attempt.outerTransactionHash === undefined &&
+        attempt.outerFeeStroops === undefined &&
+        attempt.firstPossibleSendAt === undefined &&
+        attempt.reconciliationDeadlineAt === undefined &&
+        attempt.latestSendClassification === undefined &&
+        attempt.nextSendAt === undefined &&
+        attempt.reconciliationLeaseToken === undefined &&
+        attempt.reconciliationLeaseExpiresAt === undefined &&
+        attempt.reconciliationLastOutcome === undefined &&
+        attempt.verifiedLedgerEvidence === undefined &&
+        (attempt.leaseToken === undefined ||
+          (attempt.leaseExpiresAt !== undefined && attempt.leaseExpiresAt <= now))
+      ) {
+        await expireGasUnsentExecutionAttempt(ctx, attempt._id, now);
+        continue;
+      }
       if (
         attempt.leaseExpiresAt === undefined ||
         attempt.leaseExpiresAt > now ||

@@ -6,6 +6,7 @@ import type { MutationCtx } from "../_generated/server";
 import { internalMutation } from "../_generated/server";
 import { gasSubmitResultProjectionValidator, projectGasExecutionAttempt } from "./projections";
 import { gasReconciliationOutcomeInputValidator } from "./schema";
+import { settleGasExecutionAttempt } from "./settlement";
 import {
   GAS_RECONCILIATION_BATCH_LIMIT,
   GAS_RECONCILIATION_INITIAL_DELAY_MS,
@@ -411,8 +412,7 @@ function validStoredEvidence(
       isPositiveLedger(evidence.ledger) &&
       isValidTimestamp(evidence.observedAt) &&
       consistentResultCodes(evidence.resultCode, evidence.innerResultCode) &&
-      attempt.outerFeeStroops !== undefined &&
-      assertValidStroopValue(evidence.chargedStroops) <= attempt.outerFeeStroops
+      assertValidStroopValue(evidence.chargedStroops) >= 0n
     );
   } catch {
     return false;
@@ -435,8 +435,7 @@ function normalizeEvidence(
       outerTransactionHash !== attempt.outerTransactionHash ||
       innerTransactionHash !== attempt.innerTransactionHash ||
       feeSource !== attempt.relayerPublicKey ||
-      attempt.outerFeeStroops === undefined ||
-      chargedStroops > attempt.outerFeeStroops
+      attempt.outerFeeStroops === undefined
     ) {
       return null;
     }
@@ -620,12 +619,18 @@ export const recordOutcome = internalMutation({
         leaseGeneration: patchedAttempt.leaseGeneration,
         updatedAt: now,
       });
+      // Evidence is first retained under the reconciliation fence, then the
+      // same mutation replaces its approved exposure with trusted actual fee.
+      // The settlement helper reads the stored evidence and cannot accept a
+      // caller-supplied fee or lifecycle decision.
+      await settleGasExecutionAttempt(ctx, attempt._id, attempt.projectId);
+      const settledAttempt = await ctx.db.get("gasExecutionAttempts", attempt._id);
       return {
         status: "recorded",
         idempotent: false,
         verified: true,
         exhausted: false,
-        execution: reconciliationExecution(patchedAttempt),
+        execution: reconciliationExecution(settledAttempt ?? patchedAttempt),
       };
     }
 

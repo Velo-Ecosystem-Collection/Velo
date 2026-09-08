@@ -56,6 +56,7 @@ import type * as gas_reconciliation from "../gas/reconciliation.js";
 import type * as gas_reconciliation_action from "../gas/reconciliation_action.js";
 import type * as gas_relayer from "../gas/relayer.js";
 import type * as gas_retention from "../gas/retention.js";
+import type * as gas_settlement from "../gas/settlement.js";
 import type * as gas_submit from "../gas/submit.js";
 import type * as gas_types from "../gas/types.js";
 import type * as gas_validation from "../gas/validation.js";
@@ -189,6 +190,7 @@ declare const fullApi: ApiFromModules<{
   "gas/reconciliation_action": typeof gas_reconciliation_action;
   "gas/relayer": typeof gas_relayer;
   "gas/retention": typeof gas_retention;
+  "gas/settlement": typeof gas_settlement;
   "gas/submit": typeof gas_submit;
   "gas/types": typeof gas_types;
   "gas/validation": typeof gas_validation;

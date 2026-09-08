@@ -139,6 +139,10 @@ function decisionResult(log: Doc<"gasLogs">, replayed: boolean): GasAdmissionRes
         ...log,
         lifecycle: GAS_LIFECYCLE_STATES.reserved,
         actualFeeStroops: undefined,
+        // Sponsor replay is the immutable admission snapshot. Execution
+        // updates the shared audit row's lifecycle and timestamp, but must not
+        // change the response returned for the original idempotency key.
+        updatedAt: log.createdAt,
       }),
     };
   }

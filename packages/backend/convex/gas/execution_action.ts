@@ -558,6 +558,39 @@ export async function executeGasExecution(
         let fallbackSwitched = false;
 
         for (;;) {
+          const reservationExpiresAt = Date.parse(currentClaim.execution.expiresAt);
+          if (!Number.isFinite(reservationExpiresAt) || clock() >= reservationExpiresAt) {
+            if (currentClaim.sendCount === 0) {
+              try {
+                const expiry = await ctx.runMutation(internal.gas.execution.recoverClaim, {
+                  apiKeyId: scope.apiKeyId,
+                  projectId: scope.projectId,
+                  apiKeyHash: args.apiKeyHash,
+                  network: facts.network,
+                  operation: facts.operation,
+                  requestId,
+                  requestFingerprint,
+                  innerTransactionHash: facts.transactionHash,
+                  sourceWallet: facts.sourceWallet,
+                  targetContractIds: [...facts.targetContractIds],
+                  innerMaxFeeStroops: facts.innerMaxFeeStroops,
+                  ...(facts.innerMaxTime === undefined ? {} : { innerMaxTime: facts.innerMaxTime }),
+                  quote,
+                  expectedRelayerPublicKey: signer.publicKey,
+                });
+                return expiry.status === "relayer_preflight_required"
+                  ? ({ status: "dependency_unavailable" } as GasClaimFailure)
+                  : expiry;
+              } catch {
+                return { status: "dependency_unavailable" } as GasClaimFailure;
+              }
+            }
+
+            // Once a possible send exists, do not rebuild or re-enter transport
+            // after expiry. The current projection remains held for reconciliation.
+            return currentClaim;
+          }
+
           let built;
           try {
             built = buildTestnetFeeBumpTransaction(
@@ -717,8 +750,8 @@ export async function executeGasExecution(
             ) {
               fallbackSwitched = true;
             }
-            const reservationExpiresAt = Date.parse(recorded.execution.expiresAt);
-            if (clock() >= reservationExpiresAt) {
+            const recordedReservationExpiresAt = Date.parse(recorded.execution.expiresAt);
+            if (clock() >= recordedReservationExpiresAt) {
               return {
                 ...currentClaim,
                 outerTransactionHash: recorded.execution.outerTransactionHash,

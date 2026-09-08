@@ -13,6 +13,7 @@ import {
   projectGasExecutionAttempt,
   type GasSubmitResultProjection,
 } from "./projections";
+import { expireGasUnsentExecutionAttempt } from "./settlement";
 import { GAS_FEE_OVERHEAD_STROOPS, GAS_LIFECYCLE_STATES } from "./types";
 import {
   addStroopValues,
@@ -144,6 +145,25 @@ async function findPolicy(
   return matches[0] ?? null;
 }
 
+function mapUnsentExpiryResult(
+  result: Awaited<ReturnType<typeof expireGasUnsentExecutionAttempt>>,
+): GasSubmitResult {
+  switch (result.status) {
+    case "expired":
+      return { status: "reservation_expired" };
+    case "resource_not_found":
+      return { status: "resource_not_found" };
+    case "invalid_lifecycle":
+      return { status: "invalid_lifecycle" };
+    case "blocked":
+    case "invalid_internal_input":
+    case "not_ready":
+    case "cancelled":
+    case "settled":
+      return { status: "invalid_internal_input" };
+  }
+}
+
 /**
  * Validates the D1 relayer handoff boundary and expires an overdue reservation.
  * No relayer, network, or wallet-quota work is performed here.
@@ -174,10 +194,29 @@ export const submit = internalMutation({
     const existingAttempt = await findExecutionAttemptByRequestId(ctx, args.projectId, requestId);
     if (existingAttempt === "ambiguous") return { status: "invalid_internal_input" };
     if (existingAttempt !== null) {
+      if (existingAttempt.innerTransactionHash !== transactionHash) {
+        return { status: "invalid_lifecycle" };
+      }
+      if (existingAttempt.lifecycle === GAS_LIFECYCLE_STATES.expired) {
+        return { status: "reservation_expired" };
+      }
+
+      const now = Date.now();
+      const leaseExpiredOrCleared =
+        existingAttempt.leaseToken === undefined ||
+        (existingAttempt.leaseExpiresAt !== undefined && existingAttempt.leaseExpiresAt <= now);
+      if (
+        existingAttempt.lifecycle === GAS_LIFECYCLE_STATES.claimed &&
+        existingAttempt.reservationExpiresAt <= now &&
+        existingAttempt.sendCount === 0 &&
+        leaseExpiredOrCleared
+      ) {
+        return mapUnsentExpiryResult(
+          await expireGasUnsentExecutionAttempt(ctx, existingAttempt._id, now),
+        );
+      }
+
       try {
-        if (existingAttempt.innerTransactionHash !== transactionHash) {
-          return { status: "invalid_lifecycle" };
-        }
         return projectGasExecutionAttempt(existingAttempt);
       } catch {
         return { status: "invalid_internal_input" };

@@ -169,38 +169,65 @@ test("submit forwards bounded XDR only with the strict XDR field set", async () 
   assert.equal(oversized.calls.length, 0);
 });
 
-test("submit maps safe execution DTOs to running and terminal HTTP responses", async () => {
+test("submit maps every safe running and terminal DTO to the exact HTTP contract", async () => {
   const base = {
     object: "gas_submit_result" as const,
     requestId: CORRELATION_ID,
     transactionHash: TRANSACTION_HASH,
     outerTransactionHash: null,
     reservedStroops: "200",
-    actualFeeStroops: null,
     expiresAt: "2026-09-03T12:49:56.789Z",
     reconciliationRequired: false,
   };
 
-  const running = await invoke(
-    { ...base, status: "submitted" },
-    { body: JSON.stringify({ requestId: REQUEST_ID, transactionHash: TRANSACTION_HASH }) },
-  );
-  assert.equal(running.response.status, 202);
-  assert.equal((await responseBody(running.response)).status, "submitted");
-  assert.equal(running.response.headers.get("cache-control"), "no-store");
-
-  const terminal = await invoke(
+  const cases = [
+    { status: "claimed", httpStatus: 202, outerTransactionHash: null, actualFeeStroops: null },
     {
-      ...base,
-      status: "succeeded",
-      actualFeeStroops: "175",
+      status: "submission_unknown",
+      httpStatus: 202,
       outerTransactionHash: "b".repeat(64),
+      actualFeeStroops: null,
     },
-    { body: JSON.stringify({ requestId: REQUEST_ID, transactionHash: TRANSACTION_HASH }) },
-  );
-  assert.equal(terminal.response.status, 200);
-  assert.equal((await responseBody(terminal.response)).actualFeeStroops, "175");
-  assertRouteHeaders(terminal.response);
+    {
+      status: "submitted",
+      httpStatus: 202,
+      outerTransactionHash: "b".repeat(64),
+      actualFeeStroops: null,
+    },
+    {
+      status: "succeeded",
+      httpStatus: 200,
+      outerTransactionHash: "b".repeat(64),
+      actualFeeStroops: "175",
+    },
+    {
+      status: "failed",
+      httpStatus: 200,
+      outerTransactionHash: "b".repeat(64),
+      actualFeeStroops: "175",
+    },
+    {
+      status: "cancelled",
+      httpStatus: 200,
+      outerTransactionHash: null,
+      actualFeeStroops: "0",
+    },
+  ] as const;
+
+  for (const testCase of cases) {
+    const result = {
+      ...base,
+      status: testCase.status,
+      outerTransactionHash: testCase.outerTransactionHash,
+      actualFeeStroops: testCase.actualFeeStroops,
+    } as const;
+    const response = await invoke(result, {
+      body: JSON.stringify({ requestId: REQUEST_ID, transactionHash: TRANSACTION_HASH }),
+    });
+    assert.equal(response.response.status, testCase.httpStatus, testCase.status);
+    assert.deepEqual(await responseBody(response.response), result);
+    assertRouteHeaders(response.response);
+  }
 });
 
 test("submit rejects malformed credentials, JSON, identifiers, hashes, and body bounds before Convex", async () => {

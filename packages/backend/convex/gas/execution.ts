@@ -22,7 +22,7 @@ import {
   gasSendClassificationInputValidator,
   gasSequenceDiagnosisInputValidator,
 } from "./schema";
-import { expireGasUnsentExecutionAttempt } from "./settlement";
+import { expireGasUnsentExecutionAttempt, type GasSettlementResult } from "./settlement";
 import {
   GAS_FEE_OVERHEAD_STROOPS,
   GAS_MAX_SEND_COUNT,
@@ -452,6 +452,44 @@ function claimResult(
     relayerPublicKey: attempt.relayerPublicKey,
     execution,
   };
+}
+
+function mapUnsentExpiryResult(result: GasSettlementResult): GasClaimResult {
+  switch (result.status) {
+    case "expired":
+      return { status: "reservation_expired" };
+    case "resource_not_found":
+      return { status: "resource_not_found" };
+    case "invalid_lifecycle":
+      return { status: "invalid_lifecycle" };
+    case "blocked":
+    case "invalid_internal_input":
+    case "not_ready":
+    case "cancelled":
+    case "settled":
+      // Keep accounting and source-data details internal. The public action
+      // maps this existing invariant class to its sanitized error.
+      return { status: "invalid_internal_input" };
+  }
+}
+
+function mapUnsentExpiryAuthorizationResult(
+  result: GasSettlementResult,
+): GasSendAuthorizationResult {
+  switch (result.status) {
+    case "expired":
+      return { status: "reservation_expired" };
+    case "resource_not_found":
+      return { status: "resource_not_found" };
+    case "invalid_lifecycle":
+      return { status: "invalid_lifecycle" };
+    case "blocked":
+    case "invalid_internal_input":
+    case "not_ready":
+    case "cancelled":
+    case "settled":
+      return { status: "invalid_internal_input" };
+  }
 }
 
 const gasClaimReplayResultValidator = v.union(
@@ -885,8 +923,21 @@ export const recoverClaim = internalMutation({
     if (existing.lifecycle === GAS_LIFECYCLE_STATES.expired) {
       return { status: "reservation_expired" };
     }
-    if (existing.reservationExpiresAt <= now && isRecoverableAttempt(existing, now)) {
-      return { status: "reservation_expired" };
+    if (existing.reservationExpiresAt <= now) {
+      const leaseExpiredOrCleared =
+        existing.leaseToken === undefined ||
+        (existing.leaseExpiresAt !== undefined && existing.leaseExpiresAt <= now);
+      if (
+        existing.sendCount === 0 &&
+        existing.lifecycle === GAS_LIFECYCLE_STATES.claimed &&
+        leaseExpiredOrCleared
+      ) {
+        return mapUnsentExpiryResult(await expireGasUnsentExecutionAttempt(ctx, existing._id, now));
+      }
+
+      // Once a possible send exists, expiry only fences future work. Keep the
+      // approved exposure held for reconciliation and replay the current DTO.
+      return claimResult(existing, true, false);
     }
     if (!isRecoverableAttempt(existing, now)) {
       return claimResult(existing, true, false);
@@ -1562,7 +1613,21 @@ export const authorizeSend = internalMutation({
     const now = Date.now();
     if (!validateExecutionAttempt(attempt)) return { status: "invalid_internal_input" };
     if (attempt.verifiedLedgerEvidence !== undefined) return { status: "invalid_lifecycle" };
-    if (attempt.reservationExpiresAt <= now) return { status: "reservation_expired" };
+    if (attempt.reservationExpiresAt <= now) {
+      const leaseExpiredOrCleared =
+        attempt.leaseToken === undefined ||
+        (attempt.leaseExpiresAt !== undefined && attempt.leaseExpiresAt <= now);
+      if (
+        attempt.sendCount === 0 &&
+        attempt.lifecycle === GAS_LIFECYCLE_STATES.claimed &&
+        leaseExpiredOrCleared
+      ) {
+        return mapUnsentExpiryAuthorizationResult(
+          await expireGasUnsentExecutionAttempt(ctx, attempt._id, now),
+        );
+      }
+      return { status: "reservation_expired" };
+    }
     if (
       !Number.isSafeInteger(args.expectedSendCount) ||
       args.expectedSendCount < 0 ||

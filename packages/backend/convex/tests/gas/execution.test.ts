@@ -281,10 +281,10 @@ test("claims a reservation once, preserves D1 replay, and fences duplicate worke
         idempotencyKey: "claim-idempotency",
         transactionXdr,
       });
-      expect(replay).toMatchObject({
+      expect(replay).toEqual({
         status: "success",
         replayed: true,
-        reservation: { lifecycle: "reserved", reservedStroops: "200" },
+        reservation: sponsored.reservation,
       });
 
       const beforeDuplicate = await readState(t, projectId);
@@ -544,6 +544,249 @@ test("public submit sends a new claim and replays one safe DTO without new expos
       expect(invalidResupply).toEqual({ status: "invalid_lifecycle" });
       expect(await readState(t, projectId)).toEqual(beforeReplay);
     });
+  });
+});
+
+test("replays every terminal status with or without XDR and never enters custody", async () => {
+  await withFixedTime(async () => {
+    const cases = [
+      {
+        status: "succeeded" as const,
+        actualFeeStroops: 175n,
+        outerTransactionHash: "b".repeat(64),
+      },
+      { status: "failed" as const, actualFeeStroops: 175n, outerTransactionHash: "c".repeat(64) },
+      { status: "cancelled" as const, actualFeeStroops: 0n, outerTransactionHash: undefined },
+    ];
+
+    for (const [index, terminal] of cases.entries()) {
+      const t = convexTest(schema, modules);
+      const { projectId } = await createScope(t, { suffix: `terminal-replay-${index}` });
+      const transactionXdr = gasMaxTimeEnvelopeFixtures.unbounded;
+      const sponsored = await sponsor(t, transactionXdr, `terminal-replay-${index}`);
+      expect(sponsored.status).toBe("success");
+      if (sponsored.status !== "success") throw new Error("Expected a sponsor reservation");
+      const transactionHash = sponsored.reservation.transactionHash;
+      if (transactionHash === null) throw new Error("Expected a transaction hash");
+
+      await withSignerConfiguration([projectId], () =>
+        t.action(internal.gas.execution_action.claim, {
+          apiKeyHash: API_KEY_HASH,
+          requestId: sponsored.reservation.requestId,
+          transactionXdr,
+        }),
+      );
+      await t.run(async (ctx) => {
+        const attempt = await ctx.db
+          .query("gasExecutionAttempts")
+          .withIndex("by_project_id_and_request_id", (q) =>
+            q.eq("projectId", projectId).eq("requestId", sponsored.reservation.requestId),
+          )
+          .unique();
+        const audit = await ctx.db
+          .query("gasLogs")
+          .withIndex("by_project_id_and_request_id", (q) =>
+            q.eq("projectId", projectId).eq("requestId", sponsored.reservation.requestId),
+          )
+          .unique();
+        if (!attempt || !audit) throw new Error("Expected terminal replay records");
+        await ctx.db.patch(attempt._id, {
+          lifecycle: terminal.status,
+          ...(terminal.outerTransactionHash === undefined
+            ? {}
+            : {
+                outerTransactionHash: terminal.outerTransactionHash,
+                outerFeeStroops: 200n,
+                sendCount: 1,
+                firstPossibleSendAt: NOW,
+                reconciliationDeadlineAt: NOW + 24 * 60 * 60 * 1_000,
+                verifiedLedgerEvidence: {
+                  outerTransactionHash: terminal.outerTransactionHash,
+                  innerTransactionHash: transactionHash,
+                  feeSource: RELAYER_PUBLIC_KEY,
+                  ledger: 42,
+                  resultCode:
+                    terminal.status === "failed" ? "txFeeBumpInnerFailed" : "txFeeBumpInnerSuccess",
+                  innerResultCode: terminal.status === "failed" ? "txContractFailed" : "txSuccess",
+                  chargedStroops: terminal.actualFeeStroops,
+                  observedAt: NOW,
+                },
+              }),
+          actualFeeStroops: terminal.actualFeeStroops,
+          settledAt: NOW,
+          leaseToken: undefined,
+          leaseExpiresAt: undefined,
+          reconciliationLeaseToken: undefined,
+          reconciliationLeaseExpiresAt: undefined,
+          reconciliationRequired: false,
+          updatedAt: NOW,
+        });
+        await ctx.db.patch(audit._id, {
+          lifecycle: terminal.status,
+          actualFeeStroops: terminal.actualFeeStroops,
+          updatedAt: NOW,
+        });
+      });
+
+      const beforeReplay = await readState(t, projectId);
+      const sponsorReplay = await sponsor(t, transactionXdr, `terminal-replay-${index}`);
+      expect(sponsorReplay).toEqual({
+        status: "success",
+        replayed: true,
+        reservation: sponsored.reservation,
+      });
+      const expected = {
+        object: "gas_submit_result",
+        requestId: sponsored.reservation.requestId,
+        transactionHash,
+        outerTransactionHash: terminal.outerTransactionHash ?? null,
+        status: terminal.status,
+        reservedStroops: "200",
+        actualFeeStroops: terminal.actualFeeStroops.toString(),
+        expiresAt: new Date(NOW + 15 * 60 * 1_000).toISOString(),
+        reconciliationRequired: false,
+      };
+      const noXdrReplay = await t.action(api.gas.public_api.submit, {
+        apiKeyHash: API_KEY_HASH,
+        requestId: sponsored.reservation.requestId,
+        transactionHash,
+      });
+      expect(noXdrReplay).toEqual(expected);
+
+      const previousSignerRegistry = process.env[GAS_RELAYER_SIGNERS_ENV];
+      process.env[GAS_RELAYER_SIGNERS_ENV] = "[]";
+      try {
+        const xdrReplay = await t.action(api.gas.public_api.submit, {
+          apiKeyHash: API_KEY_HASH,
+          requestId: sponsored.reservation.requestId,
+          transactionHash,
+          transactionXdr,
+        });
+        expect(xdrReplay).toEqual(expected);
+      } finally {
+        if (previousSignerRegistry === undefined) delete process.env[GAS_RELAYER_SIGNERS_ENV];
+        else process.env[GAS_RELAYER_SIGNERS_ENV] = previousSignerRegistry;
+      }
+      expect(await readState(t, projectId)).toEqual(beforeReplay);
+    }
+  });
+});
+
+test("expires an overdue unsent claim once and replays reservation_expired without custody", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const { projectId } = await createScope(t, { suffix: "unsent-expiry" });
+    const transactionXdr = gasMaxTimeEnvelopeFixtures.unbounded;
+    const sponsored = await sponsor(t, transactionXdr, "unsent-expiry");
+    expect(sponsored.status).toBe("success");
+    if (sponsored.status !== "success") throw new Error("Expected a sponsor reservation");
+    const transactionHash = sponsored.reservation.transactionHash;
+    if (transactionHash === null) throw new Error("Expected a transaction hash");
+
+    const claimed = await withSignerConfiguration([projectId], () =>
+      t.action(internal.gas.execution_action.claim, {
+        apiKeyHash: API_KEY_HASH,
+        requestId: sponsored.reservation.requestId,
+        transactionXdr,
+      }),
+    );
+    expect(claimed).toMatchObject({ status: "claimed", sendCount: 0 });
+
+    vi.setSystemTime(NOW + 15 * 60 * 1_000 + 1);
+    const beforeExpiry = await readState(t, projectId);
+    const expired = await t.action(api.gas.public_api.submit, {
+      apiKeyHash: API_KEY_HASH,
+      requestId: sponsored.reservation.requestId,
+      transactionHash,
+    });
+    expect(expired).toEqual({ status: "reservation_expired" });
+
+    const afterExpiry = await readState(t, projectId);
+    expect(afterExpiry.policy?.outstandingHoldsStroops).toBe(0n);
+    expect(afterExpiry.policy?.dailyReservedStroops).toBe(0n);
+    const bucket = await t.run(async (ctx) =>
+      ctx.db
+        .query("rateLimitBuckets")
+        .withIndex("by_scope_key", (q) =>
+          q.eq("scopeKey", `gas:${projectId}:wallet:${GAS_TEST_SOURCE_KEYPAIR.publicKey()}`),
+        )
+        .unique(),
+    );
+    expect(bucket?.tokens).toBe(1);
+    expect(afterExpiry.attempts[0]).toMatchObject({
+      lifecycle: "expired",
+      sendCount: 0,
+      actualFeeStroops: 0n,
+      settledAt: NOW + 15 * 60 * 1_000 + 1,
+    });
+    expect(afterExpiry.logs[0]?.lifecycle).toBe("expired");
+
+    const noXdrReplay = await t.action(api.gas.public_api.submit, {
+      apiKeyHash: API_KEY_HASH,
+      requestId: sponsored.reservation.requestId,
+      transactionHash,
+    });
+    expect(noXdrReplay).toEqual(expired);
+
+    const xdrReplay = await withSignerConfiguration([projectId], () =>
+      t.action(api.gas.public_api.submit, {
+        apiKeyHash: API_KEY_HASH,
+        requestId: sponsored.reservation.requestId,
+        transactionHash,
+        transactionXdr,
+      }),
+    );
+    expect(xdrReplay).toEqual(expired);
+    expect(await readState(t, projectId)).toEqual(afterExpiry);
+    expect(beforeExpiry.policy?.outstandingHoldsStroops).toBe(200n);
+  });
+});
+
+test("blocked accounting retains an overdue unsent claim and returns a sanitized error", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const { projectId } = await createScope(t, { suffix: "blocked-expiry" });
+    const transactionXdr = gasMaxTimeEnvelopeFixtures.unbounded;
+    const sponsored = await sponsor(t, transactionXdr, "blocked-expiry");
+    expect(sponsored.status).toBe("success");
+    if (sponsored.status !== "success") throw new Error("Expected a sponsor reservation");
+    const transactionHash = sponsored.reservation.transactionHash;
+    if (transactionHash === null) throw new Error("Expected a transaction hash");
+
+    await withSignerConfiguration([projectId], () =>
+      t.action(internal.gas.execution_action.claim, {
+        apiKeyHash: API_KEY_HASH,
+        requestId: sponsored.reservation.requestId,
+        transactionXdr,
+      }),
+    );
+    await t.run(async (ctx) => {
+      const policy = await ctx.db
+        .query("gasPolicies")
+        .withIndex("by_project_id", (q) => q.eq("projectId", projectId))
+        .unique();
+      if (!policy) throw new Error("Missing Gas policy");
+      await ctx.db.patch(policy._id, {
+        accountingBlockReason: "inconsistent_counters",
+        accountingBlockedAt: NOW,
+      });
+    });
+    vi.setSystemTime(NOW + 15 * 60 * 1_000 + 1);
+
+    const before = await readState(t, projectId);
+    const result = await t.action(api.gas.public_api.submit, {
+      apiKeyHash: API_KEY_HASH,
+      requestId: sponsored.reservation.requestId,
+      transactionHash,
+    });
+    expect(result).toEqual({ status: "internal_error" });
+    expect(await readState(t, projectId)).toMatchObject({
+      attempts: [{ lifecycle: "claimed", sendCount: 0 }],
+      logs: [{ lifecycle: "claimed" }],
+    });
+    expect((await readState(t, projectId)).policy?.outstandingHoldsStroops).toBe(
+      before.policy?.outstandingHoldsStroops,
+    );
   });
 });
 
@@ -1025,7 +1268,29 @@ test("stops transient retry sends when the reservation expires during backoff", 
       ),
     );
 
-    expect(result).toEqual({ status: "reservation_expired" });
+    expect(result).toMatchObject({
+      object: "gas_submit_result",
+      requestId: sponsored.reservation.requestId,
+      transactionHash,
+      outerTransactionHash: expect.any(String),
+      status: "submission_unknown",
+      reservedStroops: "200",
+      actualFeeStroops: null,
+      reconciliationRequired: false,
+    });
+    const noXdrReplay = await t.action(api.gas.public_api.submit, {
+      apiKeyHash: scope.apiKeyHash,
+      requestId: sponsored.reservation.requestId,
+      transactionHash,
+    });
+    const xdrReplay = await t.action(api.gas.public_api.submit, {
+      apiKeyHash: scope.apiKeyHash,
+      requestId: sponsored.reservation.requestId,
+      transactionHash,
+      transactionXdr,
+    });
+    expect(noXdrReplay).toEqual(result);
+    expect(xdrReplay).toEqual(result);
     expect(sendCalls).toBe(1);
     expect(sleepCalls).toBe(1);
     const state = await readState(t, scope.projectId);
@@ -2028,13 +2293,26 @@ test("preflight and live authorization failures never send or pin an outer ident
       expect(result).toEqual({ status: failure.expected });
       expect(sendCalls).toBe(0);
       const state = await readState(t, scope.projectId);
-      expect(state.attempts[0]).toMatchObject({
-        lifecycle: "claimed",
-        sendCount: 0,
-      });
-      expect(state.attempts[0]).not.toHaveProperty("outerTransactionHash");
-      expect(state.attempts[0]).not.toHaveProperty("outerFeeStroops");
-      expect(state.logs[0]?.lifecycle).toBe("claimed");
+      if (failure.id === "expiry-during-preflight") {
+        expect(state.attempts[0]).toMatchObject({
+          lifecycle: "expired",
+          sendCount: 0,
+          actualFeeStroops: 0n,
+          settledAt: NOW + 15 * 60 * 1_000,
+        });
+        expect(state.attempts[0]).not.toHaveProperty("outerTransactionHash");
+        expect(state.attempts[0]).not.toHaveProperty("outerFeeStroops");
+        expect(state.policy?.outstandingHoldsStroops).toBe(0n);
+        expect(state.logs[0]?.lifecycle).toBe("expired");
+      } else {
+        expect(state.attempts[0]).toMatchObject({
+          lifecycle: "claimed",
+          sendCount: 0,
+        });
+        expect(state.attempts[0]).not.toHaveProperty("outerTransactionHash");
+        expect(state.attempts[0]).not.toHaveProperty("outerFeeStroops");
+        expect(state.logs[0]?.lifecycle).toBe("claimed");
+      }
     }
   });
 });

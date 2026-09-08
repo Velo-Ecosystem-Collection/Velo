@@ -182,7 +182,7 @@ async function executeWithTransport(
     sendTransaction: (transaction: { hash(): Buffer }) => Promise<unknown>;
     getTransaction: (hash: string) => Promise<unknown>;
   },
-  onSleep?: (milliseconds: number) => void,
+  onSleep?: (milliseconds: number) => void | Promise<void>,
 ) {
   const result = await t.action(async (ctx) => {
     const execution = await executeGasExecution(
@@ -193,7 +193,7 @@ async function executeWithTransport(
         rpcTransport: transport,
         clock: () => Date.now(),
         sleep: async (milliseconds) => {
-          onSleep?.(milliseconds);
+          await onSleep?.(milliseconds);
           vi.advanceTimersByTime(milliseconds);
         },
         random: () => 0,
@@ -1032,6 +1032,66 @@ test("retries transient failures with one pinned outer identity and stops at the
   });
 });
 
+test("re-resolves custody after retry backoff and stops when the configured identity rotates", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t, { suffix: "retry-custody-rotation" });
+    const transactionXdr = gasMaxTimeEnvelopeFixtures.unbounded;
+    const sponsored = await sponsor(t, transactionXdr, "retry-custody-rotation", scope.apiKeyHash);
+    expect(sponsored.status).toBe("success");
+    if (sponsored.status !== "success") throw new Error("Expected a reservation");
+    const transactionHash = sponsored.reservation.transactionHash;
+    if (transactionHash === null) throw new Error("Expected a transaction hash");
+
+    let sendCalls = 0;
+    const result = await withSignerConfiguration([scope.projectId], () =>
+      executeWithTransport(
+        t,
+        scope.apiKeyHash,
+        sponsored.reservation.requestId,
+        transactionHash,
+        transactionXdr,
+        {
+          getNetwork: async () => ({ passphrase: Networks.TESTNET }),
+          sendTransaction: async (outer) => {
+            sendCalls += 1;
+            return {
+              status: "TRY_AGAIN_LATER",
+              hash: outer.hash().toString("hex"),
+              latestLedger: 99,
+              latestLedgerCloseTime: NOW,
+            };
+          },
+          getTransaction: async (hash) => ({
+            status: "NOT_FOUND",
+            txHash: hash,
+            latestLedger: 99,
+            latestLedgerCloseTime: NOW,
+            oldestLedger: 1,
+            oldestLedgerCloseTime: NOW,
+          }),
+        },
+        async () => {
+          process.env[GAS_RELAYER_SIGNERS_ENV] = JSON.stringify([
+            {
+              projectId: scope.projectId,
+              network: GAS_NETWORK,
+              secretKey: GAS_TEST_SOURCE_KEYPAIR.secret(),
+            },
+          ]);
+        },
+      ),
+    );
+
+    expect(result).toEqual({ status: "relayer_unavailable" });
+    expect(sendCalls).toBe(1);
+    expect((await readState(t, scope.projectId)).attempts[0]).toMatchObject({
+      sendCount: 1,
+      latestSendClassification: { status: "retry_later", sendCount: 1 },
+    });
+  });
+});
+
 test("recovers an expired pinned attempt from authenticated XDR without an audit row or new hold", async () => {
   await withFixedTime(async () => {
     const t = convexTest(schema, modules);
@@ -1074,8 +1134,9 @@ test("recovers an expired pinned attempt from authenticated XDR without an audit
         )
         .unique();
       if (!log) throw new Error("Expected the audit row");
-      await ctx.db.delete(log._id);
+      await ctx.db.patch(log._id, { retentionExpiresAt: NOW, updatedAt: NOW });
     });
+    expect(await t.mutation(internal.gas.retention.expireLogs, { limit: 25 })).toBe(1);
     vi.setSystemTime(NOW + 31_000);
     expect(await t.mutation(internal.gas.execution.recoverAbandoned, { limit: 25 })).toBe(1);
 

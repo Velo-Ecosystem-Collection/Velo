@@ -513,7 +513,7 @@ test("allows one operator lookup after deadline without resetting it", async () 
         .unique();
       if (!attempt) throw new Error("Missing attempt");
       await ctx.db.patch(attempt._id, { reconciliationRequired: true });
-      const auditId = await ctx.db.insert("gasLogs", {
+      await ctx.db.insert("gasLogs", {
         projectId,
         requestId: attempt.requestId,
         idempotencyKeyHash: attempt.idempotencyKeyHash,
@@ -526,12 +526,12 @@ test("allows one operator lookup after deadline without resetting it", async () 
         decisionCode: "reserved",
         lifecycle: "submitted",
         expiresAt: attempt.reservationExpiresAt,
-        retentionExpiresAt: NOW + 30 * 24 * 60 * 60 * 1_000,
+        retentionExpiresAt: NOW,
         createdAt: NOW,
         updatedAt: NOW,
       });
-      await ctx.db.delete(auditId);
     });
+    expect(await t.mutation(internal.gas.retention.expireLogs, { limit: 25 })).toBe(1);
 
     vi.advanceTimersByTime(24 * 60 * 60 * 1_000 + 1);
     const originalDeadline = NOW + 24 * 60 * 60 * 1_000;

@@ -545,50 +545,57 @@ export async function executeGasExecution(
   const fallbackUrl = fallbackRpcUrl();
   const canUseFallback = fallbackUrl !== undefined && fallbackUrl !== primaryUrl;
 
-  try {
-    const continuation = await withTestnetRelayerSigner(
-      ctx,
-      scope.projectId,
-      async (signer): Promise<GasClaimResult> => {
-        if (signer.publicKey !== claim.relayerPublicKey) {
-          return { status: "relayer_unavailable" } as GasClaimFailure;
+  type IterationResult =
+    | { kind: "complete"; result: GasClaimResult }
+    | { kind: "retry"; result: Extract<GasClaimResult, { status: "claimed" }>; delay: number };
+
+  let currentClaim = claim;
+  let fallbackSwitched = false;
+
+  for (;;) {
+    const reservationExpiresAt = Date.parse(currentClaim.execution.expiresAt);
+    if (!Number.isFinite(reservationExpiresAt) || clock() >= reservationExpiresAt) {
+      if (currentClaim.sendCount === 0) {
+        try {
+          const expiry = await ctx.runMutation(internal.gas.execution.recoverClaim, {
+            apiKeyId: scope.apiKeyId,
+            projectId: scope.projectId,
+            apiKeyHash: args.apiKeyHash,
+            network: facts.network,
+            operation: facts.operation,
+            requestId,
+            requestFingerprint,
+            innerTransactionHash: facts.transactionHash,
+            sourceWallet: facts.sourceWallet,
+            targetContractIds: [...facts.targetContractIds],
+            innerMaxFeeStroops: facts.innerMaxFeeStroops,
+            ...(facts.innerMaxTime === undefined ? {} : { innerMaxTime: facts.innerMaxTime }),
+            quote,
+            expectedRelayerPublicKey: currentClaim.relayerPublicKey,
+          });
+          return expiry.status === "relayer_preflight_required"
+            ? ({ status: "dependency_unavailable" } as GasClaimFailure)
+            : expiry;
+        } catch {
+          return { status: "dependency_unavailable" } as GasClaimFailure;
         }
+      }
 
-        let currentClaim = claim;
-        let fallbackSwitched = false;
+      // Once a possible send exists, do not rebuild or re-enter transport
+      // after expiry. The current projection remains held for reconciliation.
+      return currentClaim;
+    }
 
-        for (;;) {
-          const reservationExpiresAt = Date.parse(currentClaim.execution.expiresAt);
-          if (!Number.isFinite(reservationExpiresAt) || clock() >= reservationExpiresAt) {
-            if (currentClaim.sendCount === 0) {
-              try {
-                const expiry = await ctx.runMutation(internal.gas.execution.recoverClaim, {
-                  apiKeyId: scope.apiKeyId,
-                  projectId: scope.projectId,
-                  apiKeyHash: args.apiKeyHash,
-                  network: facts.network,
-                  operation: facts.operation,
-                  requestId,
-                  requestFingerprint,
-                  innerTransactionHash: facts.transactionHash,
-                  sourceWallet: facts.sourceWallet,
-                  targetContractIds: [...facts.targetContractIds],
-                  innerMaxFeeStroops: facts.innerMaxFeeStroops,
-                  ...(facts.innerMaxTime === undefined ? {} : { innerMaxTime: facts.innerMaxTime }),
-                  quote,
-                  expectedRelayerPublicKey: signer.publicKey,
-                });
-                return expiry.status === "relayer_preflight_required"
-                  ? ({ status: "dependency_unavailable" } as GasClaimFailure)
-                  : expiry;
-              } catch {
-                return { status: "dependency_unavailable" } as GasClaimFailure;
-              }
-            }
-
-            // Once a possible send exists, do not rebuild or re-enter transport
-            // after expiry. The current projection remains held for reconciliation.
-            return currentClaim;
+    let iteration: IterationResult;
+    try {
+      iteration = await withTestnetRelayerSigner(
+        ctx,
+        scope.projectId,
+        async (signer): Promise<IterationResult> => {
+          // Custody is resolved for this signing iteration only. Rotation or
+          // disablement cannot reuse an earlier callback-scoped keypair.
+          if (signer.publicKey !== currentClaim.relayerPublicKey) {
+            return { kind: "complete", result: { status: "relayer_unavailable" } };
           }
 
           let built;
@@ -600,9 +607,13 @@ export async function executeGasExecution(
               signer,
             );
           } catch (error) {
-            return error instanceof TestnetFeeBumpError
-              ? mapFeeBumpError(error)
-              : ({ status: "invalid_internal_input" } as const);
+            return {
+              kind: "complete",
+              result:
+                error instanceof TestnetFeeBumpError
+                  ? mapFeeBumpError(error)
+                  : ({ status: "invalid_internal_input" } as const),
+            };
           }
 
           if (
@@ -612,7 +623,7 @@ export async function executeGasExecution(
             (currentClaim.outerTransactionHash !== null &&
               built.outerTransactionHash !== currentClaim.outerTransactionHash)
           ) {
-            return { status: "invalid_internal_input" };
+            return { kind: "complete", result: { status: "invalid_internal_input" } };
           }
 
           let authorization: GasSendAuthorizationResult | null = null;
@@ -679,17 +690,17 @@ export async function executeGasExecution(
               outcome = await adapter.send(sendRequest);
             }
           } catch {
-            return { status: "dependency_unavailable" } as GasClaimFailure;
+            return { kind: "complete", result: { status: "dependency_unavailable" } };
           }
           if (outcome.status === "preflight_failed") {
             if (outcome.code === "send_authorization_denied" && authorization !== null) {
-              return mapAuthorizationFailure(authorization);
+              return { kind: "complete", result: mapAuthorizationFailure(authorization) };
             }
-            return mapRpcPreflightError(outcome.code);
+            return { kind: "complete", result: mapRpcPreflightError(outcome.code) };
           }
           const authorized = authorization as GasSendAuthorizationResult | null;
           if (authorized === null || authorized.status !== "authorized") {
-            return { status: "dependency_unavailable" };
+            return { kind: "complete", result: { status: "dependency_unavailable" } };
           }
 
           const sendCount = authorized.sendCount;
@@ -708,9 +719,9 @@ export async function executeGasExecution(
               classification: sendClassification(outcome, sendCount),
             });
           } catch {
-            return { status: "dependency_unavailable" } as GasClaimFailure;
+            return { kind: "complete", result: { status: "dependency_unavailable" } };
           }
-          if (recorded.status !== "recorded") return recorded;
+          if (recorded.status !== "recorded") return { kind: "complete", result: recorded };
 
           if (outcome.status === "rejected" && outcome.innerResultCode === "txBadSeq") {
             let lookupOutcome: TestnetFeeBumpLookupOutcome;
@@ -732,9 +743,11 @@ export async function executeGasExecution(
                 diagnosis: sequenceDiagnosisInput(lookupOutcome),
               });
             } catch {
-              return { status: "dependency_unavailable" } as GasClaimFailure;
+              return { kind: "complete", result: { status: "dependency_unavailable" } };
             }
-            if (diagnosis.status !== "recorded") return diagnosis;
+            if (diagnosis.status !== "recorded") {
+              return { kind: "complete", result: diagnosis };
+            }
           }
 
           if (
@@ -751,37 +764,42 @@ export async function executeGasExecution(
               fallbackSwitched = true;
             }
             const recordedReservationExpiresAt = Date.parse(recorded.execution.expiresAt);
-            if (clock() >= recordedReservationExpiresAt) {
-              return {
-                ...currentClaim,
-                outerTransactionHash: recorded.execution.outerTransactionHash,
-                sendCount: recorded.sendCount,
-                execution: recorded.execution,
-              };
-            }
-            await sleep(Math.max(0, nextSendAt - clock()));
-            currentClaim = {
+            const nextClaim = {
               ...currentClaim,
               outerTransactionHash: recorded.execution.outerTransactionHash,
               sendCount: recorded.sendCount,
               execution: recorded.execution,
             };
-            continue;
+            if (clock() >= recordedReservationExpiresAt) {
+              return { kind: "complete", result: nextClaim };
+            }
+            if (delay === null) return { kind: "complete", result: nextClaim };
+            return { kind: "retry", result: nextClaim, delay };
           }
 
           return {
-            ...currentClaim,
-            outerTransactionHash: recorded.execution.outerTransactionHash,
-            sendCount: recorded.sendCount,
-            execution: recorded.execution,
+            kind: "complete",
+            result: {
+              ...currentClaim,
+              outerTransactionHash: recorded.execution.outerTransactionHash,
+              sendCount: recorded.sendCount,
+              execution: recorded.execution,
+            },
           };
-        }
-      },
-    );
-    return continuation;
-  } catch (error) {
-    if (error instanceof RelayerCustodyError) return { status: "relayer_unavailable" };
-    return { status: "dependency_unavailable" };
+        },
+      );
+    } catch (error) {
+      if (error instanceof RelayerCustodyError) return { status: "relayer_unavailable" };
+      return { status: "dependency_unavailable" };
+    }
+
+    if (iteration.kind === "complete") return iteration.result;
+    currentClaim = iteration.result;
+    try {
+      await sleep(Math.max(0, iteration.delay));
+    } catch {
+      return { status: "dependency_unavailable" };
+    }
   }
 }
 

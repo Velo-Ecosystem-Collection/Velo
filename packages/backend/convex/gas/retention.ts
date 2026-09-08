@@ -16,15 +16,30 @@ function normalizePageSize(value: number | undefined): number {
   return Math.min(value ?? MAX_PAGE_SIZE, MAX_PAGE_SIZE);
 }
 
+function normalizeSweepCutoff(value: number | undefined, now: number): number {
+  const cutoff = value ?? now;
+  if (!Number.isSafeInteger(cutoff) || cutoff <= 0) {
+    throw new Error("Gas log retention sweep cutoff must be a positive safe integer");
+  }
+  return cutoff;
+}
+
 export const expireLogs = internalMutation({
-  args: { limit: v.optional(v.number()) },
+  args: {
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+    sweepCutoff: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
     const limit = normalizePageSize(args.limit);
     const now = Date.now();
-    const rows = await ctx.db
+    const sweepCutoff = normalizeSweepCutoff(args.sweepCutoff, now);
+    const page = await ctx.db
       .query("gasLogs")
-      .withIndex("by_retention_expires_at", (q) => q.lte("retentionExpiresAt", now))
-      .take(limit);
+      .withIndex("by_retention_expires_at", (q) => q.lte("retentionExpiresAt", sweepCutoff))
+      .paginate({ numItems: limit, cursor: args.cursor ?? null });
+    const rows = page.page;
+    let deletedCount = 0;
 
     for (const row of rows) {
       if (
@@ -57,9 +72,16 @@ export const expireLogs = internalMutation({
         }
       }
       await ctx.db.delete(row._id);
+      deletedCount += 1;
     }
-    if (rows.length === limit) await ctx.scheduler.runAfter(0, expireLogsRef, { limit });
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, expireLogsRef, {
+        limit,
+        cursor: page.continueCursor,
+        sweepCutoff,
+      });
+    }
 
-    return rows.length;
+    return deletedCount;
   },
 });

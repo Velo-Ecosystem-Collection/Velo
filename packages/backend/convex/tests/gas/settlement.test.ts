@@ -469,9 +469,19 @@ test("keeps uncertainty held, rejects project mismatches, and settles after audi
 
     const deletedAudit = await createCase(t, {
       requestId: "settlement-deleted-audit",
-      withAudit: false,
       evidence: { chargedStroops: 123n },
     });
+    await t.run(async (ctx) => {
+      const audit = await ctx.db
+        .query("gasLogs")
+        .withIndex("by_project_id_and_request_id", (q) =>
+          q.eq("projectId", deletedAudit.projectId).eq("requestId", "settlement-deleted-audit"),
+        )
+        .unique();
+      if (!audit) throw new Error("Expected the audit row");
+      await ctx.db.patch(audit._id, { retentionExpiresAt: NOW, updatedAt: NOW });
+    });
+    expect(await t.mutation(internal.gas.retention.expireLogs, { limit: 25 })).toBe(1);
     expect(
       await t.mutation(internal.gas.settlement.settle, {
         executionAttemptId: deletedAudit.attemptId,

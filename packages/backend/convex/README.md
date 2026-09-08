@@ -92,7 +92,27 @@ configuration fails closed; seeds and SDK keypairs are never returned, stored, l
 in errors. The internal `gas.relayer.readiness` action returns only a fixed status, `testnet`, and
 the verified public key when ready.
 
-Rotate custody by disabling the project's `relayerAccounts` metadata before changing the deployment
-variable. Configure the replacement out of band, run readiness, update the stored public key, and
-re-enable the metadata only after the derived key matches exactly. A configuration change alone
-must not authorize signing.
+Operate a custody rotation in this order: pause the project's Gas policy, disable its
+`relayerAccounts` metadata, replace the deployment configuration and stored public metadata out of
+band, reactivate the metadata, run the internal readiness action, and resume the policy only after
+the derived public key matches exactly. Readiness intentionally requires active metadata, so it is
+the verification step after reactivation rather than a step performed while custody is disabled.
+An environment change alone must not authorize signing. Existing attempts retain their original
+pinned fee source and remain eligible for reconciliation and settlement while custody is disabled;
+rotation never rebuilds them with the replacement account.
+
+Gas audit cleanup runs hourly through `gas/retention.ts`, with a maximum 100-row indexed page, a
+fixed sweep cutoff, and an internal continuation cursor. Ambiguous identities, missing policies,
+and accounting faults are skipped fail-closed and revisited on the next hourly sweep. Legacy
+unsent holds are released atomically with deletion; execution-owned audit rows are deleted without
+deleting their attempts, pinned identities, evidence, accounting, replay records, or unresolved
+exposure. There is no resolved-record deletion policy for terminal replay.
+
+If accounting is blocked, inspect the policy's `accountingBlockReason` and `accountingBlockedAt`,
+the attempt's pinned hold/day/evidence/lifecycle, and the matching `gasDailyAccounting` row before
+repairing source data through a reviewed operator migration. Do not clear a block through ordinary
+policy updates. After the source is understood, use the existing bounded internal
+`internal.gas.settlement.catchUp` procedure. For exhausted network reconciliation, use only the
+existing identity-only `internal.gas.reconciliation_action.operatorReconcile({ projectId,
+requestId })` action; it accepts no XDR, provider evidence, endpoint, or signing authority and does
+not reset the automatic deadline.

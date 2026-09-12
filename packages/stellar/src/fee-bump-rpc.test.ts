@@ -528,6 +528,27 @@ test("normalizes found success and bad-sequence lookup evidence", async () => {
   assert.deepEqual(mismatchedInnerResult, { status: "malformed_response" });
 });
 
+test("accepts Stellar RPC numeric-string ledger close times", async () => {
+  const success = await adapter({
+    getTransaction: async (hash) => ({
+      ...lookupResponse(hash),
+      latestLedgerCloseTime: "1789207317",
+      oldestLedgerCloseTime: "1788602522",
+    }),
+  }).lookup(FEE_BUMP.outerTransactionHash);
+
+  assert.deepEqual(success, {
+    status: "found",
+    outerTransactionHash: FEE_BUMP.outerTransactionHash,
+    innerTransactionHash: FEE_BUMP.innerTransactionHash,
+    feeSource: FEE_BUMP.feeSource,
+    feeStroops: 187n,
+    ledger: 42,
+    resultCode: "txFeeBumpInnerSuccess",
+    innerResultCode: "txSuccess",
+  });
+});
+
 test("classifies not-found, unavailable, malformed, mismatched, and inconsistent lookup responses", async () => {
   const notFound = await adapter().lookup(FEE_BUMP.outerTransactionHash);
   assert.deepEqual(notFound, { status: "not_found" });

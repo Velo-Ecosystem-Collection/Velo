@@ -141,6 +141,7 @@ function makeDependencies({
     verification: "operator-attestation",
   },
   network = { passphrase: "Test SDF Network ; September 2015" },
+  probeTransaction = async () => ({ ok: true, value: { status: "not_found" } }),
 } = {}) {
   return {
     fetchImpl,
@@ -158,6 +159,7 @@ function makeDependencies({
     readSnapshot: async (config, scope) => ({ ok: true, value: snapshot(config, scope) }),
     readProvenance: async () => ({ ok: true, value: provenance }),
     probeNetwork: async () => ({ ok: true, value: network }),
+    probeTransaction,
   };
 }
 
@@ -262,6 +264,28 @@ test("blocks wrong-network and missing signer readiness before sponsorship", asy
   assert.equal(
     missingReadiness.checks.find((check) => check.name === "backend_signer_ready")?.status,
     "blocked",
+  );
+});
+
+test("blocks a previously submitted invocation during preflight", async () => {
+  const preflight = await runPreflight({
+    config: CONFIG,
+    dependencies: makeDependencies({
+      probeTransaction: async (_config, transactionHash) => ({
+        ok: true,
+        value: { status: transactionHash === ALLOWED_HASH ? "found" : "not_found" },
+      }),
+    }),
+  });
+
+  assert.equal(preflight.ok, false);
+  assert.deepEqual(
+    preflight.checks.find((check) => check.name === "allowed_transaction_fresh"),
+    {
+      name: "allowed_transaction_fresh",
+      status: "blocked",
+      failure: "allowed_transaction_already_submitted",
+    },
   );
 });
 

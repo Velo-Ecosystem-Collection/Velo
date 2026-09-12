@@ -213,6 +213,8 @@ export function createSmokeDependencies({
     readSnapshot: (config, scope) => readOperatorSnapshot(config, scope, { fetchImpl }),
     readProvenance: (config) => readDeploymentProvenance(config, { fetchImpl }),
     probeNetwork: (config) => probeTestnetNetwork(config, { fetchImpl }),
+    probeTransaction: (config, transactionHash) =>
+      probeTestnetTransaction(config, transactionHash, { fetchImpl }),
     deriveFacts: deriveFactsFromXdr,
   };
 }
@@ -231,22 +233,30 @@ export async function runPreflight({ config, dependencies = createSmokeDependenc
   let snapshot = null;
   let provenance = null;
   let network = null;
+  let transactionProbes = null;
   if (facts.allowed.ok && facts.denied.ok && config) {
-    const snapshotRead = await safelyRead(() =>
-      dependencies.readSnapshot(config, { phase: "preflight" }),
-    );
+    const [snapshotRead, provenanceRead, networkRead, allowedProbe, deniedProbe] =
+      await Promise.all([
+        safelyRead(() => dependencies.readSnapshot(config, { phase: "preflight" })),
+        safelyRead(() => dependencies.readProvenance(config)),
+        safelyRead(() => dependencies.probeNetwork(config)),
+        safelyRead(() =>
+          dependencies.probeTransaction(config, facts.allowed.value.transactionHash),
+        ),
+        safelyRead(() => dependencies.probeTransaction(config, facts.denied.value.transactionHash)),
+      ]);
     snapshot = snapshotRead.ok
       ? isNormalizedSnapshot(snapshotRead.value)
         ? snapshotRead
         : normalizeSnapshot(snapshotRead.value, { phase: "preflight", projectId: config.projectId })
       : snapshotRead;
-    const provenanceRead = await safelyRead(() => dependencies.readProvenance(config));
     provenance = provenanceRead.ok
       ? isNormalizedProvenance(provenanceRead.value)
         ? provenanceRead
         : normalizeProvenance(provenanceRead.value, config)
       : provenanceRead;
-    network = await safelyRead(() => dependencies.probeNetwork(config));
+    network = networkRead;
+    transactionProbes = { allowed: allowedProbe, denied: deniedProbe };
   }
 
   addCheck(checks, "operator_snapshot_available", snapshot?.ok === true, snapshot?.code);
@@ -325,6 +335,38 @@ export async function runPreflight({ config, dependencies = createSmokeDependenc
       facts.denied.ok &&
       facts.allowed.value.transactionHash !== facts.denied.value.transactionHash,
     "transaction_identity_collision",
+  );
+  addCheck(
+    checks,
+    "allowed_transaction_fresh",
+    facts.allowed.ok &&
+      !isExpiredInvocation(facts.allowed.value, dependencies.now) &&
+      transactionProbes?.allowed.ok === true &&
+      transactionProbes.allowed.value.status === "not_found",
+    freshnessFailureCode(
+      facts.allowed,
+      transactionProbes?.allowed,
+      "allowed_invocation_expired",
+      "allowed_transaction_already_submitted",
+      "allowed_transaction_status_unavailable",
+      dependencies.now,
+    ),
+  );
+  addCheck(
+    checks,
+    "denied_transaction_fresh",
+    facts.denied.ok &&
+      !isExpiredInvocation(facts.denied.value, dependencies.now) &&
+      transactionProbes?.denied.ok === true &&
+      transactionProbes.denied.value.status === "not_found",
+    freshnessFailureCode(
+      facts.denied,
+      transactionProbes?.denied,
+      "denied_invocation_expired",
+      "denied_transaction_already_submitted",
+      "denied_transaction_status_unavailable",
+      dependencies.now,
+    ),
   );
 
   const ok = checks.every((check) => check.status === "passed");
@@ -786,6 +828,47 @@ async function probeTestnetNetwork(config, { fetchImpl }) {
   return typeof passphrase === "string"
     ? { ok: true, value: { passphrase } }
     : { ok: false, code: "malformed_network_response" };
+}
+
+async function probeTestnetTransaction(config, transactionHash, { fetchImpl }) {
+  const result = await boundedFetchJson(
+    fetchImpl,
+    config.rpcUrl,
+    {
+      method: "POST",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "getTransaction",
+        params: { hash: transactionHash },
+      }),
+    },
+    config.timeoutMs,
+  );
+  if (!result.ok) return result;
+  const status = result.value?.result?.status;
+  if (status === "NOT_FOUND") return { ok: true, value: { status: "not_found" } };
+  if (status === "SUCCESS" || status === "FAILED") {
+    return { ok: true, value: { status: "found" } };
+  }
+  return { ok: false, code: "malformed_transaction_response" };
+}
+
+function isExpiredInvocation(facts, now) {
+  return (
+    typeof facts?.value?.innerMaxTime === "number" &&
+    Number.isSafeInteger(facts.value.innerMaxTime) &&
+    facts.value.innerMaxTime > 0 &&
+    facts.value.innerMaxTime <= Math.floor(now().getTime() / 1_000)
+  );
+}
+
+function freshnessFailureCode(facts, probe, expiredCode, submittedCode, unavailableCode, now) {
+  if (!facts.ok) return "invalid_invocation";
+  if (probe?.ok === true && probe.value.status === "found") return submittedCode;
+  if (isExpiredInvocation(facts, now)) return expiredCode;
+  return probe?.code ?? unavailableCode;
 }
 
 function normalizeSnapshot(value, expectedScope) {
@@ -1251,6 +1334,7 @@ function deriveFactsFromXdr(xdr) {
     sourceWallet: value.sourceWallet,
     transactionHash: value.transactionHash,
     innerMaxFeeStroops: value.innerMaxFeeStroops.toString(),
+    ...(value.innerMaxTime === undefined ? {} : { innerMaxTime: value.innerMaxTime }),
     targetContractIds: [...value.targetContractIds],
   };
 }
@@ -1276,7 +1360,11 @@ function summarizeDeployment(snapshot, provenance) {
 function summarizePreflight(preflight) {
   return {
     status: preflight.ok ? "passed" : "blocked",
-    checks: preflight.checks.map(({ name, status }) => ({ name, status })),
+    checks: preflight.checks.map(({ name, status, failure }) => ({
+      name,
+      status,
+      ...(failure === undefined ? {} : { failure }),
+    })),
     allowedTransactionHash: preflight.facts?.allowed.transactionHash ?? null,
     deniedTransactionHash: preflight.facts?.denied.transactionHash ?? null,
   };

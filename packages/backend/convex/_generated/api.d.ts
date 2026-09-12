@@ -32,14 +32,35 @@ import type * as billing_reconciliation from "../billing/reconciliation.js";
 import type * as billing_scorecard from "../billing/scorecard.js";
 import type * as billing_shadow from "../billing/shadow.js";
 import type * as billing_topups from "../billing/topups.js";
+import type * as contractEventPolling from "../contractEventPolling.js";
 import type * as contract_events_helpers from "../contract_events/helpers.js";
 import type * as contract_events_mutation from "../contract_events/mutation.js";
 import type * as contract_events_query from "../contract_events/query.js";
 import type * as contract_events_types from "../contract_events/types.js";
-import type * as contractEventPolling from "../contractEventPolling.js";
 import type * as crons from "../crons.js";
 import type * as feedback_mutation from "../feedback/mutation.js";
 import type * as feedback_query from "../feedback/query.js";
+import type * as gas_accounting from "../gas/accounting.js";
+import type * as gas_admission from "../gas/admission.js";
+import type * as gas_authorization from "../gas/authorization.js";
+import type * as gas_envelope from "../gas/envelope.js";
+import type * as gas_execution from "../gas/execution.js";
+import type * as gas_execution_action from "../gas/execution_action.js";
+import type * as gas_mutations from "../gas/mutations.js";
+import type * as gas_operator from "../gas/operator.js";
+import type * as gas_policy from "../gas/policy.js";
+import type * as gas_projections from "../gas/projections.js";
+import type * as gas_public_api from "../gas/public_api.js";
+import type * as gas_public_api_internal from "../gas/public_api_internal.js";
+import type * as gas_queries from "../gas/queries.js";
+import type * as gas_reconciliation from "../gas/reconciliation.js";
+import type * as gas_reconciliation_action from "../gas/reconciliation_action.js";
+import type * as gas_relayer from "../gas/relayer.js";
+import type * as gas_retention from "../gas/retention.js";
+import type * as gas_settlement from "../gas/settlement.js";
+import type * as gas_submit from "../gas/submit.js";
+import type * as gas_types from "../gas/types.js";
+import type * as gas_validation from "../gas/validation.js";
 import type * as http from "../http.js";
 import type * as journey_stages_mutations from "../journey_stages/mutations.js";
 import type * as migrations from "../migrations.js";
@@ -97,6 +118,7 @@ import type * as telemetry_outbox_gauges from "../telemetry_outbox/gauges.js";
 import type * as telemetry_outbox_helpers from "../telemetry_outbox/helpers.js";
 import type * as telemetry_outbox_mutations from "../telemetry_outbox/mutations.js";
 import type * as telemetry_outbox_redactionMigration from "../telemetry_outbox/redactionMigration.js";
+import type * as tests_gas_fixtures from "../tests/gas/fixtures.js";
 import type * as transactions_action from "../transactions/action.js";
 import type * as transactions_helpers from "../transactions/helpers.js";
 import type * as transactions_mutation from "../transactions/mutation.js";
@@ -108,6 +130,7 @@ import type * as wallet_configs_helpers from "../wallet_configs/helpers.js";
 import type * as wallet_configs_mutation from "../wallet_configs/mutation.js";
 import type * as wallet_configs_query from "../wallet_configs/query.js";
 import type * as wallet_configs_validators from "../wallet_configs/validators.js";
+import type * as webhookDelivery from "../webhookDelivery.js";
 import type * as webhook_deliveries_constants from "../webhook_deliveries/constants.js";
 import type * as webhook_deliveries_helpers from "../webhook_deliveries/helpers.js";
 import type * as webhook_deliveries_mutation from "../webhook_deliveries/mutation.js";
@@ -117,8 +140,12 @@ import type * as webhook_endpoints_helpers from "../webhook_endpoints/helpers.js
 import type * as webhook_endpoints_mutation from "../webhook_endpoints/mutation.js";
 import type * as webhook_endpoints_query from "../webhook_endpoints/query.js";
 import type * as webhook_endpoints_types from "../webhook_endpoints/types.js";
-import type * as webhookDelivery from "../webhookDelivery.js";
-import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
+
+import type {
+  ApiFromModules,
+  FilterApi,
+  FunctionReference,
+} from "convex/server";
 
 declare const fullApi: ApiFromModules<{
   authConfig: typeof authConfig;
@@ -153,6 +180,27 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   "feedback/mutation": typeof feedback_mutation;
   "feedback/query": typeof feedback_query;
+  "gas/accounting": typeof gas_accounting;
+  "gas/admission": typeof gas_admission;
+  "gas/authorization": typeof gas_authorization;
+  "gas/envelope": typeof gas_envelope;
+  "gas/execution": typeof gas_execution;
+  "gas/execution_action": typeof gas_execution_action;
+  "gas/mutations": typeof gas_mutations;
+  "gas/operator": typeof gas_operator;
+  "gas/policy": typeof gas_policy;
+  "gas/projections": typeof gas_projections;
+  "gas/public_api": typeof gas_public_api;
+  "gas/public_api_internal": typeof gas_public_api_internal;
+  "gas/queries": typeof gas_queries;
+  "gas/reconciliation": typeof gas_reconciliation;
+  "gas/reconciliation_action": typeof gas_reconciliation_action;
+  "gas/relayer": typeof gas_relayer;
+  "gas/retention": typeof gas_retention;
+  "gas/settlement": typeof gas_settlement;
+  "gas/submit": typeof gas_submit;
+  "gas/types": typeof gas_types;
+  "gas/validation": typeof gas_validation;
   http: typeof http;
   "journey_stages/mutations": typeof journey_stages_mutations;
   migrations: typeof migrations;
@@ -210,6 +258,7 @@ declare const fullApi: ApiFromModules<{
   "telemetry_outbox/helpers": typeof telemetry_outbox_helpers;
   "telemetry_outbox/mutations": typeof telemetry_outbox_mutations;
   "telemetry_outbox/redactionMigration": typeof telemetry_outbox_redactionMigration;
+  "tests/gas/fixtures": typeof tests_gas_fixtures;
   "transactions/action": typeof transactions_action;
   "transactions/helpers": typeof transactions_helpers;
   "transactions/mutation": typeof transactions_mutation;
@@ -241,7 +290,10 @@ declare const fullApi: ApiFromModules<{
  * const myFunctionReference = api.myModule.myFunction;
  * ```
  */
-export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "public">>;
+export declare const api: FilterApi<
+  typeof fullApi,
+  FunctionReference<any, "public">
+>;
 
 /**
  * A utility for referencing Convex functions in your app's internal API.
@@ -251,7 +303,10 @@ export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "publ
  * const myFunctionReference = internal.myModule.myFunction;
  * ```
  */
-export declare const internal: FilterApi<typeof fullApi, FunctionReference<any, "internal">>;
+export declare const internal: FilterApi<
+  typeof fullApi,
+  FunctionReference<any, "internal">
+>;
 
 export declare const components: {
   migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;

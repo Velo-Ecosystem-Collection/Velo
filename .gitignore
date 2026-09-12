@@ -40,6 +40,9 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+.codex/
+.claude/
+.agents/
 docs/prds/prd-velo-pdax/\[PDAX Institutional API – APAC Stellar Hackathon Integration Playbook.md
 docs/prds/prd-velo-pdax/PDAX API documentation.md
 docs/prds/prd-velo-pdax/pdax-contract-lock.md
@@ -170,3 +173,6 @@ docs/obsidian/.obsidian/*
 !docs/obsidian/.obsidian/app.json
 docs/obsidian/.obsidian/workspace.json
 docs/obsidian/.obsidian/workspace-mobile.json
+
+# Keep the local Obsidian knowledge vault untracked.
+docs/obsidian/

@@ -145,7 +145,13 @@ export const getOperatorSnapshotData = internalQuery({
       if (args.requestId && log.requestId !== args.requestId) {
         throw new Error("Gas evidence request scope mismatch");
       }
-      if (args.transactionHash && log.transactionHash !== args.transactionHash) {
+      const isRedactedRejection =
+        log.decisionCode === "rejected" && log.transactionHash === undefined;
+      if (
+        args.transactionHash &&
+        log.transactionHash !== args.transactionHash &&
+        !isRedactedRejection
+      ) {
         throw new Error("Gas evidence transaction scope mismatch");
       }
       if (args.idempotencyKeyHash && log.idempotencyKeyHash !== args.idempotencyKeyHash) {

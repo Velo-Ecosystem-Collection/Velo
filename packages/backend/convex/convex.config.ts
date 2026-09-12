@@ -15,6 +15,11 @@ const app = defineApp({
     VELO_STELLAR_NETWORK: v.optional(v.union(v.literal("testnet"), v.literal("public"))),
     VELO_GAS_TESTNET_RELAYER_SIGNERS_JSON: v.optional(v.string()),
     VELO_GAS_TESTNET_FALLBACK_RPC_URL: v.optional(v.string()),
+    VELO_GAS_D2_OPERATOR_TOKEN: v.optional(v.string()),
+    VELO_GAS_D2_PROJECT_ID: v.optional(v.string()),
+    VELO_GAS_D2_DEPLOYMENT_NAME: v.optional(v.string()),
+    VELO_GAS_D2_DEPLOYED_SOURCE_COMMIT: v.optional(v.string()),
+    VELO_GAS_D2_HORIZON_URL: v.optional(v.string()),
     VELO_MAINNET_USDC_ISSUER: v.optional(v.string()),
     VELO_DEPLOYMENT_ENVIRONMENT: v.optional(
       v.union(v.literal("development"), v.literal("preview"), v.literal("production")),

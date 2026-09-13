@@ -142,6 +142,11 @@ function makeDependencies({
   },
   network = { passphrase: "Test SDF Network ; September 2015" },
   probeTransaction = async () => ({ ok: true, value: { status: "not_found" } }),
+  deriveFacts = async (xdr) => {
+    if (xdr === CONFIG.allowedXdr) return FACTS.allowed;
+    if (xdr === CONFIG.deniedXdr) return FACTS.denied;
+    throw new Error("fixture parse failure");
+  },
 } = {}) {
   return {
     fetchImpl,
@@ -151,11 +156,7 @@ function makeDependencies({
       head: "e".repeat(40),
       workingTree: { status: "modified", changedPathCount: 1 },
     }),
-    deriveFacts: async (xdr) => {
-      if (xdr === CONFIG.allowedXdr) return FACTS.allowed;
-      if (xdr === CONFIG.deniedXdr) return FACTS.denied;
-      throw new Error("fixture parse failure");
-    },
+    deriveFacts,
     readSnapshot: async (config, scope) => ({ ok: true, value: snapshot(config, scope) }),
     readProvenance: async () => ({ ok: true, value: provenance }),
     probeNetwork: async () => ({ ok: true, value: network }),
@@ -285,6 +286,31 @@ test("blocks a previously submitted invocation during preflight", async () => {
       name: "allowed_transaction_fresh",
       status: "blocked",
       failure: "allowed_transaction_already_submitted",
+    },
+  );
+});
+
+test("blocks an expired invocation before sponsorship", async () => {
+  const preflight = await runPreflight({
+    config: CONFIG,
+    dependencies: makeDependencies({
+      deriveFacts: async (xdr) => {
+        const facts = xdr === CONFIG.allowedXdr ? FACTS.allowed : FACTS.denied;
+        return {
+          ...facts,
+          ...(xdr === CONFIG.deniedXdr ? { innerMaxTime: 1_757_320_799 } : {}),
+        };
+      },
+    }),
+  });
+
+  assert.equal(preflight.ok, false);
+  assert.deepEqual(
+    preflight.checks.find((check) => check.name === "denied_transaction_fresh"),
+    {
+      name: "denied_transaction_fresh",
+      status: "blocked",
+      failure: "denied_invocation_expired",
     },
   );
 });

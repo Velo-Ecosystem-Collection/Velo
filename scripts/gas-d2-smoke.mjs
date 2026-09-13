@@ -340,7 +340,7 @@ export async function runPreflight({ config, dependencies = createSmokeDependenc
     checks,
     "allowed_transaction_fresh",
     facts.allowed.ok &&
-      !isExpiredInvocation(facts.allowed.value, dependencies.now) &&
+      !isExpiredInvocation(facts.allowed, dependencies.now) &&
       transactionProbes?.allowed.ok === true &&
       transactionProbes.allowed.value.status === "not_found",
     freshnessFailureCode(
@@ -356,7 +356,7 @@ export async function runPreflight({ config, dependencies = createSmokeDependenc
     checks,
     "denied_transaction_fresh",
     facts.denied.ok &&
-      !isExpiredInvocation(facts.denied.value, dependencies.now) &&
+      !isExpiredInvocation(facts.denied, dependencies.now) &&
       transactionProbes?.denied.ok === true &&
       transactionProbes.denied.value.status === "not_found",
     freshnessFailureCode(

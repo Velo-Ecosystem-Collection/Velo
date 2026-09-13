@@ -167,3 +167,59 @@ test("operator snapshot data is scoped and contains no custody material", async 
   });
   expect(JSON.stringify(snapshot)).not.toContain("secretKey");
 });
+
+test("operator snapshot scopes a rejected decision by its transaction hash", async () => {
+  const t = convexTest(schema, modules);
+  const projectId = await createProject(t);
+
+  await t.run(async (ctx) => {
+    await ctx.db.insert("gasPolicies", {
+      projectId,
+      enabled: true,
+      network: GAS_NETWORK,
+      dailyCapStroops: 100_000n,
+      dailyReservedStroops: 0n,
+      dailyWindowKey: "2026-09-12",
+      outstandingHoldsStroops: 0n,
+      dailyConfirmedSpendStroops: 0n,
+      accountingState: "initialized",
+      walletHourlyLimit: 10,
+      allowedContractIds: [CONTRACT],
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert("gasLogs", {
+      projectId,
+      requestId: REQUEST_ID,
+      idempotencyKeyHash: IDEMPOTENCY_HASH,
+      requestFingerprint: "f".repeat(64),
+      sourceWallet: OWNER,
+      targetContractIds: [CONTRACT],
+      innerMaxFeeStroops: 100n,
+      decisionCode: "rejected",
+      rejectionCode: "contract_not_whitelisted",
+      lifecycle: "rejected",
+      retentionExpiresAt: NOW + 86_400_000,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+  });
+
+  const snapshot = await t.query(internal.gas.operator.getOperatorSnapshotData, {
+    projectId,
+    phase: "after-denial",
+    transactionHash: INNER_HASH,
+    idempotencyKeyHash: IDEMPOTENCY_HASH,
+  });
+
+  expect(snapshot).toMatchObject({
+    phase: "after-denial",
+    execution: null,
+    decision: {
+      decisionCode: "rejected",
+      rejectionCode: "contract_not_whitelisted",
+      reservedExposureStroops: "0",
+    },
+    reservedExposureStroops: "0",
+  });
+});

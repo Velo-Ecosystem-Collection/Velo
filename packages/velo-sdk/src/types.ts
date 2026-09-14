@@ -81,6 +81,38 @@ export type GasSponsorReservation = {
   expiresAt: string;
 };
 
+export type GasExecutionStatus =
+  | "claimed"
+  | "submission_unknown"
+  | "submitted"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+export type GasExecutionIdentity = {
+  requestId: string;
+  /** Inner transaction hash returned by the Gas sponsorship response. */
+  transactionHash: string;
+};
+
+export type GasSubmitParams = GasExecutionIdentity & {
+  /** The original user-signed XDR, supplied transiently for the handoff only. */
+  transactionXdr: string;
+};
+
+export type GasSubmitResult = {
+  object: "gas_submit_result";
+  requestId: string;
+  /** Inner transaction hash; the outer FeeBump hash is separate. */
+  transactionHash: string;
+  outerTransactionHash: string | null;
+  status: GasExecutionStatus;
+  reservedStroops: string;
+  actualFeeStroops: string | null;
+  expiresAt: string;
+  reconciliationRequired: boolean;
+};
+
 export type ListPaymentIntentsQuery = {
   status?: PaymentIntentStatus;
   limit?: number;

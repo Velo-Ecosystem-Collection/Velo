@@ -1,13 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { GasSponsorOptions, GasSponsorReservation } from "./index.ts";
+import type {
+  GasExecutionIdentity,
+  GasExecutionStatus,
+  GasSponsorOptions,
+  GasSponsorReservation,
+  GasSubmitParams,
+  GasSubmitResult,
+  RequestOptions,
+} from "./index.ts";
 
 import {
   Velo,
   VeloAPIError,
   VeloProviderError,
   VeloRateLimitError,
+  VeloSubmissionUnknownError,
   VeloTimeoutError,
   VeloValidationError,
 } from "./index.ts";
@@ -16,6 +25,7 @@ const BASE_URL = "https://api.example.com";
 const SOURCE_WALLET = `G${"A".repeat(55)}`;
 const CONTRACT_ID = `C${"A".repeat(55)}`;
 const TRANSACTION_HASH = "a".repeat(64);
+const OUTER_TRANSACTION_HASH = "b".repeat(64);
 const TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
 
 function validReservation(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -43,6 +53,21 @@ function jsonResponse(payload: unknown, status = 200, headers?: HeadersInit): Re
 
 function defaultOptions(): GasSponsorOptions {
   return { idempotencyKey: "gas-operation-0001" };
+}
+
+function validSubmitResult(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    object: "gas_submit_result",
+    requestId: "gas-request-0001",
+    transactionHash: TRANSACTION_HASH,
+    outerTransactionHash: OUTER_TRANSACTION_HASH,
+    status: "submitted",
+    reservedStroops: "9223372036854775807",
+    actualFeeStroops: "73813",
+    expiresAt: "2026-09-14T00:00:00.000Z",
+    reconciliationRequired: true,
+    ...overrides,
+  };
 }
 
 test("gas.sponsor sends the exact server request and projects the reservation", async () => {
@@ -314,6 +339,362 @@ test("gas.sponsor uses existing cancellation and deadline transport behavior", a
   }
 });
 
+test("gas.submit sends the bounded handoff with normalized identity and headers", async () => {
+  const originalFetch = globalThis.fetch;
+  let calledUrl = "";
+  let calledOptions: RequestInit | undefined;
+
+  globalThis.fetch = async (url, options) => {
+    calledUrl = url.toString();
+    calledOptions = options;
+    return jsonResponse({ ...validSubmitResult(), ignored: "not returned" }, 202);
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL, maxRetries: 7 });
+    const params = {
+      requestId: "  gas-request-0001  ",
+      transactionHash: TRANSACTION_HASH.toUpperCase(),
+      transactionXdr: "  signed-xdr  ",
+      ignored: "do-not-send",
+    } as GasSubmitParams & { ignored: string };
+    const result = await velo.gas.submit(params, {
+      idempotencyKey: "  optional-submit-key  ",
+      correlationId: "gas-correlation-0001",
+      traceparent: TRACEPARENT,
+      maxRetries: 99,
+      submission: false,
+    });
+
+    assert.deepEqual(result, validSubmitResult());
+    assert.equal(calledUrl, `${BASE_URL}/api/gas/submit`);
+    assert.equal(calledOptions?.method, "POST");
+    assert.equal(
+      calledOptions?.body,
+      JSON.stringify({
+        requestId: "gas-request-0001",
+        transactionHash: TRANSACTION_HASH,
+        transactionXdr: "signed-xdr",
+      }),
+    );
+
+    const headers = new Headers(calledOptions?.headers);
+    assert.equal(headers.get("authorization"), "Bearer test-key");
+    assert.equal(headers.get("content-type"), "application/json");
+    assert.equal(headers.get("idempotency-key"), "optional-submit-key");
+    assert.equal(headers.get("x-correlation-id"), "gas-correlation-0001");
+    assert.equal(headers.get("traceparent"), TRACEPARENT);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.getStatus posts only the safe replay identity", async () => {
+  const originalFetch = globalThis.fetch;
+  let calledUrl = "";
+  let calledOptions: RequestInit | undefined;
+
+  globalThis.fetch = async (url, options) => {
+    calledUrl = url.toString();
+    calledOptions = options;
+    return jsonResponse(
+      validSubmitResult({
+        status: "failed",
+        outerTransactionHash: null,
+        actualFeeStroops: null,
+        reconciliationRequired: false,
+      }),
+      200,
+    );
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const identity = {
+      requestId: " gas-request-0001 ",
+      transactionHash: TRANSACTION_HASH.toUpperCase(),
+      transactionXdr: "signed-xdr-secret",
+      outerTransactionHash: OUTER_TRANSACTION_HASH,
+    } as GasExecutionIdentity & Record<string, string>;
+    const result = await velo.gas.getStatus(identity, {
+      maxRetries: 99,
+      submission: true,
+    });
+
+    assert.equal(result.status, "failed");
+    assert.equal(result.outerTransactionHash, null);
+    assert.equal(result.actualFeeStroops, null);
+    assert.equal(calledUrl, `${BASE_URL}/api/gas/submit`);
+    assert.deepEqual(JSON.parse(calledOptions?.body as string), {
+      requestId: "gas-request-0001",
+      transactionHash: TRANSACTION_HASH,
+    });
+    const statusBody = calledOptions?.body;
+    assert.equal(typeof statusBody, "string");
+    if (typeof statusBody !== "string") throw new Error("Expected a serialized status body.");
+    assert.equal(statusBody.includes("signed-xdr-secret"), false);
+    assert.equal(new Headers(calledOptions?.headers).get("idempotency-key"), null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas submission preserves all running and terminal statuses", async () => {
+  const originalFetch = globalThis.fetch;
+  const statuses: GasExecutionStatus[] = [
+    "claimed",
+    "submission_unknown",
+    "submitted",
+    "succeeded",
+    "failed",
+    "cancelled",
+  ];
+  let calls = 0;
+
+  globalThis.fetch = async () => {
+    const status = statuses[calls++];
+    const terminal = status === "succeeded" || status === "failed" || status === "cancelled";
+    return jsonResponse(validSubmitResult({ status }), terminal ? 200 : 202);
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    for (const status of statuses) {
+      const result = await velo.gas.getStatus({
+        requestId: "gas-request-0001",
+        transactionHash: TRANSACTION_HASH,
+      });
+      assert.equal(result.status, status);
+    }
+    assert.equal(calls, statuses.length);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.submit validates identity, UTF-8 limits, and the request body before fetch", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return jsonResponse(validSubmitResult());
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const invalidInputs: Array<() => Promise<unknown>> = [
+      () => velo.gas.submit(null as unknown as GasSubmitParams),
+      () =>
+        velo.gas.submit({
+          requestId: "short",
+          transactionHash: TRANSACTION_HASH,
+          transactionXdr: "x",
+        }),
+      () =>
+        velo.gas.submit({
+          requestId: "gas-request-0001",
+          transactionHash: "z".repeat(64),
+          transactionXdr: "x",
+        }),
+      () =>
+        velo.gas.submit({
+          requestId: "gas-request-0001",
+          transactionHash: TRANSACTION_HASH,
+          transactionXdr: "x".repeat(64 * 1_024 + 1),
+        }),
+      () =>
+        velo.gas.submit({
+          requestId: "r".repeat(129),
+          transactionHash: TRANSACTION_HASH,
+          transactionXdr: "x",
+        }),
+      () =>
+        velo.gas.submit(
+          {
+            requestId: "gas-request-0001",
+            transactionHash: TRANSACTION_HASH,
+            transactionXdr: "x",
+          },
+          null as unknown as RequestOptions,
+        ),
+    ];
+
+    for (const invalidInput of invalidInputs) {
+      await assert.rejects(invalidInput, (error: unknown) => {
+        assert.equal(error instanceof VeloValidationError, true);
+        assert.equal((error as Error).message.includes("signed-xdr-secret"), false);
+        return true;
+      });
+    }
+
+    const emptyXdrBodyBytes = new TextEncoder().encode(
+      JSON.stringify({
+        requestId: "gas-request-0001",
+        transactionHash: TRANSACTION_HASH,
+        transactionXdr: "",
+      }),
+    ).byteLength;
+    const remainingXdrBytes = 64 * 1_024 - emptyXdrBodyBytes;
+    const exactBodyXdr = "x".repeat(remainingXdrBytes);
+    await velo.gas.submit({
+      requestId: "gas-request-0001",
+      transactionHash: TRANSACTION_HASH,
+      transactionXdr: exactBodyXdr,
+    });
+    assert.equal(calls, 1);
+
+    await assert.rejects(
+      () =>
+        velo.gas.submit({
+          requestId: "gas-request-0001",
+          transactionHash: TRANSACTION_HASH,
+          transactionXdr: `${"x".repeat(remainingXdrBytes - 1)}é`,
+        }),
+      (error: unknown) => error instanceof VeloValidationError,
+    );
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas submission rejects malformed or mismatched responses without redaction leaks", async () => {
+  const originalFetch = globalThis.fetch;
+  const malformedPayloads: unknown[] = [
+    "{not-json",
+    { ...validSubmitResult(), object: "wrong" },
+    { ...validSubmitResult(), requestId: "gas-request-0002" },
+    { ...validSubmitResult(), transactionHash: OUTER_TRANSACTION_HASH },
+    { ...validSubmitResult(), outerTransactionHash: "A".repeat(64) },
+    { ...validSubmitResult(), status: "unknown" },
+    { ...validSubmitResult(), reservedStroops: "01" },
+    { ...validSubmitResult(), reservedStroops: "9223372036854775808" },
+    { ...validSubmitResult(), actualFeeStroops: "-1" },
+    { ...validSubmitResult(), expiresAt: "2026-09-14T00:00:00Z" },
+    { ...validSubmitResult(), reconciliationRequired: "true" },
+  ];
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    for (const payload of malformedPayloads) {
+      globalThis.fetch = async () =>
+        jsonResponse({ ...((payload as Record<string, unknown>) ?? {}), rawXdr: "xdr-secret" });
+      await assert.rejects(
+        () =>
+          velo.gas.getStatus({
+            requestId: "gas-request-0001",
+            transactionHash: TRANSACTION_HASH,
+          }),
+        (error: unknown) => {
+          assert.equal(error instanceof VeloAPIError, true);
+          assert.equal((error as VeloAPIError).code, "invalid_response");
+          assert.equal((error as Error).message.includes("xdr-secret"), false);
+          assert.equal((error as Error).message.includes("rawXdr"), false);
+          return true;
+        },
+      );
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas submit and status force one attempt while preserving transport semantics", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL, maxRetries: 9 });
+    globalThis.fetch = async () => {
+      calls++;
+      return jsonResponse(
+        { error: { type: "provider_error", code: "dependency_unavailable", message: "Retry" } },
+        503,
+      );
+    };
+    await assert.rejects(
+      () =>
+        velo.gas.submit(
+          {
+            requestId: "gas-request-0001",
+            transactionHash: TRANSACTION_HASH,
+            transactionXdr: "signed-xdr",
+          },
+          { maxRetries: 99 },
+        ),
+      (error: unknown) => error instanceof VeloProviderError,
+    );
+    assert.equal(calls, 1);
+
+    globalThis.fetch = async () => {
+      calls++;
+      throw new TypeError("fetch failed");
+    };
+    await assert.rejects(
+      () =>
+        velo.gas.getStatus(
+          { requestId: "gas-request-0001", transactionHash: TRANSACTION_HASH },
+          { maxRetries: 99 },
+        ),
+      (error: unknown) => error instanceof TypeError,
+    );
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas submit timeout is unknown, status timeout is bounded, and cancellation is caller-owned", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  const identity: GasExecutionIdentity = {
+    requestId: "gas-request-0001",
+    transactionHash: TRANSACTION_HASH,
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const controller = new AbortController();
+    const callerReason = new DOMException("caller stopped waiting", "AbortError");
+    controller.abort(callerReason);
+    globalThis.fetch = async () => {
+      calls++;
+      return jsonResponse(validSubmitResult());
+    };
+    await assert.rejects(
+      () =>
+        velo.gas.submit(
+          { ...identity, transactionXdr: "signed-xdr" },
+          { signal: controller.signal },
+        ),
+      (error: unknown) => error === callerReason,
+    );
+    assert.equal(calls, 0);
+
+    globalThis.fetch = async (_url, options) => {
+      calls++;
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("The operation was aborted.", "AbortError")),
+          { once: true },
+        );
+      });
+    };
+    await assert.rejects(
+      () => velo.gas.submit({ ...identity, transactionXdr: "signed-xdr" }, { timeoutMs: 20 }),
+      (error: unknown) => error instanceof VeloSubmissionUnknownError,
+    );
+    await assert.rejects(
+      () => velo.gas.getStatus(identity, { timeoutMs: 20 }),
+      (error: unknown) => error instanceof VeloTimeoutError,
+    );
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("public entry-point types expose gas.sponsor with required idempotency", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => jsonResponse(validReservation());
@@ -324,6 +705,29 @@ test("public entry-point types expose gas.sponsor with required idempotency", as
     const sponsor: Velo["gas"]["sponsor"] = velo.gas.sponsor;
     const reservation: GasSponsorReservation = await sponsor("signed-xdr", options);
     assert.equal(reservation.object, "gas_sponsor_reservation");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("public entry-point types expose Gas submission and status methods", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => jsonResponse(validSubmitResult());
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const identity: GasExecutionIdentity = {
+      requestId: "gas-request-0001",
+      transactionHash: TRANSACTION_HASH,
+    };
+    const params: GasSubmitParams = { ...identity, transactionXdr: "signed-xdr" };
+    const status: GasExecutionStatus = "submitted";
+    const submit: Velo["gas"]["submit"] = velo.gas.submit;
+    const getStatus: Velo["gas"]["getStatus"] = velo.gas.getStatus;
+    const submitted: GasSubmitResult = await submit(params);
+    const current: GasSubmitResult = await getStatus(identity);
+    assert.equal(submitted.status, status);
+    assert.equal(current.requestId, identity.requestId);
   } finally {
     globalThis.fetch = originalFetch;
   }

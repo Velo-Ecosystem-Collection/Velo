@@ -82,7 +82,63 @@ transaction or confirm ledger execution. If a request times out after the
 server may have received it, retry with the same idempotency key and exact
 signed XDR to recover the original reservation. Do not create or sign a new
 operation automatically. Submission, status retrieval, and composed
-`sponsorAndSubmit()` workflows are later D3 sub-sprints.
+`sponsorAndSubmit()` workflows are separate unreleased source additions; the
+published `0.1.0-alpha.2` package does not include them.
+
+### Submitting a sponsored transaction (unreleased source addition)
+
+The current source checkout also exposes `velo.gas.submit()` for the trusted
+server handoff. Keep the request ID and inner transaction hash from the
+reservation before sending the original user-signed Testnet XDR:
+
+```ts
+const identity = {
+  requestId: reservation.requestId,
+  transactionHash: reservation.transactionHash, // inner transaction hash
+};
+
+const result = await velo.gas.submit(
+  {
+    ...identity,
+    transactionXdr: signedTransactionXdr,
+  },
+  { correlationId: "checkout-operation-1001" },
+);
+
+if (result.status === "succeeded") {
+  console.log(result.outerTransactionHash, result.actualFeeStroops);
+} else {
+  console.log(`Gas execution is ${result.status}`);
+}
+```
+
+The SDK sends the XDR only during this handoff and never retries it
+automatically. A running result (`claimed`, `submission_unknown`, or
+`submitted`) is not a successful transaction; `failed` and `cancelled` are
+terminal non-success results even when the HTTP response is `200`.
+
+### Manually recovering Gas status (unreleased source addition)
+
+After a local timeout, disconnect, or cancellation, do not infer chain
+cancellation and do not submit the XDR again. Recover with the identity saved
+before handoff:
+
+```ts
+const status = await velo.gas.getStatus(identity);
+
+console.log({
+  status: status.status,
+  innerHash: status.transactionHash,
+  outerHash: status.outerTransactionHash,
+  actualFeeStroops: status.actualFeeStroops, // null means unknown
+});
+```
+
+`getStatus()` posts only `{ requestId, transactionHash }`, preserves the
+inner/outer hash distinction, and returns the same six execution states. Keep
+the identity as a safe recovery record; never persist the signed XDR, API key,
+or relayer credentials in browser storage or logs. Bounded polling and
+`sponsorAndSubmit()` composition are planned for later D3 sub-sprints.
 
 ### Dual-Anchor Routing (V2)
 

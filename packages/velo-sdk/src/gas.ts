@@ -1,4 +1,12 @@
-import type { GasSponsorOptions, GasSponsorReservation, RequestOptions } from "./types.ts";
+import type {
+  GasExecutionIdentity,
+  GasExecutionStatus,
+  GasSponsorOptions,
+  GasSponsorReservation,
+  GasSubmitParams,
+  GasSubmitResult,
+  RequestOptions,
+} from "./types.ts";
 
 import { VeloAPIError, VeloValidationError } from "./errors.ts";
 import { HttpClient } from "./http.ts";
@@ -10,6 +18,7 @@ const MAX_SIGNED_INT64 = 2n ** 63n - 1n;
 
 const CANONICAL_STROOP = /^(?:0|[1-9][0-9]*)$/;
 const TRANSACTION_HASH = /^[0-9a-f]{64}$/;
+const TRANSACTION_HASH_INPUT = /^[0-9a-f]{64}$/i;
 const PUBLIC_ADDRESS_SHAPE = /^[GC][A-Z2-7]{55}$/;
 const CORRELATION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{7,127}$/;
 const API_KEY_SHAPE = /^tk_(?:live|test)_[a-f0-9]{32}$/i;
@@ -21,6 +30,8 @@ const textEncoder = new TextEncoder();
 
 export type GasApi = {
   sponsor(transactionXdr: string, options: GasSponsorOptions): Promise<GasSponsorReservation>;
+  submit(params: GasSubmitParams, options?: RequestOptions): Promise<GasSubmitResult>;
+  getStatus(identity: GasExecutionIdentity, options?: RequestOptions): Promise<GasSubmitResult>;
 };
 
 export function createGasApi(http: HttpClient): GasApi {
@@ -46,6 +57,44 @@ export function createGasApi(http: HttpClient): GasApi {
 
       return parseGasSponsorReservation(payload);
     },
+    submit: async (params: GasSubmitParams, options?: RequestOptions): Promise<GasSubmitResult> => {
+      const normalizedParams = normalizeGasSubmitParams(params);
+      const normalizedOptions = normalizeRequestOptions(options);
+      const payload = await http.request<unknown>(
+        "POST",
+        "/api/gas/submit",
+        normalizedParams.body,
+        {
+          ...normalizedOptions,
+          maxRetries: 0,
+          submission: true,
+        },
+      );
+
+      return parseGasSubmitResult(payload, normalizedParams.identity);
+    },
+    getStatus: async (
+      identity: GasExecutionIdentity,
+      options?: RequestOptions,
+    ): Promise<GasSubmitResult> => {
+      const normalizedIdentity = normalizeGasExecutionIdentity(identity);
+      const normalizedOptions = normalizeRequestOptions(options);
+      const payload = await http.request<unknown>(
+        "POST",
+        "/api/gas/submit",
+        {
+          requestId: normalizedIdentity.requestId,
+          transactionHash: normalizedIdentity.transactionHash,
+        },
+        {
+          ...normalizedOptions,
+          maxRetries: 0,
+          submission: false,
+        },
+      );
+
+      return parseGasSubmitResult(payload, normalizedIdentity);
+    },
   };
 }
 
@@ -54,22 +103,97 @@ function normalizeSponsorOptions(options: GasSponsorOptions): RequestOptions {
     throw validationError("Gas sponsorship options are required.", "options");
   }
 
-  const idempotencyKey = validateHeaderValue(options.idempotencyKey, "idempotencyKey");
-  if (textEncoder.encode(idempotencyKey).byteLength > MAX_IDEMPOTENCY_KEY_BYTES) {
+  return normalizeRequestOptions(options, true);
+}
+
+function normalizeRequestOptions(
+  options: RequestOptions | undefined,
+  requireIdempotencyKey = false,
+): RequestOptions {
+  if (options !== undefined && !isRecord(options)) {
+    throw validationError("Gas request options must be an object.", "options");
+  }
+
+  const source = options ?? {};
+  const idempotencyKey =
+    source.idempotencyKey === undefined
+      ? undefined
+      : validateHeaderValue(source.idempotencyKey, "idempotencyKey");
+  if (requireIdempotencyKey && idempotencyKey === undefined) {
+    throw validationError("idempotencyKey is required.", "idempotencyKey");
+  }
+  if (
+    idempotencyKey !== undefined &&
+    textEncoder.encode(idempotencyKey).byteLength > MAX_IDEMPOTENCY_KEY_BYTES
+  ) {
     throw validationError("idempotencyKey is too large.", "idempotencyKey");
   }
 
   const correlationId =
-    options.correlationId === undefined ? undefined : validateCorrelationId(options.correlationId);
+    source.correlationId === undefined ? undefined : validateCorrelationId(source.correlationId);
   const traceparent =
-    options.traceparent === undefined ? undefined : validateTraceparent(options.traceparent);
+    source.traceparent === undefined ? undefined : validateTraceparent(source.traceparent);
 
   return {
-    ...options,
-    idempotencyKey,
+    ...source,
+    ...(idempotencyKey === undefined ? {} : { idempotencyKey }),
     ...(correlationId === undefined ? {} : { correlationId }),
     ...(traceparent === undefined ? {} : { traceparent }),
   };
+}
+
+function normalizeGasSubmitParams(params: GasSubmitParams): {
+  identity: GasExecutionIdentity;
+  body: { requestId: string; transactionHash: string; transactionXdr: string };
+} {
+  if (!isRecord(params)) {
+    throw validationError("Gas submission parameters are required.", "params");
+  }
+
+  const identity = normalizeGasExecutionIdentity(params);
+  const transactionXdr = validateTransactionXdr(params.transactionXdr);
+  const body = {
+    requestId: identity.requestId,
+    transactionHash: identity.transactionHash,
+    transactionXdr,
+  };
+
+  if (textEncoder.encode(JSON.stringify(body)).byteLength > MAX_BODY_BYTES) {
+    throw validationError("Gas submission request body is too large.", "transactionXdr");
+  }
+
+  return { identity, body };
+}
+
+function normalizeGasExecutionIdentity(value: GasExecutionIdentity): GasExecutionIdentity {
+  if (!isRecord(value)) {
+    throw validationError("Gas execution identity is required.", "identity");
+  }
+
+  return {
+    requestId: validateRequestId(value.requestId, "requestId"),
+    transactionHash: validateTransactionHash(value.transactionHash, "transactionHash"),
+  };
+}
+
+function validateRequestId(value: unknown, parameter: string): string {
+  const normalized = validateHeaderValue(value, parameter);
+  if (!isSafeRequestId(normalized)) {
+    throw validationError(`${parameter} is not a valid Gas request ID.`, parameter);
+  }
+  return normalized;
+}
+
+function validateTransactionHash(value: unknown, parameter: string): string {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw validationError(`${parameter} is required and must be a non-empty string.`, parameter);
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (!TRANSACTION_HASH_INPUT.test(normalized)) {
+    throw validationError(`${parameter} must be a 32-byte hexadecimal hash.`, parameter);
+  }
+  return normalized;
 }
 
 function validateTransactionXdr(transactionXdr: string): string {
@@ -168,6 +292,55 @@ function parseGasSponsorReservation(value: unknown): GasSponsorReservation {
   };
 }
 
+function parseGasSubmitResult(value: unknown, identity: GasExecutionIdentity): GasSubmitResult {
+  if (
+    !isRecord(value) ||
+    value.object !== "gas_submit_result" ||
+    typeof value.requestId !== "string" ||
+    !isSafeRequestId(value.requestId) ||
+    value.requestId !== identity.requestId ||
+    typeof value.transactionHash !== "string" ||
+    !TRANSACTION_HASH.test(value.transactionHash) ||
+    value.transactionHash !== identity.transactionHash ||
+    (value.outerTransactionHash !== null &&
+      (typeof value.outerTransactionHash !== "string" ||
+        !TRANSACTION_HASH.test(value.outerTransactionHash))) ||
+    !isGasExecutionStatus(value.status) ||
+    typeof value.reservedStroops !== "string" ||
+    !isCanonicalStroop(value.reservedStroops) ||
+    (value.actualFeeStroops !== null &&
+      (typeof value.actualFeeStroops !== "string" || !isCanonicalStroop(value.actualFeeStroops))) ||
+    typeof value.expiresAt !== "string" ||
+    !isCanonicalIsoTimestamp(value.expiresAt) ||
+    typeof value.reconciliationRequired !== "boolean"
+  ) {
+    throw invalidSubmitResponseError();
+  }
+
+  return {
+    object: "gas_submit_result",
+    requestId: value.requestId,
+    transactionHash: value.transactionHash,
+    outerTransactionHash: value.outerTransactionHash,
+    status: value.status,
+    reservedStroops: value.reservedStroops,
+    actualFeeStroops: value.actualFeeStroops,
+    expiresAt: value.expiresAt,
+    reconciliationRequired: value.reconciliationRequired,
+  };
+}
+
+function isGasExecutionStatus(value: unknown): value is GasExecutionStatus {
+  return (
+    value === "claimed" ||
+    value === "submission_unknown" ||
+    value === "submitted" ||
+    value === "succeeded" ||
+    value === "failed" ||
+    value === "cancelled"
+  );
+}
+
 function isSingleContractId(value: unknown): value is [string] {
   return (
     Array.isArray(value) &&
@@ -211,4 +384,8 @@ function validationError(message: string, parameter: string): VeloValidationErro
 
 function invalidResponseError(): VeloAPIError {
   return new VeloAPIError("Invalid Gas sponsorship response.", { code: "invalid_response" });
+}
+
+function invalidSubmitResponseError(): VeloAPIError {
+  return new VeloAPIError("Invalid Gas submission response.", { code: "invalid_response" });
 }

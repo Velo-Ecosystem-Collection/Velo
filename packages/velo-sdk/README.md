@@ -51,6 +51,39 @@ const paymentIntent = await velo.paymentIntents.retrieve("pi_12345");
 console.log(`Payment status: ${paymentIntent.status}`);
 ```
 
+### Reserving Gas sponsorship (unreleased source addition)
+
+The current source checkout also exposes `velo.gas.sponsor()` for trusted
+server code. This addition is not in the published `0.1.0-alpha.2` package;
+the package version remains unchanged. Configure the deployed Velo URL
+explicitly and keep the API key, caller authorization, signed XDR, and
+operation key on the server:
+
+```ts
+import { Velo } from "@carts1024/velo-sdk";
+
+const velo = new Velo({
+  apiKey: process.env.VELO_API_KEY!,
+  // Replace the SOW target with the verified deployment URL for your environment.
+  baseUrl: process.env.VELO_BASE_URL ?? "https://www.velo-build.dev",
+});
+
+// Authorize the caller in your own server/session layer before this point.
+// signedTransactionXdr is an existing user-signed Testnet Soroban invocation.
+const reservation = await velo.gas.sponsor(signedTransactionXdr, {
+  idempotencyKey: `checkout:${operationId}`, // caller-held and stable on recovery
+});
+
+console.log(reservation.requestId, reservation.reservedStroops);
+```
+
+Sponsorship reserves the project's fee exposure; it does not submit the
+transaction or confirm ledger execution. If a request times out after the
+server may have received it, retry with the same idempotency key and exact
+signed XDR to recover the original reservation. Do not create or sign a new
+operation automatically. Submission, status retrieval, and composed
+`sponsorAndSubmit()` workflows are later D3 sub-sprints.
+
 ### Dual-Anchor Routing (V2)
 
 Velo SDK (V2) supports routing payments through different anchors: `inhouse` (default) or `pdax`.

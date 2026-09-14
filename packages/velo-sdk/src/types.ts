@@ -64,6 +64,23 @@ export type RequestOptions = {
   submission?: boolean;
 };
 
+export type GasSponsorOptions = Omit<RequestOptions, "idempotencyKey"> & {
+  idempotencyKey: string;
+};
+
+export type GasSponsorReservation = {
+  object: "gas_sponsor_reservation";
+  requestId: string;
+  replayed: boolean;
+  decision: "reserved";
+  transactionHash: string;
+  sourceWallet: string;
+  targetContractIds: string[];
+  innerMaxFeeStroops: string;
+  reservedStroops: string;
+  expiresAt: string;
+};
+
 export type ListPaymentIntentsQuery = {
   status?: PaymentIntentStatus;
   limit?: number;

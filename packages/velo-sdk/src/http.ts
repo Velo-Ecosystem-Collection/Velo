@@ -8,6 +8,7 @@ import {
   VeloSubmissionUnknownError,
   VeloTimeoutError,
 } from "./errors.ts";
+import { abortReason, sleep } from "./sleep.ts";
 
 export function resolveBaseUrl(config: VeloConfig): string {
   if (config.baseUrl) return config.baseUrl;
@@ -74,36 +75,6 @@ function canRetry(method: string, options?: RequestOptions) {
     (method === "PUT" && !!options?.idempotencyKey) ||
     (method === "POST" && !!options?.idempotencyKey && !options.submission)
   );
-}
-
-function abortReason(signal: AbortSignal): unknown {
-  return signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
-}
-
-function wait(ms: number, signal?: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const onAbort = () => {
-      if (!signal) return;
-      cleanup();
-      reject(abortReason(signal));
-    };
-    const cleanup = () => {
-      if (timer !== undefined) clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    };
-
-    if (signal?.aborted) {
-      onAbort();
-      return;
-    }
-
-    signal?.addEventListener("abort", onAbort, { once: true });
-    timer = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
-  });
 }
 
 function gasSubmissionUnknown(
@@ -257,7 +228,7 @@ export class HttpClient {
         }
         if (delay > 0) {
           cleanupAttempt();
-          await wait(delay, options?.signal);
+          await sleep(delay, options?.signal);
         } else if (transportPolicy?.kind !== "sponsor") {
           throw new VeloTimeoutError(`Request timed out after ${timeoutMs}ms`);
         } else {

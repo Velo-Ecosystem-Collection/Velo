@@ -76,6 +76,26 @@ export class VeloGasSubmissionUnknownError extends VeloSubmissionUnknownError {
   }
 }
 
+export type GasWaitReason = "timeout" | "attempts_exhausted" | "cancelled";
+
+const GAS_WAIT_MESSAGES: Record<GasWaitReason, string> = {
+  timeout: "Gas result observation timed out; resume with the recovery identity.",
+  attempts_exhausted:
+    "Gas result observation exhausted its attempts; resume with the recovery identity.",
+  cancelled: "Gas result observation was cancelled; resume with the recovery identity.",
+};
+
+export class VeloGasWaitError extends VeloError {
+  readonly recovery: GasExecutionIdentity;
+  readonly reason: GasWaitReason;
+
+  constructor(recovery: GasExecutionIdentity, reason: GasWaitReason) {
+    super(GAS_WAIT_MESSAGES[reason], { code: `gas_wait_${reason}` });
+    this.recovery = { ...recovery };
+    this.reason = reason;
+  }
+}
+
 export class VeloAuthError extends VeloError {
   constructor(message: string, options?: { status?: number; code?: string; requestId?: string }) {
     super(message, options);

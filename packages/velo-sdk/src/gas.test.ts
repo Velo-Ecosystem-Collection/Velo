@@ -6,6 +6,7 @@ import type {
   GasExecutionStatus,
   GasSponsorOptions,
   GasSponsorReservation,
+  GasWaitOptions,
   GasSubmitParams,
   GasSubmitResult,
   RequestOptions,
@@ -16,6 +17,7 @@ import {
   VeloAPIError,
   VeloAuthError,
   VeloGasSubmissionUnknownError,
+  VeloGasWaitError,
   VeloProviderError,
   VeloRateLimitError,
   VeloSubmissionUnknownError,
@@ -29,6 +31,7 @@ const CONTRACT_ID = `C${"A".repeat(55)}`;
 const TRANSACTION_HASH = "a".repeat(64);
 const OUTER_TRANSACTION_HASH = "b".repeat(64);
 const TRACEPARENT = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+const MAX_TIMER_DURATION_MS = 2_147_483_647;
 
 function validReservation(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -70,6 +73,58 @@ function validSubmitResult(overrides: Record<string, unknown> = {}): Record<stri
     reconciliationRequired: true,
     ...overrides,
   };
+}
+
+class FakeClock {
+  private now = 0;
+  private nextId = 1;
+  private readonly timers = new Map<number, { at: number; callback: () => void }>();
+  private readonly originalDateNow = Date.now;
+  private readonly originalSetTimeout = globalThis.setTimeout;
+  private readonly originalClearTimeout = globalThis.clearTimeout;
+
+  install(): void {
+    Date.now = () => this.now;
+    globalThis.setTimeout = ((callback: (...args: unknown[]) => void, delay?: number) => {
+      const id = this.nextId++;
+      this.timers.set(id, { at: this.now + Math.max(0, delay ?? 0), callback: () => callback() });
+      return id;
+    }) as unknown as typeof setTimeout;
+    globalThis.clearTimeout = ((timer: ReturnType<typeof setTimeout>) => {
+      this.timers.delete(Number(timer));
+    }) as typeof clearTimeout;
+  }
+
+  async advance(ms: number): Promise<void> {
+    const target = this.now + ms;
+    for (;;) {
+      const next = [...this.timers.entries()]
+        .filter(([, timer]) => timer.at <= target)
+        .sort(([, first], [, second]) => first.at - second.at)[0];
+      if (!next) break;
+      const [id, timer] = next;
+      this.timers.delete(id);
+      this.now = timer.at;
+      timer.callback();
+      await flushPromises();
+    }
+    this.now = target;
+    await flushPromises();
+  }
+
+  pendingTimers(): number {
+    return this.timers.size;
+  }
+
+  restore(): void {
+    Date.now = this.originalDateNow;
+    globalThis.setTimeout = this.originalSetTimeout;
+    globalThis.clearTimeout = this.originalClearTimeout;
+  }
+}
+
+async function flushPromises(): Promise<void> {
+  for (let index = 0; index < 8; index++) await Promise.resolve();
 }
 
 test("gas.sponsor sends the exact server request and projects the reservation", async () => {
@@ -1058,6 +1113,556 @@ test("public entry-point types expose Gas submission and status methods", async 
     const current: GasSubmitResult = await getStatus(identity);
     assert.equal(submitted.status, status);
     assert.equal(current.requestId, identity.requestId);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.waitForResult returns every execution state and stops at terminal results", async () => {
+  const originalFetch = globalThis.fetch;
+  const statuses: GasExecutionStatus[] = [
+    "claimed",
+    "submission_unknown",
+    "submitted",
+    "succeeded",
+    "failed",
+    "cancelled",
+  ];
+  let calls = 0;
+
+  globalThis.fetch = async () => {
+    const status = statuses[calls++];
+    return jsonResponse(validSubmitResult({ status }), status === "claimed" ? 202 : 200);
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    for (const status of statuses) {
+      const result = await velo.gas.waitForResult(
+        { requestId: "gas-request-0001", transactionHash: TRANSACTION_HASH },
+        { maxAttempts: 1, timeoutMs: 1_000, initialDelayMs: 1, maxDelayMs: 1 },
+      );
+      assert.equal(result.status, status);
+    }
+    assert.equal(calls, statuses.length);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.waitForResult polls with bounded exponential delays", async () => {
+  const originalFetch = globalThis.fetch;
+  const clock = new FakeClock();
+  const returnedStatuses: GasExecutionStatus[] = ["claimed", "submitted", "succeeded"];
+  let calls = 0;
+  globalThis.fetch = async () =>
+    jsonResponse(validSubmitResult({ status: returnedStatuses[calls++] }), 202);
+
+  clock.install();
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const waiting = velo.gas.waitForResult(
+      { requestId: "gas-request-0001", transactionHash: TRANSACTION_HASH },
+      { timeoutMs: 2_000, maxAttempts: 5, initialDelayMs: 500, maxDelayMs: 1_000 },
+    );
+    await flushPromises();
+    await clock.advance(0);
+    assert.equal(calls, 1);
+    assert.equal(clock.pendingTimers(), 1);
+
+    await clock.advance(499);
+    assert.equal(calls, 1);
+    await clock.advance(1);
+    assert.equal(calls, 2);
+    await clock.advance(999);
+    assert.equal(calls, 2);
+    await clock.advance(1);
+    assert.equal(calls, 3);
+    assert.equal((await waiting).status, "succeeded");
+    assert.equal(clock.pendingTimers(), 0);
+  } finally {
+    clock.restore();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.waitForResult returns the last DTO on exhaustion or deadline", async () => {
+  const originalFetch = globalThis.fetch;
+  const clock = new FakeClock();
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return jsonResponse(validSubmitResult({ status: "submitted", actualFeeStroops: null }), 202);
+  };
+
+  clock.install();
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const exhausted = velo.gas.waitForResult(
+      { requestId: "gas-request-0001", transactionHash: TRANSACTION_HASH },
+      { maxAttempts: 3, timeoutMs: 1_000, initialDelayMs: 10, maxDelayMs: 20 },
+    );
+    await flushPromises();
+    await clock.advance(10);
+    await clock.advance(20);
+    assert.equal((await exhausted).actualFeeStroops, null);
+    assert.equal(calls, 3);
+
+    calls = 0;
+    const deadlineResult = velo.gas.waitForResult(
+      { requestId: "gas-request-0001", transactionHash: TRANSACTION_HASH },
+      { maxAttempts: 10, timeoutMs: 10, initialDelayMs: 100, maxDelayMs: 100 },
+    );
+    await flushPromises();
+    await clock.advance(10);
+    const result = await deadlineResult;
+    assert.equal(result.status, "submitted");
+    assert.equal(result.actualFeeStroops, null);
+    assert.equal(calls, 1);
+    assert.equal(clock.pendingTimers(), 0);
+  } finally {
+    clock.restore();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.waitForResult throws a safe waiting error without a validated DTO", async () => {
+  const originalFetch = globalThis.fetch;
+  const clock = new FakeClock();
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    throw new TypeError("network secret and xdr-secret");
+  };
+
+  clock.install();
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const waiting = velo.gas.waitForResult(
+      { requestId: " gas-request-0001 ", transactionHash: TRANSACTION_HASH.toUpperCase() },
+      { maxAttempts: 2, timeoutMs: 1_000, initialDelayMs: 5, maxDelayMs: 5 },
+    );
+    await flushPromises();
+    await clock.advance(5);
+    await assert.rejects(waiting, (error: unknown) => {
+      assert.equal(error instanceof VeloGasWaitError, true);
+      const waitError = error as VeloGasWaitError;
+      assert.equal(waitError.reason, "attempts_exhausted");
+      assert.deepEqual(waitError.recovery, {
+        requestId: "gas-request-0001",
+        transactionHash: TRANSACTION_HASH,
+      });
+      assert.equal(waitError.message.includes("network secret"), false);
+      assert.equal(waitError.message.includes("xdr-secret"), false);
+      assert.equal("cause" in waitError, false);
+      return true;
+    });
+    assert.equal(calls, 2);
+    assert.equal(clock.pendingTimers(), 0);
+  } finally {
+    clock.restore();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.waitForResult retries transient status failures and honors Retry-After", async () => {
+  const originalFetch = globalThis.fetch;
+  const clock = new FakeClock();
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    if (calls === 1) {
+      return jsonResponse({ error: { type: "provider_error", code: "temporary_failure" } }, 503, {
+        "Retry-After": "2",
+      });
+    }
+    return jsonResponse(
+      validSubmitResult({ status: calls === 2 ? "submitted" : "succeeded" }),
+      202,
+    );
+  };
+
+  clock.install();
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const waiting = velo.gas.waitForResult(
+      { requestId: "gas-request-0001", transactionHash: TRANSACTION_HASH },
+      { maxAttempts: 3, timeoutMs: 5_000, initialDelayMs: 500, maxDelayMs: 1_000 },
+    );
+    await flushPromises();
+    await clock.advance(0);
+    assert.equal(calls, 1);
+    await clock.advance(1_999);
+    assert.equal(calls, 1);
+    await clock.advance(1);
+    assert.equal(calls, 2);
+    await clock.advance(999);
+    assert.equal(calls, 2);
+    await clock.advance(1);
+    assert.equal(calls, 3);
+    assert.equal((await waiting).status, "succeeded");
+  } finally {
+    clock.restore();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.waitForResult retries network, timeout, 408, 429, and 5xx failures", async () => {
+  const originalFetch = globalThis.fetch;
+  const clock = new FakeClock();
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    if (calls === 1) {
+      return jsonResponse({ error: { code: "request_timeout" } }, 408);
+    }
+    if (calls === 2) {
+      return jsonResponse({ error: { code: "temporary_rate_limit" } }, 429, {
+        "Retry-After": "0",
+      });
+    }
+    if (calls === 3) {
+      return jsonResponse({ error: { code: "temporary_failure" } }, 500);
+    }
+    if (calls === 4) throw new TypeError("fetch failed");
+    return jsonResponse(validSubmitResult({ status: "succeeded" }));
+  };
+
+  clock.install();
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const waiting = velo.gas.waitForResult(
+      { requestId: "gas-request-0001", transactionHash: TRANSACTION_HASH },
+      { maxAttempts: 5, timeoutMs: 5_000, initialDelayMs: 10, maxDelayMs: 20 },
+    );
+    await flushPromises();
+    await clock.advance(10);
+    assert.equal(calls, 2);
+    await clock.advance(20);
+    assert.equal(calls, 3);
+    await clock.advance(20);
+    assert.equal(calls, 4);
+    await clock.advance(20);
+    assert.equal(calls, 5);
+    assert.equal((await waiting).status, "succeeded");
+    assert.equal(clock.pendingTimers(), 0);
+  } finally {
+    clock.restore();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.waitForResult gives each status request only the remaining wait budget", async () => {
+  const originalFetch = globalThis.fetch;
+  const clock = new FakeClock();
+  const abortTimes: number[] = [];
+  let calls = 0;
+  globalThis.fetch = async (_url, options) => {
+    calls++;
+    if (calls === 1) {
+      return new Promise((resolve) => {
+        setTimeout(() => resolve(jsonResponse({ error: { code: "temporary_failure" } }, 503)), 60);
+      });
+    }
+    return new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener(
+        "abort",
+        () => {
+          abortTimes.push(Date.now());
+          reject(new DOMException("request timeout", "AbortError"));
+        },
+        { once: true },
+      );
+    });
+  };
+
+  clock.install();
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const waiting = velo.gas.waitForResult(
+      { requestId: "gas-request-0001", transactionHash: TRANSACTION_HASH },
+      { maxAttempts: 3, timeoutMs: 100, initialDelayMs: 10, maxDelayMs: 10 },
+    );
+    await flushPromises();
+    await clock.advance(60);
+    assert.equal(calls, 1);
+    await clock.advance(10);
+    assert.equal(calls, 2);
+    await clock.advance(29);
+    assert.deepEqual(abortTimes, []);
+    await clock.advance(1);
+    await assert.rejects(
+      waiting,
+      (error: unknown) => error instanceof VeloGasWaitError && error.reason === "timeout",
+    );
+    assert.deepEqual(abortTimes, [100]);
+    assert.equal(clock.pendingTimers(), 0);
+  } finally {
+    clock.restore();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.waitForResult propagates permanent and malformed status errors", async () => {
+  const originalFetch = globalThis.fetch;
+  const cases = [
+    {
+      response: jsonResponse({ error: { type: "auth_error", code: "invalid_api_key" } }, 401),
+      expected: VeloAuthError,
+    },
+    {
+      response: jsonResponse(
+        { error: { type: "rate_limit_error", code: "daily_cap_exceeded" } },
+        429,
+      ),
+      expected: VeloRateLimitError,
+    },
+    {
+      response: jsonResponse(
+        { error: { type: "rate_limit_error", code: "wallet_rate_limited" } },
+        429,
+      ),
+      expected: VeloRateLimitError,
+    },
+    {
+      response: jsonResponse({ ...validSubmitResult(), status: "not-a-status" }),
+      expected: VeloAPIError,
+    },
+    {
+      response: jsonResponse({ ...validSubmitResult(), requestId: "gas-request-0002" }),
+      expected: VeloAPIError,
+    },
+  ] as const;
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    for (const testCase of cases) {
+      let calls = 0;
+      globalThis.fetch = async () => {
+        calls++;
+        return testCase.response;
+      };
+      await assert.rejects(
+        () =>
+          velo.gas.waitForResult(
+            { requestId: "gas-request-0001", transactionHash: TRANSACTION_HASH },
+            { maxAttempts: 10, timeoutMs: 1_000, initialDelayMs: 1, maxDelayMs: 1 },
+          ),
+        (error: unknown) => error instanceof testCase.expected,
+      );
+      assert.equal(calls, 1);
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.waitForResult wraps cancellation and supports safe resume", async () => {
+  const originalFetch = globalThis.fetch;
+  const clock = new FakeClock();
+  const controller = new AbortController();
+  const callerReason = new DOMException("caller secret", "AbortError");
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return jsonResponse(validSubmitResult({ status: "submitted" }), 202);
+  };
+
+  clock.install();
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const waiting = velo.gas.waitForResult(
+      { requestId: " gas-request-0001 ", transactionHash: TRANSACTION_HASH.toUpperCase() },
+      {
+        signal: controller.signal,
+        timeoutMs: 1_000,
+        maxAttempts: 10,
+        initialDelayMs: 500,
+        maxDelayMs: 500,
+      },
+    );
+    await flushPromises();
+    controller.abort(callerReason);
+    await assert.rejects(waiting, (error: unknown) => {
+      assert.equal(error instanceof VeloGasWaitError, true);
+      const waitError = error as VeloGasWaitError;
+      assert.equal(waitError.reason, "cancelled");
+      assert.deepEqual(waitError.recovery, {
+        requestId: "gas-request-0001",
+        transactionHash: TRANSACTION_HASH,
+      });
+      assert.equal(waitError.message.includes("caller secret"), false);
+      return true;
+    });
+    assert.equal(calls, 1);
+    assert.equal(clock.pendingTimers(), 0);
+
+    globalThis.fetch = async (_url, options) => {
+      calls++;
+      const body = JSON.parse(String(options?.body)) as Record<string, unknown>;
+      assert.deepEqual(body, {
+        requestId: "gas-request-0001",
+        transactionHash: TRANSACTION_HASH,
+      });
+      return jsonResponse(validSubmitResult({ status: "succeeded" }));
+    };
+    const resumed = await velo.gas.waitForResult(
+      {
+        requestId: "gas-request-0001",
+        transactionHash: TRANSACTION_HASH,
+      },
+      { maxAttempts: 1, timeoutMs: 1_000, initialDelayMs: 1, maxDelayMs: 1 },
+    );
+    assert.equal(resumed.status, "succeeded");
+    assert.equal(calls, 2);
+  } finally {
+    clock.restore();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.waitForResult wraps cancellation before dispatch and during a request", async () => {
+  const originalFetch = globalThis.fetch;
+  const identity: GasExecutionIdentity = {
+    requestId: "gas-request-0001",
+    transactionHash: TRANSACTION_HASH,
+  };
+  try {
+    const before = new AbortController();
+    before.abort(new DOMException("before dispatch secret", "AbortError"));
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      return jsonResponse(validSubmitResult({ status: "succeeded" }));
+    };
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    await assert.rejects(
+      () => velo.gas.waitForResult(identity, { signal: before.signal }),
+      (error: unknown) => error instanceof VeloGasWaitError && error.reason === "cancelled",
+    );
+    assert.equal(calls, 0);
+
+    const during = new AbortController();
+    globalThis.fetch = async (_url, options) =>
+      new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("transport abort secret", "AbortError")),
+          { once: true },
+        );
+        during.abort(new DOMException("during request secret", "AbortError"));
+      });
+    await assert.rejects(
+      () => velo.gas.waitForResult(identity, { signal: during.signal, timeoutMs: 1_000 }),
+      (error: unknown) => error instanceof VeloGasWaitError && error.reason === "cancelled",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.waitForResult snapshots identity and options and never sends XDR", async () => {
+  const originalFetch = globalThis.fetch;
+  const clock = new FakeClock();
+  const identity = {
+    requestId: " gas-request-0001 ",
+    transactionHash: TRANSACTION_HASH.toUpperCase(),
+    transactionXdr: "xdr-secret",
+  } as GasExecutionIdentity & { transactionXdr: string };
+  const options: GasWaitOptions = {
+    correlationId: "gas-correlation-0001",
+    timeoutMs: 2_000,
+    maxAttempts: 2,
+    initialDelayMs: 500,
+    maxDelayMs: 500,
+  };
+  const requests: Array<{ body: string; correlationId: string | null }> = [];
+  let calls = 0;
+  globalThis.fetch = async (_url, request) => {
+    requests.push({
+      body: String(request?.body),
+      correlationId: new Headers(request?.headers).get("x-correlation-id"),
+    });
+    calls++;
+    return jsonResponse(
+      validSubmitResult({ status: calls === 1 ? "submitted" : "succeeded" }),
+      202,
+    );
+  };
+
+  clock.install();
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const waiting = velo.gas.waitForResult(identity, options);
+    identity.requestId = "gas-request-mutated";
+    identity.transactionHash = OUTER_TRANSACTION_HASH;
+    options.correlationId = "gas-correlation-mutated";
+    await flushPromises();
+    await clock.advance(500);
+    assert.equal((await waiting).status, "succeeded");
+    assert.deepEqual(requests, [
+      {
+        body: JSON.stringify({ requestId: "gas-request-0001", transactionHash: TRANSACTION_HASH }),
+        correlationId: "gas-correlation-0001",
+      },
+      {
+        body: JSON.stringify({ requestId: "gas-request-0001", transactionHash: TRANSACTION_HASH }),
+        correlationId: "gas-correlation-0001",
+      },
+    ]);
+    assert.equal(
+      requests.some((request) => request.body.includes("xdr-secret")),
+      false,
+    );
+    assert.equal(clock.pendingTimers(), 0);
+  } finally {
+    clock.restore();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.waitForResult validates limits and exposes its public types", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return jsonResponse(validSubmitResult({ status: "succeeded" }));
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const identity: GasExecutionIdentity = {
+      requestId: "gas-request-0001",
+      transactionHash: TRANSACTION_HASH,
+    };
+    const invalidOptions: GasWaitOptions[] = [
+      { maxAttempts: 0 },
+      { maxAttempts: 1.5 },
+      { maxAttempts: Number.MAX_SAFE_INTEGER + 1 },
+      { initialDelayMs: 0 },
+      { initialDelayMs: MAX_TIMER_DURATION_MS + 1 },
+      { maxDelayMs: 0 },
+      { initialDelayMs: 500, maxDelayMs: 499 },
+      { timeoutMs: 0 },
+      { timeoutMs: MAX_TIMER_DURATION_MS + 1 },
+    ];
+    for (const options of invalidOptions) {
+      await assert.rejects(
+        () => velo.gas.waitForResult(identity, options),
+        (error: unknown) => error instanceof VeloValidationError,
+      );
+    }
+    assert.equal(calls, 0);
+
+    const options: GasWaitOptions = {
+      correlationId: "gas-correlation-0001",
+      maxAttempts: 1,
+      initialDelayMs: 1,
+      maxDelayMs: 1,
+    };
+    const wait: Velo["gas"]["waitForResult"] = velo.gas.waitForResult;
+    const result: GasSubmitResult = await wait(identity, options);
+    assert.equal(result.status, "succeeded");
   } finally {
     globalThis.fetch = originalFetch;
   }

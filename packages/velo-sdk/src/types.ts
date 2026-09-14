@@ -68,6 +68,15 @@ export type GasSponsorOptions = Omit<RequestOptions, "idempotencyKey"> & {
   idempotencyKey: string;
 };
 
+export type GasWaitOptions = Omit<RequestOptions, "maxRetries" | "submission"> & {
+  /** Maximum number of status calls, including calls that fail transiently. Defaults to 10. */
+  maxAttempts?: number;
+  /** Initial delay between status calls in milliseconds. Defaults to 500. */
+  initialDelayMs?: number;
+  /** Maximum exponential delay between status calls in milliseconds. Defaults to 5000. */
+  maxDelayMs?: number;
+};
+
 export type GasSponsorReservation = {
   object: "gas_sponsor_reservation";
   requestId: string;

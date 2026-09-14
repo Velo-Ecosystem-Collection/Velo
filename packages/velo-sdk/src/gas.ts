@@ -3,6 +3,7 @@ import type {
   GasExecutionStatus,
   GasSponsorOptions,
   GasSponsorReservation,
+  GasWaitOptions,
   GasSubmitParams,
   GasSubmitResult,
   RequestOptions,
@@ -10,16 +11,26 @@ import type {
 
 import {
   VeloAPIError,
+  VeloAuthError,
+  VeloError,
+  VeloGasWaitError,
   VeloGasSubmissionUnknownError,
+  VeloRateLimitError,
   VeloTimeoutError,
   VeloValidationError,
 } from "./errors.ts";
 import { HttpClient } from "./http.ts";
+import { sleep } from "./sleep.ts";
 
 const MAX_IDEMPOTENCY_KEY_BYTES = 255;
 const MAX_XDR_BYTES = 64 * 1_024;
 const MAX_BODY_BYTES = 64 * 1_024;
 const MAX_SIGNED_INT64 = 2n ** 63n - 1n;
+const MAX_TIMER_DURATION_MS = 2_147_483_647;
+const DEFAULT_WAIT_MAX_ATTEMPTS = 10;
+const DEFAULT_WAIT_INITIAL_DELAY_MS = 500;
+const DEFAULT_WAIT_MAX_DELAY_MS = 5_000;
+const GAS_NON_RETRYABLE_CODES = new Set(["daily_cap_exceeded", "wallet_rate_limited"]);
 
 const CANONICAL_STROOP = /^(?:0|[1-9][0-9]*)$/;
 const TRANSACTION_HASH = /^[0-9a-f]{64}$/;
@@ -37,6 +48,7 @@ export interface GasApi {
   sponsor(transactionXdr: string, options: GasSponsorOptions): Promise<GasSponsorReservation>;
   submit(params: GasSubmitParams, options?: RequestOptions): Promise<GasSubmitResult>;
   getStatus(identity: GasExecutionIdentity, options?: RequestOptions): Promise<GasSubmitResult>;
+  waitForResult(identity: GasExecutionIdentity, options?: GasWaitOptions): Promise<GasSubmitResult>;
   sponsorAndSubmit(transactionXdr: string, options: GasSponsorOptions): Promise<GasSubmitResult>;
 }
 
@@ -120,6 +132,70 @@ export function createGasApi(http: HttpClient): GasApi {
     return parseGasSubmitResult(payload, normalizedIdentity);
   };
 
+  const waitForResult = async (
+    identity: GasExecutionIdentity,
+    options?: GasWaitOptions,
+  ): Promise<GasSubmitResult> => {
+    const normalizedIdentity = normalizeGasExecutionIdentity(identity);
+    const normalizedOptions = normalizeGasWaitOptions(options, http.getConfiguredTimeoutMs());
+    const deadline = Date.now() + normalizedOptions.timeoutMs;
+    let attempts = 0;
+    let delayMs = normalizedOptions.initialDelayMs;
+    let lastResult: GasSubmitResult | undefined;
+
+    for (;;) {
+      throwIfWaitCancelled(normalizedOptions.signal, normalizedIdentity);
+      if (Date.now() >= deadline) {
+        return lastResult ?? throwGasWaitError(normalizedIdentity, "timeout");
+      }
+      if (attempts >= normalizedOptions.maxAttempts) {
+        return lastResult ?? throwGasWaitError(normalizedIdentity, "attempts_exhausted");
+      }
+
+      attempts++;
+      try {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+          return lastResult ?? throwGasWaitError(normalizedIdentity, "timeout");
+        }
+        const result = await getStatus(normalizedIdentity, {
+          ...normalizedOptions.requestOptions,
+          timeoutMs: remaining,
+        });
+        throwIfWaitCancelled(normalizedOptions.signal, normalizedIdentity);
+        lastResult = result;
+        if (isTerminalGasStatus(result.status) || attempts >= normalizedOptions.maxAttempts) {
+          return result;
+        }
+      } catch (error) {
+        throwIfWaitCancelled(normalizedOptions.signal, normalizedIdentity);
+        if (!isWaitRetryable(error)) throw error;
+        if (attempts >= normalizedOptions.maxAttempts) {
+          return lastResult ?? throwGasWaitError(normalizedIdentity, "attempts_exhausted");
+        }
+        if (Date.now() >= deadline) {
+          return lastResult ?? throwGasWaitError(normalizedIdentity, "timeout");
+        }
+
+        const retryAfterMs = getRetryAfterMs(error);
+        await waitForNextAttempt(
+          Math.max(delayMs, retryAfterMs ?? 0),
+          deadline,
+          normalizedOptions.signal,
+          normalizedIdentity,
+        );
+        delayMs = nextWaitDelay(delayMs, normalizedOptions.maxDelayMs);
+        continue;
+      }
+
+      if (Date.now() >= deadline) {
+        return lastResult ?? throwGasWaitError(normalizedIdentity, "timeout");
+      }
+      await waitForNextAttempt(delayMs, deadline, normalizedOptions.signal, normalizedIdentity);
+      delayMs = nextWaitDelay(delayMs, normalizedOptions.maxDelayMs);
+    }
+  };
+
   const sponsorAndSubmit = async (
     transactionXdr: string,
     options: GasSponsorOptions,
@@ -150,7 +226,148 @@ export function createGasApi(http: HttpClient): GasApi {
     );
   };
 
-  return { sponsor, submit, getStatus, sponsorAndSubmit };
+  return { sponsor, submit, getStatus, waitForResult, sponsorAndSubmit };
+}
+
+type NormalizedGasWaitOptions = {
+  requestOptions: RequestOptions;
+  signal?: AbortSignal;
+  timeoutMs: number;
+  maxAttempts: number;
+  initialDelayMs: number;
+  maxDelayMs: number;
+};
+
+function normalizeGasWaitOptions(
+  options: GasWaitOptions | undefined,
+  configuredTimeoutMs: number,
+): NormalizedGasWaitOptions {
+  if (options !== undefined && !isRecord(options)) {
+    throw validationError("Gas wait options must be an object.", "options");
+  }
+
+  const source = (options ?? {}) as GasWaitOptions;
+  const normalized = normalizeRequestOptions(options);
+  const timeoutMs = validateWaitDuration(source.timeoutMs ?? configuredTimeoutMs, "timeoutMs");
+  const maxAttempts = validatePositiveSafeInteger(
+    source.maxAttempts ?? DEFAULT_WAIT_MAX_ATTEMPTS,
+    "maxAttempts",
+  );
+  const initialDelayMs = validateWaitDuration(
+    source.initialDelayMs ?? DEFAULT_WAIT_INITIAL_DELAY_MS,
+    "initialDelayMs",
+  );
+  const maxDelayMs = validateWaitDuration(
+    source.maxDelayMs ?? DEFAULT_WAIT_MAX_DELAY_MS,
+    "maxDelayMs",
+  );
+  if (maxDelayMs < initialDelayMs) {
+    throw validationError("maxDelayMs must be at least initialDelayMs.", "maxDelayMs");
+  }
+
+  const requestOptions: RequestOptions = {
+    ...(normalized.idempotencyKey === undefined
+      ? {}
+      : { idempotencyKey: normalized.idempotencyKey }),
+    ...(normalized.correlationId === undefined ? {} : { correlationId: normalized.correlationId }),
+    ...(normalized.traceparent === undefined ? {} : { traceparent: normalized.traceparent }),
+    ...(normalized.signal === undefined ? {} : { signal: normalized.signal }),
+  };
+
+  return {
+    requestOptions,
+    signal: normalized.signal,
+    timeoutMs,
+    maxAttempts,
+    initialDelayMs,
+    maxDelayMs,
+  };
+}
+
+function validatePositiveSafeInteger(value: unknown, parameter: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw validationError(`${parameter} must be a positive safe integer.`, parameter);
+  }
+  return value;
+}
+
+function validateWaitDuration(value: unknown, parameter: string): number {
+  const duration = validatePositiveSafeInteger(value, parameter);
+  if (duration > MAX_TIMER_DURATION_MS) {
+    throw validationError(`${parameter} exceeds the supported timer range.`, parameter);
+  }
+  return duration;
+}
+
+function isTerminalGasStatus(status: GasExecutionStatus): boolean {
+  return status === "succeeded" || status === "failed" || status === "cancelled";
+}
+
+function throwGasWaitError(
+  identity: GasExecutionIdentity,
+  reason: "timeout" | "attempts_exhausted" | "cancelled",
+): never {
+  throw new VeloGasWaitError(identity, reason);
+}
+
+function throwIfWaitCancelled(
+  signal: AbortSignal | undefined,
+  identity: GasExecutionIdentity,
+): void {
+  if (signal?.aborted) throwGasWaitError(identity, "cancelled");
+}
+
+async function waitForNextAttempt(
+  delayMs: number,
+  deadline: number,
+  signal: AbortSignal | undefined,
+  identity: GasExecutionIdentity,
+): Promise<void> {
+  throwIfWaitCancelled(signal, identity);
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) return;
+  try {
+    await sleep(Math.min(delayMs, remaining), signal);
+  } catch {
+    throwIfWaitCancelled(signal, identity);
+    return;
+  }
+  throwIfWaitCancelled(signal, identity);
+}
+
+function nextWaitDelay(currentDelayMs: number, maxDelayMs: number): number {
+  return currentDelayMs >= maxDelayMs / 2 ? maxDelayMs : Math.min(maxDelayMs, currentDelayMs * 2);
+}
+
+function getRetryAfterMs(error: unknown): number | undefined {
+  return error instanceof VeloError ? error.retryAfterMs : undefined;
+}
+
+function isWaitRetryable(error: unknown): boolean {
+  if (error instanceof VeloAuthError || error instanceof VeloValidationError) return false;
+  if (error instanceof VeloAPIError && error.code === "invalid_response") return false;
+  if (error instanceof VeloError && error.code !== undefined) {
+    if (GAS_NON_RETRYABLE_CODES.has(error.code)) return false;
+  }
+
+  return (
+    error instanceof VeloRateLimitError ||
+    (error instanceof VeloError && error.status === 408) ||
+    (error instanceof VeloError &&
+      error.status !== undefined &&
+      error.status >= 500 &&
+      error.status < 600) ||
+    error instanceof VeloTimeoutError ||
+    isNetworkError(error)
+  );
+}
+
+function isNetworkError(error: unknown): boolean {
+  return (
+    error instanceof TypeError ||
+    (error instanceof Error &&
+      /fetch failed|ECONNREFUSED|ENOTFOUND|network error/i.test(error.message))
+  );
 }
 
 function resolveWorkflowDeadline(http: HttpClient, options: RequestOptions): number {

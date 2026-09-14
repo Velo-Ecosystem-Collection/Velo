@@ -85,9 +85,9 @@ denials (`daily_cap_exceeded` and `wallet_rate_limited`) are returned without
 automatic retry. If sponsorship times out before an identity is returned,
 retry the exact signed XDR with the same idempotency key to recover the
 original reservation. Do not create or sign a new operation automatically.
-Submission, status retrieval, and composed `sponsorAndSubmit()` workflows are
-unreleased source additions; the published `0.1.0-alpha.2` package does not
-include them.
+Submission, status retrieval, composed `sponsorAndSubmit()`, and bounded
+`waitForResult()` workflows are unreleased source additions; the published
+`0.1.0-alpha.2` package does not include them.
 
 ### Composing sponsorship and submission (unreleased source addition)
 
@@ -125,8 +125,8 @@ if (result.status === "succeeded") {
 ```
 
 Only `status: "succeeded"` indicates success. The helper returns the first
-validated submission DTO and does not wait for ledger settlement; bounded
-polling remains a separate follow-up feature.
+validated submission DTO and does not wait for ledger settlement. Use
+`waitForResult()` when the server-side caller wants bounded observation.
 
 ### Submitting a sponsored transaction (unreleased source addition)
 
@@ -181,8 +181,72 @@ console.log({
 `getStatus()` posts only `{ requestId, transactionHash }`, preserves the
 inner/outer hash distinction, and returns the same six execution states. Keep
 the identity as a safe recovery record; never persist the signed XDR, API key,
-or relayer credentials in browser storage or logs. Bounded polling remains
-planned for a later D3 sub-sprint.
+or relayer credentials in browser storage or logs.
+
+### Bounded Gas result observation (unreleased source addition)
+
+`waitForResult()` is an opt-in, server-side observer built on repeated
+identity-only `getStatus()` calls:
+
+```ts
+const result = await velo.gas.waitForResult(identity, {
+  timeoutMs: 30_000, // total wait budget; defaults to the SDK timeout
+  maxAttempts: 10, // status calls, including transient failures
+  initialDelayMs: 500, // first backoff delay
+  maxDelayMs: 5_000, // exponential delay cap
+  signal: request.signal, // optional caller cancellation
+  correlationId: operationId,
+});
+
+if (result.status === "succeeded") {
+  console.log(result.outerTransactionHash, result.actualFeeStroops);
+}
+```
+
+`GasWaitOptions` is `RequestOptions` without `maxRetries` or `submission`,
+plus the optional `maxAttempts`, `initialDelayMs`, and `maxDelayMs` limits.
+The defaults are 10 calls, 500 ms initial delay, and a 5-second cap. Limits
+must be positive safe integers, timer durations must fit JavaScript's
+supported timer range, and `maxDelayMs` must be at least `initialDelayMs`.
+Each call receives only the remaining total budget. Network failures, request
+timeouts, HTTP 408, transient 429, and 5xx responses may be retried by the
+observer; authentication, validation, policy-denial (including
+`daily_cap_exceeded` and `wallet_rate_limited`), and malformed-response errors
+are returned immediately. A valid `Retry-After` is treated as a minimum delay.
+
+The observer stops immediately on `succeeded`, `failed`, or `cancelled`; only
+`succeeded` is transaction success. If the budget or attempt limit is reached,
+it returns the last validated DTO when one exists, including nullable fee
+fields. Otherwise it throws `VeloGasWaitError` with reason `timeout` or
+`attempts_exhausted`. Cancellation always throws that error with reason
+`cancelled`. Its safe `recovery` contains only the normalized request ID and
+inner transaction hash, so a trusted server can resume without the XDR:
+
+```ts
+import { VeloGasWaitError } from "@carts1024/velo-sdk";
+
+try {
+  const result = await velo.gas.waitForResult(identity, {
+    timeoutMs: 5_000,
+    signal: request.signal,
+  });
+  console.log(result.status);
+} catch (error) {
+  if (error instanceof VeloGasWaitError) {
+    const resumed = await velo.gas.waitForResult(error.recovery, {
+      timeoutMs: 30_000,
+      correlationId: operationId,
+    });
+    console.log(resumed.status);
+  } else {
+    throw error;
+  }
+}
+```
+
+Local wait expiry or cancellation stops SDK observation only. It does not
+expire the backend reservation, cancel a chain transaction, or change backend
+reconciliation; those lifecycle decisions remain independent.
 
 If submission crosses the transport boundary but the local result is unknown,
 recover with the identity carried by the typed error. Do not submit the XDR a
@@ -211,17 +275,23 @@ Gas errors preserve the server's stable code, HTTP status, validated request
 ID, and `Retry-After` hint without exposing response bodies or arbitrary server
 messages:
 
-| Situation                                                                                            | SDK result                                                                                                   | Recovery                                                                             |
-| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
-| Authentication, whitelist, cap/quota, expiry, handoff, or provider error                             | Typed `VeloAuthError`, `VeloValidationError`, `VeloRateLimitError`, or `VeloProviderError`                   | Handle the stable `code`; do not treat it as a transaction outcome.                  |
-| Transient sponsorship failure                                                                        | Automatic retry within `maxRetries` and the total `timeoutMs`                                                | Every retry uses the same caller-held idempotency key and exact input.               |
-| Submission timeout, disconnect, local cancellation, or malformed success response after XDR dispatch | `VeloGasSubmissionUnknownError` with `reason` `timeout`, `network_error`, `cancelled`, or `invalid_response` | Call `velo.gas.getStatus(error.recovery)`; never submit the XDR again automatically. |
-| Cancellation before a request is dispatched                                                          | The caller's existing `AbortSignal.reason`                                                                   | The request did not dispatch; callers may decide whether to retry.                   |
+| Situation                                                                                            | SDK result                                                                                                   | Recovery                                                                              |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Authentication, whitelist, cap/quota, expiry, handoff, or provider error                             | Typed `VeloAuthError`, `VeloValidationError`, `VeloRateLimitError`, or `VeloProviderError`                   | Handle the stable `code`; do not treat it as a transaction outcome.                   |
+| Transient sponsorship failure                                                                        | Automatic retry within `maxRetries` and the total `timeoutMs`                                                | Every retry uses the same caller-held idempotency key and exact input.                |
+| Submission timeout, disconnect, local cancellation, or malformed success response after XDR dispatch | `VeloGasSubmissionUnknownError` with `reason` `timeout`, `network_error`, `cancelled`, or `invalid_response` | Call `velo.gas.getStatus(error.recovery)`; never submit the XDR again automatically.  |
+| Cancellation before a request is dispatched                                                          | The caller's existing `AbortSignal.reason`                                                                   | The request did not dispatch; callers may decide whether to retry.                    |
+| Bounded observation deadline or attempt exhaustion                                                   | Last validated `GasSubmitResult`, or `VeloGasWaitError` with `reason` `timeout`/`attempts_exhausted`         | Resume with `waitForResult(error.recovery)` when no DTO was returned.                 |
+| Bounded observation cancellation                                                                     | `VeloGasWaitError` with `reason` `cancelled` and safe `recovery` identity                                    | Resume with `waitForResult(error.recovery)`; no sponsorship or XDR submission occurs. |
 
 `VeloGasSubmissionUnknownError` extends `VeloSubmissionUnknownError`. Its
 `recovery` contains only the normalized request ID and inner transaction hash;
 it never contains the signed XDR, API key, response body, or exception cause.
 An unknown local outcome does not mean the chain transaction was cancelled.
+`VeloGasWaitError` follows the same redaction boundary for observation recovery;
+its fixed messages never include abort reasons, raw exceptions, credentials,
+or XDR. Local observation expiry/cancellation is not backend reservation
+expiry or reconciliation.
 
 ### Dual-Anchor Routing (V2)
 

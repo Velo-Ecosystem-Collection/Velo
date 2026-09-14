@@ -89,6 +89,45 @@ Submission, status retrieval, and composed `sponsorAndSubmit()` workflows are
 unreleased source additions; the published `0.1.0-alpha.2` package does not
 include them.
 
+### Composing sponsorship and submission (unreleased source addition)
+
+`sponsorAndSubmit()` is a server-only convenience for a trusted application
+server that already has the user's signed Testnet Soroban XDR. Its exact
+signature is:
+
+```ts
+sponsorAndSubmit(
+  transactionXdr: string,
+  options: GasSponsorOptions,
+): Promise<GasSubmitResult>
+```
+
+The caller must provide a stable idempotency key. The SDK snapshots the
+normalized XDR and request context, establishes one deadline for sponsorship
+and handoff, reuses the reservation identity, and calls submit at most once.
+Keep the API key, signed XDR, and operation key in server-only code; do not
+call this method from browser code or expose those values in a client response.
+
+```ts
+const result = await velo.gas.sponsorAndSubmit(signedTransactionXdr, {
+  idempotencyKey: `checkout:${operationId}`,
+  correlationId: `checkout:${operationId}`,
+});
+
+if (result.status === "succeeded") {
+  // Successful execution: the outer hash and actual fee are available when settled.
+  console.log(result.outerTransactionHash, result.actualFeeStroops);
+} else {
+  // `claimed`, `submission_unknown`, and `submitted` are still running.
+  // `failed` and `cancelled` are terminal non-success results.
+  console.log(`Gas execution is ${result.status}`);
+}
+```
+
+Only `status: "succeeded"` indicates success. The helper returns the first
+validated submission DTO and does not wait for ledger settlement; bounded
+polling remains a separate follow-up feature.
+
 ### Submitting a sponsored transaction (unreleased source addition)
 
 The current source checkout also exposes `velo.gas.submit()` for the trusted
@@ -142,8 +181,29 @@ console.log({
 `getStatus()` posts only `{ requestId, transactionHash }`, preserves the
 inner/outer hash distinction, and returns the same six execution states. Keep
 the identity as a safe recovery record; never persist the signed XDR, API key,
-or relayer credentials in browser storage or logs. Bounded polling and
-`sponsorAndSubmit()` composition are planned for later D3 sub-sprints.
+or relayer credentials in browser storage or logs. Bounded polling remains
+planned for a later D3 sub-sprint.
+
+If submission crosses the transport boundary but the local result is unknown,
+recover with the identity carried by the typed error. Do not submit the XDR a
+second time:
+
+```ts
+import { VeloGasSubmissionUnknownError } from "@carts1024/velo-sdk";
+
+try {
+  await velo.gas.sponsorAndSubmit(signedTransactionXdr, {
+    idempotencyKey: `checkout:${operationId}`,
+  });
+} catch (error) {
+  if (error instanceof VeloGasSubmissionUnknownError) {
+    const recovered = await velo.gas.getStatus(error.recovery);
+    console.log(recovered.status, recovered.outerTransactionHash);
+  } else {
+    throw error;
+  }
+}
+```
 
 ### Gas errors and recovery
 

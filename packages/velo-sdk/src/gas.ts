@@ -8,7 +8,12 @@ import type {
   RequestOptions,
 } from "./types.ts";
 
-import { VeloAPIError, VeloGasSubmissionUnknownError, VeloValidationError } from "./errors.ts";
+import {
+  VeloAPIError,
+  VeloGasSubmissionUnknownError,
+  VeloTimeoutError,
+  VeloValidationError,
+} from "./errors.ts";
 import { HttpClient } from "./http.ts";
 
 const MAX_IDEMPOTENCY_KEY_BYTES = 255;
@@ -28,96 +33,154 @@ const TRACEPARENT = /^00-(?!0{32})[0-9a-f]{32}-(?!0{16})[0-9a-f]{16}-[0-9a-f]{2}
 
 const textEncoder = new TextEncoder();
 
-export type GasApi = {
+export interface GasApi {
   sponsor(transactionXdr: string, options: GasSponsorOptions): Promise<GasSponsorReservation>;
   submit(params: GasSubmitParams, options?: RequestOptions): Promise<GasSubmitResult>;
   getStatus(identity: GasExecutionIdentity, options?: RequestOptions): Promise<GasSubmitResult>;
-};
-
-export function createGasApi(http: HttpClient): GasApi {
-  return {
-    sponsor: async (
-      transactionXdr: string,
-      options: GasSponsorOptions,
-    ): Promise<GasSponsorReservation> => {
-      const normalizedOptions = normalizeSponsorOptions(options);
-      const normalizedXdr = validateTransactionXdr(transactionXdr);
-      const body = { transactionXdr: normalizedXdr };
-      const serializedBody = JSON.stringify(body);
-
-      if (textEncoder.encode(serializedBody).byteLength > MAX_BODY_BYTES) {
-        throw validationError("Gas sponsorship request body is too large.", "transactionXdr");
-      }
-
-      const payload = await http.request<unknown>(
-        "POST",
-        "/api/gas/sponsor",
-        body,
-        {
-          ...normalizedOptions,
-          submission: false,
-        },
-        { kind: "sponsor" },
-      );
-
-      return parseGasSponsorReservation(payload);
-    },
-    submit: async (params: GasSubmitParams, options?: RequestOptions): Promise<GasSubmitResult> => {
-      const normalizedParams = normalizeGasSubmitParams(params);
-      const normalizedOptions = normalizeRequestOptions(options);
-      const payload = await http.request<unknown>(
-        "POST",
-        "/api/gas/submit",
-        normalizedParams.body,
-        {
-          ...normalizedOptions,
-          maxRetries: 0,
-          submission: true,
-        },
-        { kind: "submit", recovery: normalizedParams.identity },
-      );
-
-      try {
-        return parseGasSubmitResult(payload, normalizedParams.identity);
-      } catch (error) {
-        if (isInvalidResponseError(error)) {
-          throw new VeloGasSubmissionUnknownError(normalizedParams.identity, "invalid_response");
-        }
-        throw error;
-      }
-    },
-    getStatus: async (
-      identity: GasExecutionIdentity,
-      options?: RequestOptions,
-    ): Promise<GasSubmitResult> => {
-      const normalizedIdentity = normalizeGasExecutionIdentity(identity);
-      const normalizedOptions = normalizeRequestOptions(options);
-      const payload = await http.request<unknown>(
-        "POST",
-        "/api/gas/submit",
-        {
-          requestId: normalizedIdentity.requestId,
-          transactionHash: normalizedIdentity.transactionHash,
-        },
-        {
-          ...normalizedOptions,
-          maxRetries: 0,
-          submission: false,
-        },
-        { kind: "status" },
-      );
-
-      return parseGasSubmitResult(payload, normalizedIdentity);
-    },
-  };
+  sponsorAndSubmit(transactionXdr: string, options: GasSponsorOptions): Promise<GasSubmitResult>;
 }
 
-function normalizeSponsorOptions(options: GasSponsorOptions): RequestOptions {
+export function createGasApi(http: HttpClient): GasApi {
+  const sponsor = async (
+    transactionXdr: string,
+    options: GasSponsorOptions,
+  ): Promise<GasSponsorReservation> => {
+    const normalizedOptions = normalizeSponsorOptions(options);
+    const normalizedXdr = validateTransactionXdr(transactionXdr);
+    const body = { transactionXdr: normalizedXdr };
+    const serializedBody = JSON.stringify(body);
+
+    if (textEncoder.encode(serializedBody).byteLength > MAX_BODY_BYTES) {
+      throw validationError("Gas sponsorship request body is too large.", "transactionXdr");
+    }
+
+    const payload = await http.request<unknown>(
+      "POST",
+      "/api/gas/sponsor",
+      body,
+      {
+        ...normalizedOptions,
+        submission: false,
+      },
+      { kind: "sponsor" },
+    );
+
+    return parseGasSponsorReservation(payload);
+  };
+
+  const submit = async (
+    params: GasSubmitParams,
+    options?: RequestOptions,
+  ): Promise<GasSubmitResult> => {
+    const normalizedParams = normalizeGasSubmitParams(params);
+    const normalizedOptions = normalizeRequestOptions(options);
+    const payload = await http.request<unknown>(
+      "POST",
+      "/api/gas/submit",
+      normalizedParams.body,
+      {
+        ...normalizedOptions,
+        maxRetries: 0,
+        submission: true,
+      },
+      { kind: "submit", recovery: normalizedParams.identity },
+    );
+
+    try {
+      return parseGasSubmitResult(payload, normalizedParams.identity);
+    } catch (error) {
+      if (isInvalidResponseError(error)) {
+        throw new VeloGasSubmissionUnknownError(normalizedParams.identity, "invalid_response");
+      }
+      throw error;
+    }
+  };
+
+  const getStatus = async (
+    identity: GasExecutionIdentity,
+    options?: RequestOptions,
+  ): Promise<GasSubmitResult> => {
+    const normalizedIdentity = normalizeGasExecutionIdentity(identity);
+    const normalizedOptions = normalizeRequestOptions(options);
+    const payload = await http.request<unknown>(
+      "POST",
+      "/api/gas/submit",
+      {
+        requestId: normalizedIdentity.requestId,
+        transactionHash: normalizedIdentity.transactionHash,
+      },
+      {
+        ...normalizedOptions,
+        maxRetries: 0,
+        submission: false,
+      },
+      { kind: "status" },
+    );
+
+    return parseGasSubmitResult(payload, normalizedIdentity);
+  };
+
+  const sponsorAndSubmit = async (
+    transactionXdr: string,
+    options: GasSponsorOptions,
+  ): Promise<GasSubmitResult> => {
+    const normalizedOptions = normalizeSponsorOptions(options);
+    const normalizedXdr = validateTransactionXdr(transactionXdr);
+    const deadline = resolveWorkflowDeadline(http, normalizedOptions);
+
+    throwIfWorkflowAborted(normalizedOptions.signal);
+    const sponsorTimeoutMs = remainingWorkflowTimeout(deadline);
+    const reservation = await sponsor(normalizedXdr, {
+      ...normalizedOptions,
+      timeoutMs: sponsorTimeoutMs,
+    });
+
+    throwIfWorkflowAborted(normalizedOptions.signal);
+    const submitTimeoutMs = remainingWorkflowTimeout(deadline);
+    return submit(
+      {
+        requestId: reservation.requestId,
+        transactionHash: reservation.transactionHash,
+        transactionXdr: normalizedXdr,
+      },
+      {
+        ...normalizedOptions,
+        timeoutMs: submitTimeoutMs,
+      },
+    );
+  };
+
+  return { sponsor, submit, getStatus, sponsorAndSubmit };
+}
+
+function resolveWorkflowDeadline(http: HttpClient, options: RequestOptions): number {
+  const timeoutMs = Math.max(1, options.timeoutMs ?? http.getConfiguredTimeoutMs());
+  return Date.now() + timeoutMs;
+}
+
+function remainingWorkflowTimeout(deadline: number): number {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) {
+    throw new VeloTimeoutError("Gas sponsor-and-submit workflow timed out before submission.");
+  }
+  return remaining;
+}
+
+function throwIfWorkflowAborted(signal: AbortSignal | undefined): void {
+  if (!signal?.aborted) return;
+  throw signal.reason ?? new DOMException("The operation was aborted.", "AbortError");
+}
+
+function normalizeSponsorOptions(options: GasSponsorOptions): GasSponsorOptions {
   if (!isRecord(options)) {
     throw validationError("Gas sponsorship options are required.", "options");
   }
 
-  return normalizeRequestOptions(options, true);
+  const normalized = normalizeRequestOptions(options, true);
+  if (normalized.idempotencyKey === undefined) {
+    throw validationError("idempotencyKey is required.", "idempotencyKey");
+  }
+  return { ...normalized, idempotencyKey: normalized.idempotencyKey };
 }
 
 function normalizeRequestOptions(

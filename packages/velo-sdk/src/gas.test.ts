@@ -1062,3 +1062,366 @@ test("public entry-point types expose Gas submission and status methods", async 
     globalThis.fetch = originalFetch;
   }
 });
+
+test("gas.sponsorAndSubmit composes ordered calls with stable normalized input and headers", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ url: string; body: string; headers: Headers }> = [];
+  let calls = 0;
+  globalThis.fetch = async (url, options) => {
+    calls++;
+    requests.push({
+      url: url.toString(),
+      body: String(options?.body),
+      headers: new Headers(options?.headers),
+    });
+    return calls % 2 === 1
+      ? jsonResponse(validReservation())
+      : jsonResponse(validSubmitResult({ actualFeeStroops: null }), 202);
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const options = {
+      ...defaultOptions(),
+      correlationId: "gas-correlation-0001",
+      traceparent: TRACEPARENT,
+      maxRetries: 99,
+      submission: true,
+    };
+
+    const first = await velo.gas.sponsorAndSubmit("  signed-xdr  ", options);
+    const second = await velo.gas.sponsorAndSubmit(" signed-xdr ", options);
+
+    assert.deepEqual(first, {
+      object: "gas_submit_result",
+      requestId: "gas-request-0001",
+      transactionHash: TRANSACTION_HASH,
+      outerTransactionHash: OUTER_TRANSACTION_HASH,
+      status: "submitted",
+      reservedStroops: "9223372036854775807",
+      actualFeeStroops: null,
+      expiresAt: "2026-09-14T00:00:00.000Z",
+      reconciliationRequired: true,
+    } satisfies GasSubmitResult);
+    assert.deepEqual(second, first);
+    assert.equal(calls, 4);
+    assert.deepEqual(
+      requests.map((request) => request.url),
+      [
+        `${BASE_URL}/api/gas/sponsor`,
+        `${BASE_URL}/api/gas/submit`,
+        `${BASE_URL}/api/gas/sponsor`,
+        `${BASE_URL}/api/gas/submit`,
+      ],
+    );
+    assert.equal(requests[0]?.body, JSON.stringify({ transactionXdr: "signed-xdr" }));
+    assert.equal(
+      requests[1]?.body,
+      JSON.stringify({
+        requestId: "gas-request-0001",
+        transactionHash: TRANSACTION_HASH,
+        transactionXdr: "signed-xdr",
+      }),
+    );
+    for (const request of requests) {
+      assert.equal(request.headers.get("idempotency-key"), "gas-operation-0001");
+      assert.equal(request.headers.get("x-correlation-id"), "gas-correlation-0001");
+      assert.equal(request.headers.get("traceparent"), TRACEPARENT);
+    }
+    assert.equal(requests[0]?.body.includes("signed-xdr"), true);
+    assert.equal(requests[1]?.body.includes("signed-xdr"), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.sponsorAndSubmit preserves every validated execution status and projection", async () => {
+  const originalFetch = globalThis.fetch;
+  const statuses: GasExecutionStatus[] = [
+    "claimed",
+    "submission_unknown",
+    "submitted",
+    "succeeded",
+    "failed",
+    "cancelled",
+  ];
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    if (calls % 2 === 1) return jsonResponse(validReservation());
+    const status = statuses[(calls - 2) / 2];
+    const terminal = status === "succeeded" || status === "failed" || status === "cancelled";
+    return jsonResponse(
+      {
+        ...validSubmitResult({
+          status,
+          outerTransactionHash: status === "claimed" ? null : OUTER_TRANSACTION_HASH,
+          actualFeeStroops: status === "succeeded" ? "73813" : null,
+        }),
+        ignored: "not returned",
+      },
+      terminal ? 200 : 202,
+    );
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    for (const status of statuses) {
+      const result = await velo.gas.sponsorAndSubmit("signed-xdr", defaultOptions());
+      assert.equal(result.status, status);
+      assert.equal(result.object, "gas_submit_result");
+      assert.equal(result.requestId, "gas-request-0001");
+      assert.equal(result.transactionHash, TRANSACTION_HASH);
+      assert.equal(result.actualFeeStroops, status === "succeeded" ? "73813" : null);
+      assert.equal(result.status === "succeeded", status === "succeeded");
+      assert.equal("ignored" in result, false);
+    }
+    assert.equal(calls, statuses.length * 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.sponsorAndSubmit validates before dispatch and stops on sponsor denial or malformed reservation", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return jsonResponse(validReservation());
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    await assert.rejects(
+      () => velo.gas.sponsorAndSubmit("", defaultOptions()),
+      (error: unknown) => error instanceof VeloValidationError,
+    );
+    await assert.rejects(
+      () => velo.gas.sponsorAndSubmit("signed-xdr", null as unknown as GasSponsorOptions),
+      (error: unknown) => error instanceof VeloValidationError,
+    );
+    assert.equal(calls, 0);
+
+    globalThis.fetch = async () => {
+      calls++;
+      return jsonResponse(
+        { error: { type: "validation_error", code: "contract_not_whitelisted" } },
+        403,
+      );
+    };
+    await assert.rejects(
+      () => velo.gas.sponsorAndSubmit("signed-xdr", defaultOptions()),
+      (error: unknown) => error instanceof VeloValidationError,
+    );
+    assert.equal(calls, 1);
+
+    globalThis.fetch = async () => {
+      calls++;
+      return jsonResponse(validReservation({ requestId: "short" }));
+    };
+    await assert.rejects(
+      () => velo.gas.sponsorAndSubmit("signed-xdr", defaultOptions()),
+      (error: unknown) => error instanceof VeloAPIError && error.code === "invalid_response",
+    );
+    assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.sponsorAndSubmit shares configured and overridden deadlines across sponsor retries", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  let now = 0;
+  Date.now = () => now;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    if (calls === 1) {
+      now = 60;
+      return jsonResponse({ error: { type: "provider_error", code: "temporary_failure" } }, 503, {
+        "Retry-After": "0",
+      });
+    }
+    return calls === 2 ? jsonResponse(validReservation()) : jsonResponse(validSubmitResult());
+  };
+
+  try {
+    const velo = new Velo({
+      apiKey: "test-key",
+      baseUrl: BASE_URL,
+      timeoutMs: 100,
+      maxRetries: 1,
+      retryBaseDelayMs: 0,
+      retryMaxDelayMs: 0,
+    });
+    await velo.gas.sponsorAndSubmit("signed-xdr", defaultOptions());
+    assert.equal(calls, 3);
+
+    now = 0;
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      if (calls === 1) {
+        now = 60;
+        return jsonResponse(validReservation());
+      }
+      return jsonResponse(validSubmitResult());
+    };
+    await assert.rejects(
+      () => velo.gas.sponsorAndSubmit("signed-xdr", { ...defaultOptions(), timeoutMs: 50 }),
+      (error: unknown) => error instanceof VeloTimeoutError,
+    );
+    assert.equal(calls, 1);
+  } finally {
+    Date.now = originalNow;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.sponsorAndSubmit rejects an exhausted handoff budget before submission", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  let now = 0;
+  let calls = 0;
+  Date.now = () => now;
+  globalThis.fetch = async () => {
+    calls++;
+    now = 101;
+    return jsonResponse(validReservation());
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL, timeoutMs: 100 });
+    await assert.rejects(
+      () => velo.gas.sponsorAndSubmit("signed-xdr", defaultOptions()),
+      (error: unknown) => error instanceof VeloTimeoutError,
+    );
+    assert.equal(calls, 1);
+  } finally {
+    Date.now = originalNow;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.sponsorAndSubmit honors cancellation before dispatch and between stages", async () => {
+  const originalFetch = globalThis.fetch;
+  const controller = new AbortController();
+  const reason = new DOMException("caller stopped", "AbortError");
+  controller.abort(reason);
+  let calls = 0;
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    globalThis.fetch = async () => {
+      calls++;
+      return jsonResponse(validReservation());
+    };
+    await assert.rejects(
+      () =>
+        velo.gas.sponsorAndSubmit("signed-xdr", { ...defaultOptions(), signal: controller.signal }),
+      (error: unknown) => error === reason,
+    );
+    assert.equal(calls, 0);
+
+    const betweenStages = new AbortController();
+    const betweenReason = new DOMException("caller stopped between stages", "AbortError");
+    globalThis.fetch = async () => {
+      calls++;
+      betweenStages.abort(betweenReason);
+      return jsonResponse(validReservation());
+    };
+    await assert.rejects(
+      () =>
+        velo.gas.sponsorAndSubmit("signed-xdr", {
+          ...defaultOptions(),
+          signal: betweenStages.signal,
+        }),
+      (error: unknown) => error === betweenReason,
+    );
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.sponsorAndSubmit preserves unknown submission recovery and never retries XDR handoff", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: string[] = [];
+  let calls = 0;
+  globalThis.fetch = async (url, options) => {
+    calls++;
+    requests.push(`${url.toString()} ${String(options?.body)}`);
+    if (calls === 1) return jsonResponse(validReservation());
+    throw new TypeError("network failure");
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL, maxRetries: 99 });
+    await assert.rejects(
+      () => velo.gas.sponsorAndSubmit("signed-xdr", { ...defaultOptions(), maxRetries: 99 }),
+      (error: unknown) => {
+        assert.equal(error instanceof VeloGasSubmissionUnknownError, true);
+        assert.deepEqual((error as VeloGasSubmissionUnknownError).recovery, {
+          requestId: "gas-request-0001",
+          transactionHash: TRANSACTION_HASH,
+        });
+        return true;
+      },
+    );
+    assert.equal(calls, 2);
+    assert.equal(requests[1]?.includes('"transactionXdr":"signed-xdr"'), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.sponsorAndSubmit never automatically retries submission with conflicting retry options", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    if (calls === 1) {
+      return jsonResponse(
+        { error: { type: "provider_error", code: "dependency_unavailable" } },
+        503,
+      );
+    }
+    if (calls === 2) return jsonResponse(validReservation());
+    return jsonResponse({ error: { type: "provider_error", code: "dependency_unavailable" } }, 503);
+  };
+
+  try {
+    const velo = new Velo({
+      apiKey: "test-key",
+      baseUrl: BASE_URL,
+      maxRetries: 9,
+      retryBaseDelayMs: 0,
+      retryMaxDelayMs: 0,
+    });
+    await assert.rejects(
+      () => velo.gas.sponsorAndSubmit("signed-xdr", { ...defaultOptions(), maxRetries: 99 }),
+      (error: unknown) => error instanceof VeloProviderError,
+    );
+    assert.equal(calls, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("public entry-point types expose gas.sponsorAndSubmit", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) =>
+    url.toString().endsWith("/sponsor")
+      ? jsonResponse(validReservation())
+      : jsonResponse(validSubmitResult());
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    const sponsorAndSubmit: Velo["gas"]["sponsorAndSubmit"] = velo.gas.sponsorAndSubmit;
+    const result: GasSubmitResult = await sponsorAndSubmit("signed-xdr", defaultOptions());
+    assert.equal(result.status, "submitted");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

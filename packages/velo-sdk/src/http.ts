@@ -143,6 +143,10 @@ export class HttpClient {
     );
   }
 
+  getConfiguredTimeoutMs(): number {
+    return this.timeoutMs;
+  }
+
   async request<T>(
     method: "GET" | "POST" | "PUT" | "DELETE",
     path: string,

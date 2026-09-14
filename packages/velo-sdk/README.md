@@ -78,12 +78,16 @@ console.log(reservation.requestId, reservation.reservedStroops);
 ```
 
 Sponsorship reserves the project's fee exposure; it does not submit the
-transaction or confirm ledger execution. If a request times out after the
-server may have received it, retry with the same idempotency key and exact
-signed XDR to recover the original reservation. Do not create or sign a new
-operation automatically. Submission, status retrieval, and composed
-`sponsorAndSubmit()` workflows are separate unreleased source additions; the
-published `0.1.0-alpha.2` package does not include them.
+transaction or confirm ledger execution. Transient sponsorship failures use
+the configured retry count and one total deadline, reusing the exact signed
+XDR, serialized body, idempotency key, and correlation headers. Policy
+denials (`daily_cap_exceeded` and `wallet_rate_limited`) are returned without
+automatic retry. If sponsorship times out before an identity is returned,
+retry the exact signed XDR with the same idempotency key to recover the
+original reservation. Do not create or sign a new operation automatically.
+Submission, status retrieval, and composed `sponsorAndSubmit()` workflows are
+unreleased source additions; the published `0.1.0-alpha.2` package does not
+include them.
 
 ### Submitting a sponsored transaction (unreleased source addition)
 
@@ -113,9 +117,10 @@ if (result.status === "succeeded") {
 ```
 
 The SDK sends the XDR only during this handoff and never retries it
-automatically. A running result (`claimed`, `submission_unknown`, or
-`submitted`) is not a successful transaction; `failed` and `cancelled` are
-terminal non-success results even when the HTTP response is `200`.
+automatically, even when conflicting retry options are supplied. A running
+result (`claimed`, `submission_unknown`, or `submitted`) is not a successful
+transaction; `failed` and `cancelled` are terminal non-success results even
+when the HTTP response is `200`.
 
 ### Manually recovering Gas status (unreleased source addition)
 
@@ -139,6 +144,24 @@ inner/outer hash distinction, and returns the same six execution states. Keep
 the identity as a safe recovery record; never persist the signed XDR, API key,
 or relayer credentials in browser storage or logs. Bounded polling and
 `sponsorAndSubmit()` composition are planned for later D3 sub-sprints.
+
+### Gas errors and recovery
+
+Gas errors preserve the server's stable code, HTTP status, validated request
+ID, and `Retry-After` hint without exposing response bodies or arbitrary server
+messages:
+
+| Situation                                                                                            | SDK result                                                                                                   | Recovery                                                                             |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| Authentication, whitelist, cap/quota, expiry, handoff, or provider error                             | Typed `VeloAuthError`, `VeloValidationError`, `VeloRateLimitError`, or `VeloProviderError`                   | Handle the stable `code`; do not treat it as a transaction outcome.                  |
+| Transient sponsorship failure                                                                        | Automatic retry within `maxRetries` and the total `timeoutMs`                                                | Every retry uses the same caller-held idempotency key and exact input.               |
+| Submission timeout, disconnect, local cancellation, or malformed success response after XDR dispatch | `VeloGasSubmissionUnknownError` with `reason` `timeout`, `network_error`, `cancelled`, or `invalid_response` | Call `velo.gas.getStatus(error.recovery)`; never submit the XDR again automatically. |
+| Cancellation before a request is dispatched                                                          | The caller's existing `AbortSignal.reason`                                                                   | The request did not dispatch; callers may decide whether to retry.                   |
+
+`VeloGasSubmissionUnknownError` extends `VeloSubmissionUnknownError`. Its
+`recovery` contains only the normalized request ID and inner transaction hash;
+it never contains the signed XDR, API key, response body, or exception cause.
+An unknown local outcome does not mean the chain transaction was cancelled.
 
 ### Dual-Anchor Routing (V2)
 

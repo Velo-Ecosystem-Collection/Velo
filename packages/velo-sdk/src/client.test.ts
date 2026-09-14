@@ -506,6 +506,34 @@ test("HttpClient sends correlation header and honors Retry-After on retryable re
   }
 });
 
+test("HttpClient parses HTTP-date Retry-After without delaying when retries are disabled", async () => {
+  const originalFetch = globalThis.fetch;
+  const retryAfter = new Date(Date.now() + 10_000).toUTCString();
+
+  globalThis.fetch = async () =>
+    new Response(JSON.stringify({ error: { type: "provider_error", code: "temporary" } }), {
+      status: 503,
+      headers: { "Content-Type": "application/json", "Retry-After": retryAfter },
+    });
+
+  try {
+    const client = new HttpClient({ apiKey: "test-key", baseUrl: "https://api.example.com" });
+    await assert.rejects(
+      () => client.request("GET", "/test", undefined, { maxRetries: 0 }),
+      (error: unknown) => {
+        assert.equal(error instanceof VeloProviderError, true);
+        const retryAfterMs = (error as VeloProviderError).retryAfterMs;
+        assert.equal(typeof retryAfterMs, "number");
+        assert.ok((retryAfterMs ?? 0) > 8_000);
+        assert.ok((retryAfterMs ?? 0) <= 10_000);
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("submission requests are not retried and network uncertainty is typed", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;

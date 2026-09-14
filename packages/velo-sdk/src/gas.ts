@@ -8,7 +8,7 @@ import type {
   RequestOptions,
 } from "./types.ts";
 
-import { VeloAPIError, VeloValidationError } from "./errors.ts";
+import { VeloAPIError, VeloGasSubmissionUnknownError, VeloValidationError } from "./errors.ts";
 import { HttpClient } from "./http.ts";
 
 const MAX_IDEMPOTENCY_KEY_BYTES = 255;
@@ -49,11 +49,16 @@ export function createGasApi(http: HttpClient): GasApi {
         throw validationError("Gas sponsorship request body is too large.", "transactionXdr");
       }
 
-      const payload = await http.request<unknown>("POST", "/api/gas/sponsor", body, {
-        ...normalizedOptions,
-        maxRetries: 0,
-        submission: false,
-      });
+      const payload = await http.request<unknown>(
+        "POST",
+        "/api/gas/sponsor",
+        body,
+        {
+          ...normalizedOptions,
+          submission: false,
+        },
+        { kind: "sponsor" },
+      );
 
       return parseGasSponsorReservation(payload);
     },
@@ -69,9 +74,17 @@ export function createGasApi(http: HttpClient): GasApi {
           maxRetries: 0,
           submission: true,
         },
+        { kind: "submit", recovery: normalizedParams.identity },
       );
 
-      return parseGasSubmitResult(payload, normalizedParams.identity);
+      try {
+        return parseGasSubmitResult(payload, normalizedParams.identity);
+      } catch (error) {
+        if (isInvalidResponseError(error)) {
+          throw new VeloGasSubmissionUnknownError(normalizedParams.identity, "invalid_response");
+        }
+        throw error;
+      }
     },
     getStatus: async (
       identity: GasExecutionIdentity,
@@ -91,6 +104,7 @@ export function createGasApi(http: HttpClient): GasApi {
           maxRetries: 0,
           submission: false,
         },
+        { kind: "status" },
       );
 
       return parseGasSubmitResult(payload, normalizedIdentity);
@@ -388,4 +402,8 @@ function invalidResponseError(): VeloAPIError {
 
 function invalidSubmitResponseError(): VeloAPIError {
   return new VeloAPIError("Invalid Gas submission response.", { code: "invalid_response" });
+}
+
+function isInvalidResponseError(error: unknown): error is VeloAPIError {
+  return error instanceof VeloAPIError && error.code === "invalid_response";
 }

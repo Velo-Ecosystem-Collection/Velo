@@ -14,6 +14,8 @@ import type {
 import {
   Velo,
   VeloAPIError,
+  VeloAuthError,
+  VeloGasSubmissionUnknownError,
   VeloProviderError,
   VeloRateLimitError,
   VeloSubmissionUnknownError,
@@ -286,15 +288,170 @@ test("gas.sponsor preserves typed denials and retry hints without retrying", asy
     globalThis.fetch = async () => {
       calls++;
       return jsonResponse(
+        { error: { type: "rate_limit_error", code: "wallet_rate_limited", message: "Denied" } },
+        429,
+        { "Retry-After": "7" },
+      );
+    };
+    await assert.rejects(
+      () => velo.gas.sponsor("signed-xdr", { ...defaultOptions(), maxRetries: 99 }),
+      (error: unknown) =>
+        error instanceof VeloRateLimitError && error.code === "wallet_rate_limited",
+    );
+    assert.equal(calls, 2);
+
+    globalThis.fetch = async () => {
+      calls++;
+      return jsonResponse(
         { error: { type: "provider_error", code: "dependency_unavailable", message: "Retry" } },
         503,
       );
     };
     await assert.rejects(
-      () => velo.gas.sponsor("signed-xdr", { ...defaultOptions(), maxRetries: 99 }),
+      () => velo.gas.sponsor("signed-xdr", { ...defaultOptions(), maxRetries: 0 }),
       (error: unknown) => error instanceof VeloProviderError,
     );
+    assert.equal(calls, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.sponsor retries transient failures with identical serialized requests", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<{ body: BodyInit | null | undefined; headers: Headers }> = [];
+  let calls = 0;
+
+  globalThis.fetch = async (_url, options) => {
+    calls++;
+    requests.push({ body: options?.body, headers: new Headers(options?.headers) });
+    if (calls === 1) {
+      return jsonResponse(
+        { error: { type: "provider_error", code: "temporary_failure", message: "Retry" } },
+        503,
+      );
+    }
+    return jsonResponse(validReservation());
+  };
+
+  try {
+    const velo = new Velo({
+      apiKey: "test-key",
+      baseUrl: BASE_URL,
+      maxRetries: 2,
+      retryBaseDelayMs: 0,
+      retryMaxDelayMs: 0,
+    });
+    await velo.gas.sponsor(" signed-xdr ", {
+      ...defaultOptions(),
+      correlationId: "gas-correlation-0001",
+      traceparent: TRACEPARENT,
+    });
     assert.equal(calls, 2);
+    assert.equal(requests[0]?.body, requests[1]?.body);
+    assert.equal(requests[0]?.headers.get("idempotency-key"), "gas-operation-0001");
+    assert.equal(
+      requests[0]?.headers.get("idempotency-key"),
+      requests[1]?.headers.get("idempotency-key"),
+    );
+    assert.equal(requests[0]?.headers.get("x-correlation-id"), "gas-correlation-0001");
+    assert.equal(
+      requests[0]?.headers.get("x-correlation-id"),
+      requests[1]?.headers.get("x-correlation-id"),
+    );
+    assert.equal(requests[0]?.headers.get("traceparent"), TRACEPARENT);
+    assert.equal(requests[0]?.headers.get("traceparent"), requests[1]?.headers.get("traceparent"));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.sponsor exhausts configured retries and preserves retry-after metadata", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+
+  globalThis.fetch = async () => {
+    calls++;
+    return jsonResponse(
+      { error: { type: "provider_error", code: "temporary_failure", message: "Retry" } },
+      503,
+      { "Retry-After": "0" },
+    );
+  };
+
+  try {
+    const velo = new Velo({
+      apiKey: "test-key",
+      baseUrl: BASE_URL,
+      maxRetries: 2,
+      retryBaseDelayMs: 0,
+      retryMaxDelayMs: 0,
+    });
+    await assert.rejects(
+      () => velo.gas.sponsor("signed-xdr", defaultOptions()),
+      (error: unknown) => error instanceof VeloProviderError && error.retryAfterMs === 0,
+    );
+    assert.equal(calls, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas HTTP errors retain authentication, policy, expiry, handoff, and provider distinctions", async () => {
+  const originalFetch = globalThis.fetch;
+  const cases = [
+    { status: 401, type: "auth_error", code: "invalid_api_key", ctor: VeloAuthError },
+    {
+      status: 403,
+      type: "validation_error",
+      code: "contract_not_whitelisted",
+      ctor: VeloValidationError,
+    },
+    {
+      status: 429,
+      type: "rate_limit_error",
+      code: "wallet_rate_limited",
+      ctor: VeloRateLimitError,
+    },
+    {
+      status: 409,
+      type: "validation_error",
+      code: "reservation_expired",
+      ctor: VeloValidationError,
+    },
+    {
+      status: 409,
+      type: "validation_error",
+      code: "handoff_unavailable",
+      ctor: VeloValidationError,
+    },
+    {
+      status: 503,
+      type: "provider_error",
+      code: "dependency_unavailable",
+      ctor: VeloProviderError,
+    },
+  ] as const;
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL, maxRetries: 0 });
+    for (const testCase of cases) {
+      globalThis.fetch = async () =>
+        jsonResponse(
+          { error: { type: testCase.type, code: testCase.code, message: "Safe error" } },
+          testCase.status,
+        );
+      await assert.rejects(
+        () => velo.gas.sponsor("signed-xdr", defaultOptions()),
+        (error: unknown) => {
+          assert.equal(error instanceof testCase.ctor, true);
+          assert.equal((error as VeloAPIError).code, testCase.code);
+          assert.equal((error as Error).message.includes("Safe error"), false);
+          assert.equal((error as Error).message.includes("xdr-secret"), false);
+          return true;
+        },
+      );
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -599,6 +756,42 @@ test("gas submission rejects malformed or mismatched responses without redaction
   }
 });
 
+test("gas.submit turns an invalid dispatched success response into safe recovery uncertainty", async () => {
+  const originalFetch = globalThis.fetch;
+  const identity: GasExecutionIdentity = {
+    requestId: "gas-request-0001",
+    transactionHash: TRANSACTION_HASH,
+  };
+
+  globalThis.fetch = async () =>
+    jsonResponse({
+      ...validSubmitResult({ requestId: "gas-request-0002" }),
+      rawXdr: "xdr-secret",
+      apiKey: "key-secret",
+    });
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    await assert.rejects(
+      () => velo.gas.submit({ ...identity, transactionXdr: "xdr-secret" }),
+      (error: unknown) => {
+        assert.equal(error instanceof VeloGasSubmissionUnknownError, true);
+        const unknown = error as VeloGasSubmissionUnknownError;
+        assert.equal(unknown instanceof VeloSubmissionUnknownError, true);
+        assert.equal(unknown.code, "submission_unknown");
+        assert.equal(unknown.reason, "invalid_response");
+        assert.deepEqual(unknown.recovery, identity);
+        assert.equal(unknown.message.includes("xdr-secret"), false);
+        assert.equal(unknown.message.includes("key-secret"), false);
+        assert.equal("cause" in unknown, false);
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("gas submit and status force one attempt while preserving transport semantics", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
@@ -683,13 +876,150 @@ test("gas submit timeout is unknown, status timeout is bounded, and cancellation
     };
     await assert.rejects(
       () => velo.gas.submit({ ...identity, transactionXdr: "signed-xdr" }, { timeoutMs: 20 }),
-      (error: unknown) => error instanceof VeloSubmissionUnknownError,
+      (error: unknown) => {
+        assert.equal(error instanceof VeloGasSubmissionUnknownError, true);
+        const unknown = error as VeloGasSubmissionUnknownError;
+        assert.equal(unknown.reason, "timeout");
+        assert.deepEqual(unknown.recovery, identity);
+        return true;
+      },
     );
     await assert.rejects(
       () => velo.gas.getStatus(identity, { timeoutMs: 20 }),
       (error: unknown) => error instanceof VeloTimeoutError,
     );
     assert.equal(calls, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.submit reports post-dispatch disconnect and cancellation without unsafe context", async () => {
+  const originalFetch = globalThis.fetch;
+  const identity: GasExecutionIdentity = {
+    requestId: "gas-request-0001",
+    transactionHash: TRANSACTION_HASH,
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    globalThis.fetch = async () => {
+      throw new TypeError("network secret xdr-secret");
+    };
+    await assert.rejects(
+      () => velo.gas.submit({ ...identity, transactionXdr: "xdr-secret" }),
+      (error: unknown) => {
+        assert.equal(error instanceof VeloGasSubmissionUnknownError, true);
+        const unknown = error as VeloGasSubmissionUnknownError;
+        assert.equal(unknown.reason, "network_error");
+        assert.deepEqual(unknown.recovery, identity);
+        assert.equal(unknown.message.includes("xdr-secret"), false);
+        assert.equal(unknown.message.includes("network secret"), false);
+        return true;
+      },
+    );
+
+    const controller = new AbortController();
+    const callerReason = new DOMException("caller secret", "AbortError");
+    globalThis.fetch = async (_url, options) => {
+      setTimeout(() => controller.abort(callerReason), 0);
+      return new Promise((_resolve, reject) => {
+        options?.signal?.addEventListener(
+          "abort",
+          () => reject(new DOMException("The operation was aborted.", "AbortError")),
+          { once: true },
+        );
+      });
+    };
+    await assert.rejects(
+      () =>
+        velo.gas.submit(
+          { ...identity, transactionXdr: "xdr-secret" },
+          { signal: controller.signal },
+        ),
+      (error: unknown) => {
+        assert.equal(error instanceof VeloGasSubmissionUnknownError, true);
+        const unknown = error as VeloGasSubmissionUnknownError;
+        assert.equal(unknown.reason, "cancelled");
+        assert.deepEqual(unknown.recovery, identity);
+        assert.equal(unknown.message.includes("caller secret"), false);
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.sponsor cancels retry backoff and prevents another dispatch", async () => {
+  const originalFetch = globalThis.fetch;
+  const controller = new AbortController();
+  const callerReason = new DOMException("caller stopped waiting", "AbortError");
+  let calls = 0;
+
+  globalThis.fetch = async () => {
+    calls++;
+    setTimeout(() => controller.abort(callerReason), 5);
+    return jsonResponse(
+      { error: { type: "provider_error", code: "temporary_failure", message: "Retry" } },
+      503,
+      { "Retry-After": "100" },
+    );
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    await assert.rejects(
+      () => velo.gas.sponsor("signed-xdr", { ...defaultOptions(), signal: controller.signal }),
+      (error: unknown) => error === callerReason,
+    );
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("gas.sponsor allows zero-delay retries and stops before a deadline dispatch", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+
+  globalThis.fetch = async () => {
+    calls++;
+    if (calls === 1) {
+      return jsonResponse(
+        { error: { type: "provider_error", code: "temporary_failure", message: "Retry" } },
+        503,
+        { "Retry-After": "0" },
+      );
+    }
+    return jsonResponse(validReservation());
+  };
+
+  try {
+    const velo = new Velo({
+      apiKey: "test-key",
+      baseUrl: BASE_URL,
+      maxRetries: 1,
+      retryBaseDelayMs: 0,
+      retryMaxDelayMs: 0,
+    });
+    await velo.gas.sponsor("signed-xdr", defaultOptions());
+    assert.equal(calls, 2);
+
+    calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      return jsonResponse(
+        { error: { type: "provider_error", code: "temporary_failure", message: "Retry" } },
+        503,
+        { "Retry-After": "100" },
+      );
+    };
+    await assert.rejects(
+      () => velo.gas.sponsor("signed-xdr", { ...defaultOptions(), timeoutMs: 20 }),
+      (error: unknown) => error instanceof VeloTimeoutError,
+    );
+    assert.equal(calls, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }

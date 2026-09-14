@@ -1,3 +1,5 @@
+import type { GasExecutionIdentity } from "./types.ts";
+
 export class VeloError extends Error {
   readonly status?: number;
   readonly code?: string;
@@ -49,6 +51,31 @@ export class VeloSubmissionUnknownError extends VeloError {
   }
 }
 
+export type GasSubmissionUnknownReason =
+  | "timeout"
+  | "network_error"
+  | "cancelled"
+  | "invalid_response";
+
+export class VeloGasSubmissionUnknownError extends VeloSubmissionUnknownError {
+  readonly recovery: GasExecutionIdentity;
+  readonly reason: GasSubmissionUnknownReason;
+
+  constructor(recovery: GasExecutionIdentity, reason: GasSubmissionUnknownReason) {
+    super(
+      reason === "timeout"
+        ? "Gas transaction submission timed out; reconcile by transaction hash"
+        : reason === "network_error"
+          ? "Gas transaction submission lost network contact; reconcile by transaction hash"
+          : reason === "cancelled"
+            ? "Gas transaction submission was cancelled locally; reconcile by transaction hash"
+            : "Gas transaction submission returned an invalid response; reconcile by transaction hash",
+    );
+    this.recovery = { ...recovery };
+    this.reason = reason;
+  }
+}
+
 export class VeloAuthError extends VeloError {
   constructor(message: string, options?: { status?: number; code?: string; requestId?: string }) {
     super(message, options);
@@ -88,7 +115,14 @@ export class VeloWebhookSignatureVerificationError extends VeloValidationError {
   }
 }
 
-export function mapErrorResponse(status: number, payload: unknown, requestId?: string): VeloError {
+const SAFE_METADATA = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+export function mapErrorResponse(
+  status: number,
+  payload: unknown,
+  requestId?: string,
+  options?: { safe?: boolean },
+): VeloError {
   const errorObj =
     payload &&
     typeof payload === "object" &&
@@ -97,25 +131,30 @@ export function mapErrorResponse(status: number, payload: unknown, requestId?: s
     typeof payload.error === "object"
       ? (payload.error as Record<string, unknown>)
       : {};
-  const message =
+  const responseMessage =
     typeof errorObj.message === "string"
       ? errorObj.message
       : `Request failed with status ${status}`;
-  const code = typeof errorObj.code === "string" ? errorObj.code : undefined;
-  const param = typeof errorObj.param === "string" ? errorObj.param : undefined;
-  const reqId = typeof errorObj.requestId === "string" ? errorObj.requestId : requestId;
+  const responseCode = typeof errorObj.code === "string" ? errorObj.code : undefined;
+  const responseParam = typeof errorObj.param === "string" ? errorObj.param : undefined;
+  const responseRequestId = typeof errorObj.requestId === "string" ? errorObj.requestId : requestId;
   const errorType = typeof errorObj.type === "string" ? errorObj.type : undefined;
+  const safe = options?.safe === true;
+  const message = safe ? safeGasErrorMessage(status, responseCode) : responseMessage;
+  const code = safe ? safeMetadata(responseCode) : responseCode;
+  const param = safe ? safeMetadata(responseParam) : responseParam;
+  const reqId = safe ? safeMetadata(responseRequestId) : responseRequestId;
 
-  const options = { status, code, param, requestId: reqId };
+  const errorOptions = { status, code, param, requestId: reqId };
 
   if (status === 401 || errorType === "auth_error") {
-    return new VeloAuthError(message, options);
+    return new VeloAuthError(message, errorOptions);
   }
   if (status === 429 || errorType === "rate_limit_error") {
-    return new VeloRateLimitError(message, options);
+    return new VeloRateLimitError(message, errorOptions);
   }
   if (status === 502 || status === 503 || status === 504 || errorType === "provider_error") {
-    return new VeloProviderError(message, options);
+    return new VeloProviderError(message, errorOptions);
   }
   if (
     status === 400 ||
@@ -125,8 +164,32 @@ export function mapErrorResponse(status: number, payload: unknown, requestId?: s
     errorType === "not_found_error" ||
     errorType === "idempotency_error"
   ) {
-    return new VeloValidationError(message, options);
+    return new VeloValidationError(message, errorOptions);
   }
 
-  return new VeloAPIError(message, options);
+  return new VeloAPIError(message, errorOptions);
+}
+
+function safeMetadata(value: string | undefined): string | undefined {
+  return value !== undefined && SAFE_METADATA.test(value) ? value : undefined;
+}
+
+function safeGasErrorMessage(status: number, code: string | undefined): string {
+  switch (code) {
+    case "contract_not_whitelisted":
+      return "Gas sponsorship is not allowed for this contract.";
+    case "daily_cap_exceeded":
+      return "Gas sponsorship daily cap was exceeded.";
+    case "wallet_rate_limited":
+      return "Gas sponsorship wallet quota was exceeded.";
+    case "reservation_expired":
+      return "Gas sponsorship reservation has expired.";
+    case "handoff_unavailable":
+      return "Gas transaction handoff is unavailable.";
+    default:
+      if (status === 401) return "Gas authentication failed.";
+      if (status === 429) return "Gas request was rate limited.";
+      if (status >= 500) return "Gas provider request failed.";
+      return "Gas request failed.";
+  }
 }

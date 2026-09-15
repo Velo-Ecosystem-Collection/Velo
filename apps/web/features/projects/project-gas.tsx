@@ -349,15 +349,15 @@ function ProjectGasContent({ projectId }: ProjectGasProps) {
         <RelayerSummary relayer={relayer} />
       </div>
 
-      <GasPolicyForm policy={policy} role={access.role} />
+      <GasPolicyForm projectId={typedProjectId} policy={policy} role={access.role} />
 
       <Alert>
         <CheckCircle2Icon />
-        <AlertTitle>Draft-only policy controls</AlertTitle>
+        <AlertTitle>Authoritative policy controls</AlertTitle>
         <AlertDescription>
-          Policy changes are validated in this browser only and are not persisted yet. Spend
-          counters, balances, funding tools, transaction history, and telemetry will be added in
-          later Gas Station sub-sprints.
+          Policy changes are validated in the browser, authorized by Convex, and reflected from the
+          stored policy readback. Spend counters, balances, funding tools, transaction history, and
+          telemetry will be added in later Gas Station sub-sprints.
         </AlertDescription>
       </Alert>
     </section>

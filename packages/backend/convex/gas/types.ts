@@ -36,6 +36,14 @@ export const GAS_ACCOUNTING_BLOCK_REASONS = {
 export type GasAccountingBlockReason =
   (typeof GAS_ACCOUNTING_BLOCK_REASONS)[keyof typeof GAS_ACCOUNTING_BLOCK_REASONS];
 
+/** Stable safe errors returned by authenticated Gas console mutations. */
+export const GAS_POLICY_ERROR_CODES = {
+  dailyCapBelowEffectiveUsage: "daily_cap_below_effective_usage",
+} as const;
+
+export type GasPolicyErrorCode =
+  (typeof GAS_POLICY_ERROR_CODES)[keyof typeof GAS_POLICY_ERROR_CODES];
+
 /** Maximum number of contract IDs accepted in a Gas Station allowlist. */
 export const GAS_MAX_ALLOWED_CONTRACT_IDS = 20;
 

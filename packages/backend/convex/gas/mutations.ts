@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 
 import type { GasPolicyProjection, RelayerAccountProjection } from "./projections";
 
@@ -12,7 +12,7 @@ import {
   relayerAccountProjectionValidator,
 } from "./projections";
 import { gasRelayerStatusValidator } from "./schema";
-import { GAS_NETWORK } from "./types";
+import { GAS_NETWORK, GAS_POLICY_ERROR_CODES } from "./types";
 import {
   assertNonNegativeSafeInteger,
   normalizeContractAllowlist,
@@ -62,7 +62,10 @@ export const updatePolicy = mutation({
         );
       }
       if (dailyCapStroops < accounting.snapshot.effectiveUsageStroops) {
-        throw new Error("Daily Gas cap cannot be lower than current-day reservations");
+        throw new ConvexError({
+          code: GAS_POLICY_ERROR_CODES.dailyCapBelowEffectiveUsage,
+          message: "Daily Gas cap cannot be lower than current effective usage.",
+        });
       }
 
       await ctx.db.patch(existing._id, {

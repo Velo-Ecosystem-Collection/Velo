@@ -7,10 +7,16 @@ import {
 } from "../../../../packages/ui/src/components/ui-customs/sidebar/project-navigation.ts";
 import {
   formatStroopsAsXlm,
+  createGasPolicyFormState,
+  createGasPolicyStoredState,
+  gasPolicyStoredStateFromUpdate,
+  reduceGasPolicyFormState,
+  getGasPolicySaveError,
   initializeGasPolicyDraft,
   getGasAccessState,
   parseXlmToStroops,
   type GasPolicyDraft,
+  type GasPolicyFormState,
   validateGasPolicyDraft,
 } from "./gas-ui.ts";
 
@@ -182,4 +188,197 @@ test("builds member deep links even when the owner switcher list is empty", () =
     true,
   );
   assert.equal(isSidebarPathActive("/dashboard", "/projects/member-project/gas"), false);
+});
+
+function formState(policy: Parameters<typeof createGasPolicyStoredState>[0] = null) {
+  return createGasPolicyFormState(createGasPolicyStoredState(policy));
+}
+
+function updateValues(overrides: Partial<GasPolicyDraft> = {}) {
+  const values = validateGasPolicyDraft(draft(overrides));
+  assert.equal(values.ok, true);
+  if (!values.ok) throw new Error("Expected valid Gas policy values");
+  return values.values;
+}
+
+function editState(state: GasPolicyFormState, overrides: Partial<GasPolicyDraft>) {
+  return reduceGasPolicyFormState(state, { type: "edit", draft: draft(overrides) });
+}
+
+test("transitions through saving, saved readback, and duplicate-submit guard", () => {
+  const initial = formState();
+  const values = updateValues({ enabled: false, dailyCapXlm: "2.5", walletHourlyLimit: "8" });
+  const expected = gasPolicyStoredStateFromUpdate(values);
+  const edited = editState(initial, {
+    enabled: false,
+    dailyCapXlm: "2.5",
+    walletHourlyLimit: "8",
+  });
+  const saving = reduceGasPolicyFormState(edited, { type: "save-start", id: 1, expected });
+  assert.equal(saving.savePhase, "saving");
+  assert.equal(reduceGasPolicyFormState(saving, { type: "save-start", id: 2, expected }), saving);
+
+  const saved = reduceGasPolicyFormState(saving, {
+    type: "save-success",
+    id: 1,
+    stored: expected,
+  });
+  assert.equal(saved.savePhase, "saved");
+  assert.equal(saved.hasRemoteUpdate, false);
+  assert.deepEqual(saved.draft, expected.draft);
+});
+
+test("preserves a rejected draft and maps only the structured cap error", () => {
+  const values = updateValues({ dailyCapXlm: "3" });
+  const expected = gasPolicyStoredStateFromUpdate(values);
+  const edited = editState(formState(), { dailyCapXlm: "3" });
+  const saving = reduceGasPolicyFormState(edited, { type: "save-start", id: 7, expected });
+  const rejected = reduceGasPolicyFormState(saving, {
+    type: "save-failure",
+    id: 7,
+    error: "cap_below_effective_usage",
+  });
+
+  assert.equal(rejected.savePhase, "error");
+  assert.equal(rejected.saveError, "cap_below_effective_usage");
+  assert.equal(rejected.draft.dailyCapXlm, "3");
+  assert.equal(
+    getGasPolicySaveError({ data: { code: "daily_cap_below_effective_usage" } }),
+    "cap_below_effective_usage",
+  );
+  assert.equal(getGasPolicySaveError({ data: { code: "permission_denied" } }), "generic");
+});
+
+test("preserves dirty drafts and blocks save on editable remote conflicts", () => {
+  const original = {
+    enabled: true,
+    dailyCapStroops: "10000000",
+    walletHourlyLimit: 4,
+    allowedContractIds: [VALID_CONTRACT_ID],
+  };
+  const edited = editState(formState(original), { dailyCapXlm: "2" });
+  const remote = createGasPolicyStoredState({
+    ...original,
+    dailyCapStroops: "30000000",
+    updatedAt: 2,
+  });
+  const conflicted = reduceGasPolicyFormState(edited, { type: "remote", stored: remote });
+  assert.equal(conflicted.hasRemoteUpdate, true);
+  assert.equal(conflicted.draft.dailyCapXlm, "2");
+  assert.equal(
+    reduceGasPolicyFormState(conflicted, {
+      type: "save-start",
+      id: 1,
+      expected: gasPolicyStoredStateFromUpdate(updateValues({ dailyCapXlm: "2" })),
+    }),
+    conflicted,
+  );
+
+  const reset = reduceGasPolicyFormState(conflicted, { type: "reset" });
+  assert.equal(reset.hasRemoteUpdate, false);
+  assert.deepEqual(reset.draft, remote.draft);
+  assert.equal(reset.savePhase, "idle");
+});
+
+test("keeps Reset available when a remote change races a successful acknowledgement", () => {
+  const original = {
+    enabled: true,
+    dailyCapStroops: "10000000",
+    walletHourlyLimit: 4,
+    allowedContractIds: [VALID_CONTRACT_ID],
+  };
+  const values = updateValues({ dailyCapXlm: "2" });
+  const expected = gasPolicyStoredStateFromUpdate(values);
+  const saving = reduceGasPolicyFormState(editState(formState(original), { dailyCapXlm: "2" }), {
+    type: "save-start",
+    id: 4,
+    expected,
+  });
+  const remote = createGasPolicyStoredState({ ...original, dailyCapStroops: "3" });
+  const conflict = reduceGasPolicyFormState(saving, { type: "remote", stored: remote });
+  const acknowledged = reduceGasPolicyFormState(conflict, {
+    type: "save-success",
+    id: 4,
+    stored: expected,
+  });
+
+  assert.equal(acknowledged.hasRemoteUpdate, true);
+  assert.deepEqual(acknowledged.draft, expected.draft);
+  assert.deepEqual(reduceGasPolicyFormState(acknowledged, { type: "reset" }).draft, remote.draft);
+});
+
+test("pristine forms follow remote editable values while accounting-only updates are ignored", () => {
+  const original = {
+    enabled: true,
+    dailyCapStroops: "10000000",
+    dailyReservedStroops: "0",
+    walletHourlyLimit: 4,
+    allowedContractIds: [VALID_CONTRACT_ID],
+    updatedAt: 1,
+  };
+  const initial = formState(original);
+  const accountingOnly = createGasPolicyStoredState({
+    ...original,
+    dailyReservedStroops: "9",
+    updatedAt: 2,
+  });
+  assert.equal(
+    reduceGasPolicyFormState(initial, { type: "remote", stored: accountingOnly }),
+    initial,
+  );
+
+  const changed = createGasPolicyStoredState({ ...original, dailyCapStroops: "20000000" });
+  const followed = reduceGasPolicyFormState(initial, { type: "remote", stored: changed });
+  assert.equal(followed.hasRemoteUpdate, false);
+  assert.deepEqual(followed.draft, changed.draft);
+});
+
+test("ignores stale subscription ordering around a successful save", () => {
+  const original = {
+    enabled: true,
+    dailyCapStroops: "10000000",
+    walletHourlyLimit: 4,
+    allowedContractIds: [VALID_CONTRACT_ID],
+  };
+  const initial = formState(original);
+  const values = updateValues({ dailyCapXlm: "2", walletHourlyLimit: "6" });
+  const expected = gasPolicyStoredStateFromUpdate(values);
+  const saving = reduceGasPolicyFormState(
+    editState(initial, { dailyCapXlm: "2", walletHourlyLimit: "6" }),
+    { type: "save-start", id: 3, expected },
+  );
+  const sawExpectedBeforeResponse = reduceGasPolicyFormState(saving, {
+    type: "remote",
+    stored: expected,
+  });
+  const acknowledged = reduceGasPolicyFormState(sawExpectedBeforeResponse, {
+    type: "save-success",
+    id: 3,
+    stored: expected,
+  });
+  const stale = reduceGasPolicyFormState(acknowledged, {
+    type: "remote",
+    stored: createGasPolicyStoredState(original),
+  });
+
+  assert.equal(stale.hasRemoteUpdate, false);
+  assert.deepEqual(stale.draft, expected.draft);
+  const editedAfterAcknowledgement = reduceGasPolicyFormState(stale, {
+    type: "edit",
+    draft: draft({ dailyCapXlm: "4", walletHourlyLimit: "6" }),
+  });
+  const staleAfterEdit = reduceGasPolicyFormState(editedAfterAcknowledgement, {
+    type: "remote",
+    stored: createGasPolicyStoredState(original),
+  });
+  assert.equal(staleAfterEdit.hasRemoteUpdate, false);
+  assert.equal(staleAfterEdit.draft.dailyCapXlm, "4");
+  assert.deepEqual(
+    reduceGasPolicyFormState(acknowledged, {
+      type: "save-success",
+      id: 2,
+      stored: createGasPolicyStoredState(original),
+    }),
+    acknowledged,
+  );
 });

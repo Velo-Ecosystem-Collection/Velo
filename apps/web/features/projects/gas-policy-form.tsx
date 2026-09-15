@@ -1,5 +1,6 @@
 "use client";
 
+import { api } from "@repo/backend/convex/_generated/api";
 import { Badge } from "@repo/ui/components/ui-customs/badge";
 import { Button } from "@repo/ui/components/ui/button";
 import {
@@ -14,20 +15,46 @@ import { Input } from "@repo/ui/components/ui/input";
 import { Label } from "@repo/ui/components/ui/label";
 import { Switch } from "@repo/ui/components/ui/switch";
 import { Textarea } from "@repo/ui/components/ui/textarea";
-import { InfoIcon, RotateCcwIcon } from "lucide-react";
-import { useEffect, useId, useState, type ChangeEvent, type FormEvent } from "react";
+import { useMutation } from "convex/react";
+import {
+  AlertCircleIcon,
+  CheckCircle2Icon,
+  InfoIcon,
+  LoaderCircleIcon,
+  RotateCcwIcon,
+} from "lucide-react";
+import {
+  useEffect,
+  useId,
+  useReducer,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
+
+import type { Id } from "@repo/backend/convex/_generated/dataModel";
 
 import {
   initializeGasPolicyDraft,
+  createGasPolicyFormState,
+  createGasPolicyStoredState,
+  gasPolicyStoredStateFromUpdate,
+  gasPolicyStoredStateKey,
+  getGasPolicySaveError,
+  reduceGasPolicyFormState,
+  areGasPolicyDraftsEqual,
   type GasPolicyDraft,
   type GasPolicyDraftErrors,
   type GasPolicyDraftField,
   type GasPolicyRole,
   type GasPolicySnapshot,
+  type GasPolicySaveError,
   validateGasPolicyDraft,
 } from "./gas-ui";
 
 type GasPolicyFormProps = {
+  projectId: Id<"projects">;
   policy: GasPolicySnapshot | null | undefined;
   role: GasPolicyRole;
 };
@@ -229,56 +256,76 @@ function ReadOnlyGasPolicyForm({ policy }: { policy: GasPolicySnapshot | null })
   );
 }
 
-function areDraftsEqual(left: GasPolicyDraft, right: GasPolicyDraft): boolean {
-  return (
-    left.enabled === right.enabled &&
-    left.dailyCapXlm === right.dailyCapXlm &&
-    left.walletHourlyLimit === right.walletHourlyLimit &&
-    left.allowedContractIdsText === right.allowedContractIdsText
-  );
-}
-
-function EditableGasPolicyForm({ policy }: { policy: GasPolicySnapshot | null | undefined }) {
-  const latestDraft = policy === undefined ? null : initializeGasPolicyDraft(policy);
-  const storedKey = latestDraft ? JSON.stringify(latestDraft) : null;
-  const [draft, setDraft] = useState<GasPolicyDraft | null>(() => latestDraft);
-  const [baseDraft, setBaseDraft] = useState<GasPolicyDraft | null>(() => latestDraft);
-  const [lastStoredKey, setLastStoredKey] = useState<string | null>(() => storedKey);
-  const [hasLocalEdits, setHasLocalEdits] = useState(false);
-  const [hasRemoteUpdate, setHasRemoteUpdate] = useState(false);
-  const [touched, setTouched] = useState<Partial<Record<GasPolicyDraftField, boolean>>>({});
-
-  useEffect(() => {
-    if (latestDraft === null || storedKey === lastStoredKey) return;
-
-    setLastStoredKey(storedKey);
-    setBaseDraft(latestDraft);
-    setHasRemoteUpdate(hasLocalEdits);
-    if (!hasLocalEdits) {
-      setDraft(latestDraft);
-    }
-  }, [hasLocalEdits, lastStoredKey, latestDraft, storedKey]);
-
-  if (draft === null || baseDraft === null || latestDraft === null) {
-    return <GasPolicyFormLoading />;
+function getSaveErrorMessage(error: GasPolicySaveError): string {
+  if (error === "cap_below_effective_usage") {
+    return "The daily cap cannot be lower than current effective usage (confirmed spend plus outstanding holds). The stored policy was not changed.";
   }
 
-  const validation = validateGasPolicyDraft(draft);
+  return "The policy could not be saved. The stored policy was not changed. Try again.";
+}
+
+function EditableGasPolicyForm({
+  projectId,
+  policy,
+}: {
+  projectId: Id<"projects">;
+  policy: GasPolicySnapshot | null;
+}) {
+  const initialStored = createGasPolicyStoredState(policy);
+  const policyFormId = useId();
+  const [state, dispatch] = useReducer(
+    reduceGasPolicyFormState,
+    initialStored,
+    createGasPolicyFormState,
+  );
+  const [touched, setTouched] = useState<Partial<Record<GasPolicyDraftField, boolean>>>({});
+  const updatePolicy = useMutation(api.gas.mutations.updatePolicy);
+  const inFlightRef = useRef(false);
+  const mountedRef = useRef(true);
+  const nextOperationIdRef = useRef(1);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const stored = createGasPolicyStoredState(policy);
+  const storedKey = gasPolicyStoredStateKey(stored);
+
+  useEffect(() => {
+    dispatch({ type: "remote", stored });
+  }, [storedKey]);
+
+  const validation = validateGasPolicyDraft(state.draft);
   const errors = validation.ok ? {} : validation.errors;
-  const isDirty = !areDraftsEqual(draft, baseDraft);
+  const isDirty = !areGasPolicyDraftsEqual(state.draft, state.baseline.draft);
+  const isSaving = state.savePhase === "saving";
+  const isSaveBlocked = isSaving || state.hasRemoteUpdate;
 
   function markTouched(field: GasPolicyDraftField) {
     setTouched((current) => ({ ...current, [field]: true }));
   }
 
+  function markAllTouched() {
+    setTouched({
+      dailyCapXlm: true,
+      walletHourlyLimit: true,
+      allowedContractIdsText: true,
+    });
+  }
+
+  function editDraft(nextDraft: GasPolicyDraft) {
+    dispatch({ type: "edit", draft: nextDraft });
+  }
+
   function updateDraftField(field: GasPolicyDraftField, value: string) {
-    setDraft((current) => (current ? { ...current, [field]: value } : current));
-    setHasLocalEdits(true);
+    editDraft({ ...state.draft, [field]: value });
   }
 
   function handleEnabledChange(enabled: boolean) {
-    setDraft((current) => (current ? { ...current, enabled } : current));
-    setHasLocalEdits(true);
+    editDraft({ ...state.draft, enabled });
   }
 
   function handleDailyCapChange(value: string) {
@@ -306,16 +353,46 @@ function EditableGasPolicyForm({ policy }: { policy: GasPolicySnapshot | null | 
   }
 
   function handleReset() {
-    setDraft(latestDraft);
-    setBaseDraft(latestDraft);
-    setLastStoredKey(storedKey);
-    setHasLocalEdits(false);
-    setHasRemoteUpdate(false);
+    if (isSaving) return;
+    dispatch({ type: "reset" });
     setTouched({});
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (inFlightRef.current || isSaveBlocked || !isDirty) return;
+
+    if (!validation.ok) {
+      markAllTouched();
+      return;
+    }
+
+    const operationId = nextOperationIdRef.current;
+    nextOperationIdRef.current += 1;
+    const expected = gasPolicyStoredStateFromUpdate(validation.values);
+    inFlightRef.current = true;
+    dispatch({ type: "save-start", id: operationId, expected });
+
+    void updatePolicy({ projectId, ...validation.values })
+      .then((savedPolicy) => {
+        if (!mountedRef.current) return;
+        dispatch({
+          type: "save-success",
+          id: operationId,
+          stored: createGasPolicyStoredState(savedPolicy),
+        });
+      })
+      .catch((error: unknown) => {
+        if (!mountedRef.current) return;
+        dispatch({
+          type: "save-failure",
+          id: operationId,
+          error: getGasPolicySaveError(error),
+        });
+      })
+      .finally(() => {
+        if (mountedRef.current) inFlightRef.current = false;
+      });
   }
 
   return (
@@ -328,21 +405,33 @@ function EditableGasPolicyForm({ policy }: { policy: GasPolicySnapshot | null | 
           </Badge>
         </div>
         <CardDescription>
-          Prepare a policy draft locally. Sub-sprint 3.2 has no Save action, so these edits are not
-          sent to Convex.
+          Edit the complete Testnet sponsorship policy. Save sends all four normalized fields to
+          Convex, and the stored projection remains authoritative after the response.
         </CardDescription>
-        {hasRemoteUpdate && isDirty ? (
-          <p className="text-sm text-muted-foreground" aria-live="polite">
-            The stored policy changed while this draft was being edited. Reset to review the latest
-            stored values.
+        {state.hasRemoteUpdate ? (
+          <p className="text-sm text-destructive" role="alert" aria-live="assertive">
+            The stored policy changed while this draft was being edited. Reset to stored values to
+            review the latest configuration before saving again.
+          </p>
+        ) : null}
+        {state.savePhase === "error" && state.saveError ? (
+          <p className="flex items-start gap-2 text-sm text-destructive" role="alert">
+            <AlertCircleIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            {getSaveErrorMessage(state.saveError)}
+          </p>
+        ) : null}
+        {state.savePhase === "saved" ? (
+          <p className="flex items-start gap-2 text-sm text-emerald-700" role="status">
+            <CheckCircle2Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+            Policy saved. The returned stored projection was applied to this form.
           </p>
         ) : null}
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="grid min-w-0 gap-5">
+        <form id={policyFormId} onSubmit={handleSubmit} className="grid min-w-0 gap-5">
           <GasPolicyFields
-            draft={draft}
-            readOnly={false}
+            draft={state.draft}
+            readOnly={isSaving}
             errors={errors}
             touched={touched}
             onEnabledChange={handleEnabledChange}
@@ -363,21 +452,40 @@ function EditableGasPolicyForm({ policy }: { policy: GasPolicySnapshot | null | 
         </form>
       </CardContent>
       <CardFooter className="flex-wrap justify-between gap-3 border-t">
-        <p className="text-sm text-muted-foreground" aria-live="polite">
+        <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
           {validation.ok
-            ? "Draft values are valid locally."
-            : "Fix the marked fields before this draft can be used."}
+            ? isSaving
+              ? "Saving policy…"
+              : isDirty
+                ? "Draft values are valid locally."
+                : "Policy matches stored values."
+            : "Fix the marked fields before saving this policy."}
         </p>
-        <Button type="button" variant="outline" onClick={handleReset} disabled={!isDirty}>
-          <RotateCcwIcon aria-hidden="true" />
-          Reset to stored values
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={handleReset}
+            disabled={(!isDirty && !state.hasRemoteUpdate) || isSaving}
+          >
+            <RotateCcwIcon aria-hidden="true" />
+            Reset to stored values
+          </Button>
+          <Button
+            type="submit"
+            form={policyFormId}
+            disabled={!isDirty || !validation.ok || isSaveBlocked}
+          >
+            {isSaving ? <LoaderCircleIcon className="animate-spin" aria-hidden="true" /> : null}
+            {isSaving ? "Saving…" : "Save policy"}
+          </Button>
+        </div>
       </CardFooter>
     </Card>
   );
 }
 
-export function GasPolicyForm({ policy, role }: GasPolicyFormProps) {
+export function GasPolicyForm({ projectId, policy, role }: GasPolicyFormProps) {
   if (policy === undefined) {
     return <GasPolicyFormLoading />;
   }
@@ -386,5 +494,5 @@ export function GasPolicyForm({ policy, role }: GasPolicyFormProps) {
     return <ReadOnlyGasPolicyForm policy={policy} />;
   }
 
-  return <EditableGasPolicyForm policy={policy} />;
+  return <EditableGasPolicyForm projectId={projectId} policy={policy} />;
 }

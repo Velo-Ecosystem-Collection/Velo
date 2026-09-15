@@ -7,6 +7,7 @@ const XLM_AMOUNT_PATTERN = /^\d+(?:\.\d{1,7})?$/;
 const NON_NEGATIVE_INTEGER_PATTERN = /^\d+$/;
 const XLM_MAX_VALUE = "922337203685.4775807";
 const MAX_ALLOWED_CONTRACT_IDS = 20;
+export const GAS_POLICY_CAP_ERROR_CODE = "daily_cap_below_effective_usage" as const;
 
 export type GasAccessState = "connect" | "loading" | "unavailable" | "ready";
 
@@ -23,6 +24,12 @@ export type GasPolicySnapshot = {
   dailyCapStroops: string;
   walletHourlyLimit: number;
   allowedContractIds: string[];
+  /** Read-only fields are intentionally excluded from draft identity. */
+  dailyReservedStroops?: string;
+  dailyWindowKey?: string;
+  createdAt?: number;
+  updatedAt?: number;
+  network?: "testnet";
 };
 
 /** The browser-facing values kept while an operator edits a policy draft. */
@@ -56,6 +63,38 @@ export type GasPolicyValidationResult =
       values: null;
       errors: GasPolicyDraftErrors;
     };
+
+export type GasPolicyStoredState = {
+  presence: "absent" | "present";
+  draft: GasPolicyDraft;
+};
+
+export type GasPolicySavePhase = "idle" | "saving" | "saved" | "error";
+export type GasPolicySaveError = "cap_below_effective_usage" | "generic";
+
+export type GasPolicyFormState = {
+  draft: GasPolicyDraft;
+  baseline: GasPolicyStoredState;
+  observed: GasPolicyStoredState;
+  lastObservedKey: string;
+  hasRemoteUpdate: boolean;
+  savePhase: GasPolicySavePhase;
+  saveError: GasPolicySaveError | null;
+  saveOperation: {
+    id: number;
+    previousKey: string;
+    expectedKey: string;
+  } | null;
+  ignoredRemoteKeys: string[];
+};
+
+export type GasPolicyFormAction =
+  | { type: "edit"; draft: GasPolicyDraft }
+  | { type: "remote"; stored: GasPolicyStoredState }
+  | { type: "save-start"; id: number; expected: GasPolicyStoredState }
+  | { type: "save-success"; id: number; stored: GasPolicyStoredState }
+  | { type: "save-failure"; id: number; error: GasPolicySaveError }
+  | { type: "reset" };
 
 /** Format a Convex decimal stroop string without converting through a Number. */
 export function formatStroopsAsXlm(stroops: string): string {
@@ -92,6 +131,193 @@ export function initializeGasPolicyDraft(policy: GasPolicySnapshot | null): GasP
     walletHourlyLimit: policy ? String(policy.walletHourlyLimit) : "0",
     allowedContractIdsText: policy?.allowedContractIds.join("\n") ?? "",
   };
+}
+
+/** Track policy presence separately from editable values for remote-update detection. */
+export function createGasPolicyStoredState(policy: GasPolicySnapshot | null): GasPolicyStoredState {
+  return {
+    presence: policy === null ? "absent" : "present",
+    draft: initializeGasPolicyDraft(policy),
+  };
+}
+
+/** Key only the policy fields an operator can edit; accounting changes are ignored. */
+export function gasPolicyStoredStateKey(stored: GasPolicyStoredState): string {
+  return JSON.stringify([stored.presence, stored.draft]);
+}
+
+/** Convert normalized mutation arguments into the stored editable projection shape. */
+export function gasPolicyStoredStateFromUpdate(values: GasPolicyUpdateArgs): GasPolicyStoredState {
+  return {
+    presence: "present",
+    draft: {
+      enabled: values.enabled,
+      dailyCapXlm: formatStroopsAsXlmInput(values.dailyCapStroops),
+      walletHourlyLimit: String(values.walletHourlyLimit),
+      allowedContractIdsText: values.allowedContractIds.join("\n"),
+    },
+  };
+}
+
+export function areGasPolicyDraftsEqual(left: GasPolicyDraft, right: GasPolicyDraft): boolean {
+  return (
+    left.enabled === right.enabled &&
+    left.dailyCapXlm === right.dailyCapXlm &&
+    left.walletHourlyLimit === right.walletHourlyLimit &&
+    left.allowedContractIdsText === right.allowedContractIdsText
+  );
+}
+
+function isGasPolicyDraftDirty(state: GasPolicyFormState): boolean {
+  return !areGasPolicyDraftsEqual(state.draft, state.baseline.draft);
+}
+
+function appendIgnoredRemoteKey(state: GasPolicyFormState, key: string): string[] {
+  return state.ignoredRemoteKeys.includes(key)
+    ? state.ignoredRemoteKeys
+    : [...state.ignoredRemoteKeys, key];
+}
+
+/** Create the initial synchronization state for an editable Gas policy form. */
+export function createGasPolicyFormState(stored: GasPolicyStoredState): GasPolicyFormState {
+  const key = gasPolicyStoredStateKey(stored);
+  return {
+    draft: stored.draft,
+    baseline: stored,
+    observed: stored,
+    lastObservedKey: key,
+    hasRemoteUpdate: false,
+    savePhase: "idle",
+    saveError: null,
+    saveOperation: null,
+    ignoredRemoteKeys: [],
+  };
+}
+
+/**
+ * Reconcile Convex policy snapshots with a local draft. The reducer ignores known
+ * pre-save and acknowledged values so reactive snapshots cannot roll a successful
+ * save backwards, while unexpected editable changes become a blocking conflict.
+ */
+export function reduceGasPolicyFormState(
+  state: GasPolicyFormState,
+  action: GasPolicyFormAction,
+): GasPolicyFormState {
+  switch (action.type) {
+    case "edit":
+      return {
+        ...state,
+        draft: action.draft,
+        savePhase: state.savePhase === "saving" ? state.savePhase : "idle",
+        saveError: null,
+      };
+
+    case "remote": {
+      const storedKey = gasPolicyStoredStateKey(action.stored);
+      if (storedKey === state.lastObservedKey) return state;
+
+      const isKnownSaveSnapshot =
+        state.ignoredRemoteKeys.includes(storedKey) ||
+        state.saveOperation?.previousKey === storedKey ||
+        state.saveOperation?.expectedKey === storedKey;
+      if (isKnownSaveSnapshot) {
+        return {
+          ...state,
+          lastObservedKey: storedKey,
+        };
+      }
+
+      const dirty = isGasPolicyDraftDirty(state);
+      return {
+        ...state,
+        baseline: action.stored,
+        observed: action.stored,
+        lastObservedKey: storedKey,
+        draft: dirty ? state.draft : action.stored.draft,
+        hasRemoteUpdate: dirty,
+        savePhase: dirty ? state.savePhase : "idle",
+        saveError: dirty ? state.saveError : null,
+      };
+    }
+
+    case "save-start": {
+      if (state.saveOperation || !isGasPolicyDraftDirty(state) || state.hasRemoteUpdate) {
+        return state;
+      }
+
+      const previousKey = gasPolicyStoredStateKey(state.baseline);
+      const expectedKey = gasPolicyStoredStateKey(action.expected);
+      return {
+        ...state,
+        savePhase: "saving",
+        saveError: null,
+        saveOperation: { id: action.id, previousKey, expectedKey },
+      };
+    }
+
+    case "save-success": {
+      if (state.saveOperation?.id !== action.id) return state;
+
+      const acknowledgedKey = gasPolicyStoredStateKey(action.stored);
+      const conflictWasObserved = state.hasRemoteUpdate;
+      return {
+        ...state,
+        draft: action.stored.draft,
+        baseline: action.stored,
+        observed: conflictWasObserved ? state.observed : action.stored,
+        lastObservedKey: conflictWasObserved ? state.lastObservedKey : acknowledgedKey,
+        hasRemoteUpdate: conflictWasObserved,
+        savePhase: "saved",
+        saveError: null,
+        saveOperation: null,
+        ignoredRemoteKeys: [
+          ...appendIgnoredRemoteKey(state, state.saveOperation.previousKey).filter(
+            (key) => key !== acknowledgedKey,
+          ),
+          acknowledgedKey,
+        ],
+      };
+    }
+
+    case "save-failure":
+      if (state.saveOperation?.id !== action.id) return state;
+      return {
+        ...state,
+        savePhase: "error",
+        saveError: action.error,
+        saveOperation: null,
+      };
+
+    case "reset": {
+      const storedKey = gasPolicyStoredStateKey(state.observed);
+      return {
+        ...state,
+        draft: state.observed.draft,
+        baseline: state.observed,
+        lastObservedKey: storedKey,
+        hasRemoteUpdate: false,
+        savePhase: "idle",
+        saveError: null,
+        ignoredRemoteKeys: [],
+      };
+    }
+  }
+}
+
+/** Narrow ConvexError data without displaying raw server failures in the UI. */
+export function getGasPolicySaveError(error: unknown): GasPolicySaveError {
+  if (!error || typeof error !== "object") return "generic";
+
+  const data = (error as { data?: unknown }).data;
+  if (
+    data &&
+    typeof data === "object" &&
+    (data as { code?: unknown }).code === GAS_POLICY_CAP_ERROR_CODE
+  ) {
+    return "cap_below_effective_usage";
+  }
+
+  return "generic";
 }
 
 function parseXlmAmount(value: string): bigint {

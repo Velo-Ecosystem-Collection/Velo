@@ -11,6 +11,7 @@ import {
   GAS_DECISION_CODES,
   GAS_LIFECYCLE_STATES,
   GAS_NETWORK,
+  GAS_POLICY_ERROR_CODES,
   GAS_RELAYER_STATUSES,
 } from "../../gas/types";
 import schema from "../../schema";
@@ -405,9 +406,73 @@ test("same-day cap reductions below reserved stroops fail atomically", async () 
       walletHourlyLimit: 0,
       allowedContractIds: [],
     }),
-  ).rejects.toThrow("Daily Gas cap cannot be lower");
+  ).rejects.toMatchObject({
+    data: {
+      code: GAS_POLICY_ERROR_CODES.dailyCapBelowEffectiveUsage,
+      message: "Daily Gas cap cannot be lower than current effective usage.",
+    },
+  });
   expect(await editor.query(api.gas.queries.getPolicy, { projectId })).toEqual(before);
   expect(created.dailyReservedStroops).toBe("0");
+});
+
+test("policy writes recheck membership role and removal at the mutation boundary", async () => {
+  const t = convexTest(schema, modules);
+  const editor = asWallet(t, EDITOR);
+  const projectId = await createProject(t);
+  await addMembership(t, projectId, EDITOR, "editor");
+
+  const before = await editor.mutation(api.gas.mutations.updatePolicy, {
+    projectId,
+    enabled: true,
+    dailyCapStroops: "1000",
+    walletHourlyLimit: 4,
+    allowedContractIds: [],
+  });
+
+  await t.run(async (ctx) => {
+    const membership = await ctx.db
+      .query("projectMemberships")
+      .withIndex("by_project_and_wallet_address", (q) =>
+        q.eq("projectId", projectId).eq("walletAddress", EDITOR),
+      )
+      .unique();
+    if (!membership) throw new Error("Editor membership was not created");
+    await ctx.db.patch(membership._id, { role: "viewer" });
+  });
+
+  await expect(
+    editor.mutation(api.gas.mutations.updatePolicy, {
+      projectId,
+      enabled: false,
+      dailyCapStroops: "2000",
+      walletHourlyLimit: 0,
+      allowedContractIds: [],
+    }),
+  ).rejects.toThrow("Editor access required");
+  expect(await editor.query(api.gas.queries.getPolicy, { projectId })).toEqual(before);
+
+  await t.run(async (ctx) => {
+    const membership = await ctx.db
+      .query("projectMemberships")
+      .withIndex("by_project_and_wallet_address", (q) =>
+        q.eq("projectId", projectId).eq("walletAddress", EDITOR),
+      )
+      .unique();
+    if (!membership) throw new Error("Viewer membership was not preserved");
+    await ctx.db.delete(membership._id);
+  });
+
+  await expect(
+    editor.mutation(api.gas.mutations.updatePolicy, {
+      projectId,
+      enabled: false,
+      dailyCapStroops: "2000",
+      walletHourlyLimit: 0,
+      allowedContractIds: [],
+    }),
+  ).rejects.toThrow("Unauthorized");
+  expect(await asWallet(t, OWNER).query(api.gas.queries.getPolicy, { projectId })).toEqual(before);
 });
 
 test("policy writes reject invalid decimal, numeric, allowlist, and extra authority fields", async () => {

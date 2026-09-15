@@ -22,7 +22,8 @@ import { Component, type ErrorInfo, type ReactNode, useState } from "react";
 
 import type { Id } from "@repo/backend/convex/_generated/dataModel";
 
-import { formatStroopsAsXlm, getGasAccessState } from "./gas-ui";
+import { GasPolicyForm } from "./gas-policy-form";
+import { formatStroopsAsXlm, getGasAccessState, type GasPolicySnapshot } from "./gas-ui";
 
 type ProjectGasProps = {
   projectId: string;
@@ -153,19 +154,7 @@ function SummaryRow({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-function PolicySummary({
-  policy,
-}: {
-  policy:
-    | {
-        enabled: boolean;
-        dailyCapStroops: string;
-        walletHourlyLimit: number;
-        allowedContractIds: string[];
-      }
-    | null
-    | undefined;
-}) {
+function PolicySummary({ policy }: { policy: GasPolicySnapshot | null | undefined }) {
   return (
     <Card>
       <CardHeader>
@@ -349,7 +338,7 @@ function ProjectGasContent({ projectId }: ProjectGasProps) {
         </div>
         <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
           <p className="min-w-0 text-sm break-words text-muted-foreground">
-            Read-only sponsorship overview for <span className="font-medium">{project.name}</span>.
+            Sponsorship policy overview for <span className="font-medium">{project.name}</span>.
           </p>
           <Badge variant="outline">{access.role} access</Badge>
         </div>
@@ -360,12 +349,15 @@ function ProjectGasContent({ projectId }: ProjectGasProps) {
         <RelayerSummary relayer={relayer} />
       </div>
 
+      <GasPolicyForm policy={policy} role={access.role} />
+
       <Alert>
         <CheckCircle2Icon />
-        <AlertTitle>Overview only</AlertTitle>
+        <AlertTitle>Draft-only policy controls</AlertTitle>
         <AlertDescription>
-          Spend counters, balances, policy editing, funding tools, transaction history, and
-          telemetry will be added in later Gas Station sub-sprints.
+          Policy changes are validated in this browser only and are not persisted yet. Spend
+          counters, balances, funding tools, transaction history, and telemetry will be added in
+          later Gas Station sub-sprints.
         </AlertDescription>
       </Alert>
     </section>

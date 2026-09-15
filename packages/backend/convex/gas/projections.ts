@@ -10,8 +10,10 @@ import type {
   GasRejectionCode,
   GasRelayerStatus,
 } from "./types";
+import type { GasAccountingBlockReason } from "./types";
 
 import {
+  gasAccountingBlockReasonValidator,
   gasDecisionCodeValidator,
   gasExecutionStatusValidator,
   gasLifecycleValidator,
@@ -79,6 +81,40 @@ export type GasSubmitResultProjection = {
   reconciliationRequired: boolean;
 };
 
+export type GasTelemetryAvailability = "available" | "unavailable";
+export type GasTelemetryHistoryCompleteness = "complete" | "partial" | "unavailable";
+export type GasTelemetryReasonCode =
+  | "missing_policy"
+  | "uninitialized_accounting"
+  | "accounting_blocked"
+  | "inconsistent_counters"
+  | "overflow"
+  | "ambiguous_policy_identity"
+  | "ambiguous_accounting_identity"
+  | "requested_day_before_policy_window"
+  | "invalid_policy";
+
+export type GasTelemetryHistoryEntry = {
+  reportingDayKey: string;
+  confirmedFeeStroops: string | null;
+  sourceUpdatedAt: number | null;
+};
+
+/** Fields safe for the bounded, viewer-scoped fee telemetry read. */
+export type GasTelemetryProjection = {
+  reportingDayKey: string;
+  confirmedFeeStroops: string | null;
+  outstandingHoldsStroops: string | null;
+  effectiveUsageStroops: string | null;
+  policyCapStroops: string | null;
+  availability: GasTelemetryAvailability;
+  reasonCode: GasTelemetryReasonCode | null;
+  accountingBlockReason: GasAccountingBlockReason | null;
+  sourceUpdatedAt: number | null;
+  historyCompleteness: GasTelemetryHistoryCompleteness;
+  history: GasTelemetryHistoryEntry[];
+};
+
 /** Explicit public return validator for safe Gas policy projections. */
 export const gasPolicyProjectionValidator = v.object({
   enabled: v.boolean(),
@@ -131,6 +167,41 @@ export const gasSubmitResultProjectionValidator = v.object({
   actualFeeStroops: v.union(v.string(), v.null()),
   expiresAt: v.string(),
   reconciliationRequired: v.boolean(),
+});
+
+export const gasTelemetryProjectionValidator = v.object({
+  reportingDayKey: v.string(),
+  confirmedFeeStroops: v.union(v.string(), v.null()),
+  outstandingHoldsStroops: v.union(v.string(), v.null()),
+  effectiveUsageStroops: v.union(v.string(), v.null()),
+  policyCapStroops: v.union(v.string(), v.null()),
+  availability: v.union(v.literal("available"), v.literal("unavailable")),
+  reasonCode: v.union(
+    v.literal("missing_policy"),
+    v.literal("uninitialized_accounting"),
+    v.literal("accounting_blocked"),
+    v.literal("inconsistent_counters"),
+    v.literal("overflow"),
+    v.literal("ambiguous_policy_identity"),
+    v.literal("ambiguous_accounting_identity"),
+    v.literal("requested_day_before_policy_window"),
+    v.literal("invalid_policy"),
+    v.null(),
+  ),
+  accountingBlockReason: v.union(gasAccountingBlockReasonValidator, v.null()),
+  sourceUpdatedAt: v.union(v.number(), v.null()),
+  historyCompleteness: v.union(
+    v.literal("complete"),
+    v.literal("partial"),
+    v.literal("unavailable"),
+  ),
+  history: v.array(
+    v.object({
+      reportingDayKey: v.string(),
+      confirmedFeeStroops: v.union(v.string(), v.null()),
+      sourceUpdatedAt: v.union(v.number(), v.null()),
+    }),
+  ),
 });
 
 function decimalStroops(value: bigint | undefined): string | null {

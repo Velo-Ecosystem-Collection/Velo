@@ -14,9 +14,17 @@ import {
   getGasPolicySaveError,
   initializeGasPolicyDraft,
   getGasAccessState,
+  getGasRelayerBalanceFreshness,
+  getGasRelayerBalanceState,
+  getGasRelayerRefreshCooldownRemaining,
+  getGasRelayerRefreshCooldownUntil,
+  getGasRelayerRefreshFeedback,
+  isCurrentGasRelayerRefreshRequest,
   parseXlmToStroops,
   type GasPolicyDraft,
   type GasPolicyFormState,
+  type GasRelayerRefreshResult,
+  type GasRelayerSnapshot,
   validateGasPolicyDraft,
 } from "./gas-ui.ts";
 
@@ -39,6 +47,102 @@ test("formats exact stroops as seven-decimal XLM without floating point conversi
   assert.equal(formatStroopsAsXlm("12345678"), "1.2345678 XLM");
   assert.equal(formatStroopsAsXlm("9223372036854775807"), "922337203685.4775807 XLM");
   assert.equal(formatStroopsAsXlm("1.0"), "Unavailable");
+});
+
+const RELAYER_SNAPSHOT = {
+  publicKey: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+  network: "testnet",
+  status: "active",
+  balanceStroops: "12345678",
+  balanceUpdatedAt: 1_700_000_000_000,
+  createdAt: 1_700_000_000_000,
+  updatedAt: 1_700_000_000_000,
+} satisfies GasRelayerSnapshot;
+
+test("distinguishes an exact zero balance from an absent balance", () => {
+  assert.equal(getGasRelayerBalanceState("0"), "zero");
+  assert.equal(getGasRelayerBalanceState("1"), "observed");
+  assert.equal(getGasRelayerBalanceState(null), "unverified");
+  assert.equal(formatStroopsAsXlm("0"), "0.0000000 XLM");
+  assert.equal(formatStroopsAsXlm(RELAYER_SNAPSHOT.balanceStroops), "1.2345678 XLM");
+});
+
+test("marks relayer snapshots fresh before five minutes and stale at the boundary", () => {
+  const now = RELAYER_SNAPSHOT.balanceUpdatedAt + 5 * 60 * 1_000;
+  assert.equal(
+    getGasRelayerBalanceFreshness(RELAYER_SNAPSHOT.balanceStroops, now - 1, now),
+    "fresh",
+  );
+  assert.equal(
+    getGasRelayerBalanceFreshness(RELAYER_SNAPSHOT.balanceStroops, now - 5 * 60 * 1_000, now),
+    "stale",
+  );
+  assert.equal(getGasRelayerBalanceFreshness(null, null, now), "never_verified");
+});
+
+test("does not treat malformed or future verification timestamps as fresh", () => {
+  const now = RELAYER_SNAPSHOT.balanceUpdatedAt + 1_000;
+  assert.equal(
+    getGasRelayerBalanceFreshness(RELAYER_SNAPSHOT.balanceStroops, Number.NaN, now),
+    "invalid_timestamp",
+  );
+  assert.equal(
+    getGasRelayerBalanceFreshness(RELAYER_SNAPSHOT.balanceStroops, now + 1, now),
+    "invalid_timestamp",
+  );
+  assert.equal(getGasRelayerBalanceFreshness("1", null, now), "never_verified");
+});
+
+test("starts a 30-second cooldown, honors shared retry windows, and expires exactly", () => {
+  const dispatchedAt = RELAYER_SNAPSHOT.balanceUpdatedAt;
+  const localUntil = getGasRelayerRefreshCooldownUntil(dispatchedAt, dispatchedAt);
+  assert.equal(getGasRelayerRefreshCooldownRemaining(localUntil, dispatchedAt), 30_000);
+  assert.equal(getGasRelayerRefreshCooldownRemaining(localUntil, localUntil), 0);
+
+  const sharedUntil = getGasRelayerRefreshCooldownUntil(dispatchedAt, dispatchedAt + 2_000, 45_000);
+  assert.equal(getGasRelayerRefreshCooldownRemaining(sharedUntil, dispatchedAt + 2_000), 45_000);
+});
+
+test("sanitizes every refresh outcome and retains the subscription snapshot", () => {
+  const outcomes: GasRelayerRefreshResult[] = [
+    { status: "success", relayer: RELAYER_SNAPSHOT },
+    { status: "cooldown", retryAfterMs: 1_000 },
+    { status: "missing_relayer" },
+    { status: "account_not_found", relayer: RELAYER_SNAPSHOT },
+    { status: "reader_failure", reason: "timeout", relayer: RELAYER_SNAPSHOT },
+    { status: "stale_refresh" },
+  ];
+
+  for (const outcome of outcomes) {
+    const feedback = getGasRelayerRefreshFeedback(outcome);
+    assert.equal(feedback.retainsSnapshot, true, outcome.status);
+    assert.ok(feedback.message.length > 0, outcome.status);
+    assert.doesNotMatch(feedback.message, /secret|token|provider body|stack/i, outcome.status);
+  }
+
+  assert.match(
+    getGasRelayerRefreshFeedback({
+      status: "account_not_found",
+      relayer: RELAYER_SNAPSHOT,
+    }).message,
+    /last verified snapshot is unchanged/,
+  );
+  assert.match(
+    getGasRelayerRefreshFeedback({
+      status: "reader_failure",
+      reason: "malformed_response",
+      relayer: RELAYER_SNAPSHOT,
+    }).message,
+    /last verified balance and verification time are unchanged/,
+  );
+});
+
+test("rejects obsolete refresh completions from another request or identity context", () => {
+  const request = { id: 1, contextVersion: 1 } as const;
+  assert.equal(isCurrentGasRelayerRefreshRequest(request, request), true);
+  assert.equal(isCurrentGasRelayerRefreshRequest(null, request), false);
+  assert.equal(isCurrentGasRelayerRefreshRequest({ id: 2, contextVersion: 1 }, request), false);
+  assert.equal(isCurrentGasRelayerRefreshRequest({ id: 1, contextVersion: 2 }, request), false);
 });
 
 test("parses exact XLM boundaries into stroops", () => {

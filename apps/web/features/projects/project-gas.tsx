@@ -1,9 +1,7 @@
 "use client";
 
-import { stellarConfig } from "@/core/config/stellar";
 import { useWallet } from "@/core/wallet/wallet-provider";
 import { api } from "@repo/backend/convex/_generated/api";
-import { CopyButton } from "@repo/ui/components/common/copy-button";
 import { Badge } from "@repo/ui/components/ui-customs/badge";
 import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/ui/alert";
 import { Button } from "@repo/ui/components/ui/button";
@@ -23,6 +21,7 @@ import { Component, type ErrorInfo, type ReactNode, useState } from "react";
 import type { Id } from "@repo/backend/convex/_generated/dataModel";
 
 import { GasPolicyForm } from "./gas-policy-form";
+import { GasRelayerPanel } from "./gas-relayer-panel";
 import { formatStroopsAsXlm, getGasAccessState, type GasPolicySnapshot } from "./gas-ui";
 
 type ProjectGasProps = {
@@ -203,76 +202,6 @@ function PolicySummary({ policy }: { policy: GasPolicySnapshot | null | undefine
   );
 }
 
-function RelayerSummary({
-  relayer,
-}: {
-  relayer:
-    | {
-        publicKey: string;
-        network: "testnet";
-        status: "active" | "disabled";
-      }
-    | null
-    | undefined;
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <h2 className="text-lg font-semibold">Relayer summary</h2>
-        <CardDescription>
-          Stored public metadata for the project&apos;s Testnet fee relayer.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        {relayer === undefined ? (
-          <div className="grid gap-3" aria-label="Loading relayer summary">
-            <Skeleton className="h-8 w-32" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        ) : relayer === null ? (
-          <Alert>
-            <InfoIcon />
-            <AlertTitle>No relayer configured</AlertTitle>
-            <AlertDescription>
-              This project does not have stored Testnet relayer metadata yet.
-            </AlertDescription>
-          </Alert>
-        ) : (
-          <dl className="grid gap-4">
-            <SummaryRow label="Public address">
-              <div className="flex min-w-0 items-start gap-1">
-                <code className="overflow-wrap-anywhere min-w-0 flex-1 font-mono text-xs">
-                  {relayer.publicKey}
-                </code>
-                <CopyButton value={relayer.publicKey} label="relayer public address" />
-              </div>
-            </SummaryRow>
-            <SummaryRow label="Network">
-              <span className="font-medium">
-                {relayer.network === "testnet" ? stellarConfig.networkLabel : relayer.network}
-              </span>
-            </SummaryRow>
-            <SummaryRow label="Metadata status">
-              <div className="grid gap-1">
-                <Badge variant={relayer.status === "active" ? "success" : "gray"}>
-                  {relayer.status === "active"
-                    ? "Stored metadata active"
-                    : "Stored metadata disabled"}
-                </Badge>
-                <span className="text-xs text-muted-foreground">
-                  This confirms stored metadata only; it does not verify live signer readiness.
-                </span>
-              </div>
-            </SummaryRow>
-          </dl>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
 function ProjectGasContent({ projectId }: ProjectGasProps) {
   const wallet = useWallet();
   const typedProjectId = projectId as Id<"projects">;
@@ -346,7 +275,12 @@ function ProjectGasContent({ projectId }: ProjectGasProps) {
 
       <div className="grid min-w-0 gap-4 lg:grid-cols-2">
         <PolicySummary policy={policy} />
-        <RelayerSummary relayer={relayer} />
+        <GasRelayerPanel
+          projectId={typedProjectId}
+          walletAddress={wallet.address}
+          role={access.role}
+          relayer={relayer}
+        />
       </div>
 
       <GasPolicyForm projectId={typedProjectId} policy={policy} role={access.role} />
@@ -356,8 +290,9 @@ function ProjectGasContent({ projectId }: ProjectGasProps) {
         <AlertTitle>Authoritative policy controls</AlertTitle>
         <AlertDescription>
           Policy changes are validated in the browser, authorized by Convex, and reflected from the
-          stored policy readback. Spend counters, balances, funding tools, transaction history, and
-          telemetry will be added in later Gas Station sub-sprints.
+          stored policy readback. Balance observations are refreshed manually from the funding panel
+          above; funding remains an external Testnet operation and does not establish signer
+          readiness.
         </AlertDescription>
       </Alert>
     </section>

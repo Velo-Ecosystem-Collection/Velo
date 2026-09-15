@@ -1,5 +1,8 @@
 import { assertValidContractId } from "@repo/stellar/validation";
 
+import type { api } from "@repo/backend/convex/_generated/api";
+import type { FunctionReturnType } from "convex/server";
+
 const STROOPS_PER_XLM = 10_000_000n;
 const GAS_MAX_STROOPS = 2n ** 63n - 1n;
 const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
@@ -8,6 +11,30 @@ const NON_NEGATIVE_INTEGER_PATTERN = /^\d+$/;
 const XLM_MAX_VALUE = "922337203685.4775807";
 const MAX_ALLOWED_CONTRACT_IDS = 20;
 export const GAS_POLICY_CAP_ERROR_CODE = "daily_cap_below_effective_usage" as const;
+export const GAS_RELAYER_BALANCE_MAX_AGE_MS = 5 * 60 * 1_000;
+export const GAS_RELAYER_LOCAL_COOLDOWN_MS = 30 * 1_000;
+
+export type GasRelayerSnapshot = Exclude<
+  FunctionReturnType<typeof api.gas.queries.getRelayerAccount>,
+  null
+>;
+export type GasRelayerRefreshResult = FunctionReturnType<
+  typeof api.gas.balance_action.refreshRelayerBalance
+>;
+
+export type GasRelayerBalanceState = "unverified" | "zero" | "observed";
+export type GasRelayerBalanceFreshness = "fresh" | "stale" | "never_verified" | "invalid_timestamp";
+export type GasRelayerRefreshFeedbackTone = "success" | "info" | "warning" | "error";
+export type GasRelayerRefreshFeedback = {
+  tone: GasRelayerRefreshFeedbackTone;
+  message: string;
+  /** The reactive relayer query remains the authoritative snapshot source. */
+  retainsSnapshot: true;
+};
+export type GasRelayerRefreshRequest = {
+  id: number;
+  contextVersion: number;
+};
 
 export type GasAccessState = "connect" | "loading" | "unavailable" | "ready";
 
@@ -95,6 +122,143 @@ export type GasPolicyFormAction =
   | { type: "save-success"; id: number; stored: GasPolicyStoredState }
   | { type: "save-failure"; id: number; error: GasPolicySaveError }
   | { type: "reset" };
+
+/** Distinguish a valid zero balance from an account that has never been observed. */
+export function getGasRelayerBalanceState(balanceStroops: string | null): GasRelayerBalanceState {
+  if (balanceStroops === null) return "unverified";
+  if (balanceStroops === "0") return "zero";
+  return "observed";
+}
+
+/** Accept only the millisecond timestamps persisted by the balance refresh boundary. */
+export function isValidGasRelayerTimestamp(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value > 0 &&
+    Number.isFinite(new Date(value).getTime())
+  );
+}
+
+/** Mark a verified snapshot stale at exactly five minutes. */
+export function getGasRelayerBalanceFreshness(
+  balanceStroops: string | null,
+  balanceUpdatedAt: number | null,
+  now: number,
+): GasRelayerBalanceFreshness {
+  if (balanceStroops === null || balanceUpdatedAt === null) return "never_verified";
+  if (!isValidGasRelayerTimestamp(balanceUpdatedAt) || !isValidGasRelayerTimestamp(now)) {
+    return "invalid_timestamp";
+  }
+  if (balanceUpdatedAt > now) return "invalid_timestamp";
+  return now - balanceUpdatedAt < GAS_RELAYER_BALANCE_MAX_AGE_MS ? "fresh" : "stale";
+}
+
+/** Return the non-negative local/shared cooldown remaining at a deterministic time. */
+export function getGasRelayerRefreshCooldownRemaining(
+  cooldownUntil: number | null,
+  now: number,
+): number {
+  if (
+    cooldownUntil === null ||
+    !isValidGasRelayerTimestamp(cooldownUntil) ||
+    !isValidGasRelayerTimestamp(now)
+  ) {
+    return 0;
+  }
+
+  return Math.max(0, cooldownUntil - now);
+}
+
+/** Start the local 30-second cooldown and extend it for a returned shared retry window. */
+export function getGasRelayerRefreshCooldownUntil(
+  dispatchedAt: number,
+  now: number,
+  retryAfterMs = 0,
+): number {
+  if (!isValidGasRelayerTimestamp(dispatchedAt)) return 0;
+
+  const safeNow = isValidGasRelayerTimestamp(now) ? now : dispatchedAt;
+  const safeRetryAfterMs =
+    Number.isFinite(retryAfterMs) && retryAfterMs > 0 ? Math.ceil(retryAfterMs) : 0;
+  return Math.max(dispatchedAt + GAS_RELAYER_LOCAL_COOLDOWN_MS, safeNow + safeRetryAfterMs);
+}
+
+/** Keep provider/action details out of the operator-facing refresh status. */
+export function getGasRelayerRefreshFeedback(
+  outcome: GasRelayerRefreshResult,
+): GasRelayerRefreshFeedback {
+  switch (outcome.status) {
+    case "success":
+      return {
+        tone: "success",
+        message:
+          "Balance verification completed. The displayed balance will update from the reactive relayer snapshot.",
+        retainsSnapshot: true,
+      };
+    case "cooldown":
+      return {
+        tone: "info",
+        message: "A shared refresh cooldown is active. The last verified snapshot is unchanged.",
+        retainsSnapshot: true,
+      };
+    case "missing_relayer":
+      return {
+        tone: "info",
+        message: "No relayer is configured for this project, so there is no account to verify.",
+        retainsSnapshot: true,
+      };
+    case "account_not_found":
+      return {
+        tone: "warning",
+        message:
+          "Stellar Testnet did not find the configured account. Fund this existing address, then refresh; the last verified snapshot is unchanged.",
+        retainsSnapshot: true,
+      };
+    case "reader_failure":
+      return {
+        tone: "error",
+        message: `${getGasRelayerReaderFailureMessage(outcome.reason)} The last verified balance and verification time are unchanged.`,
+        retainsSnapshot: true,
+      };
+    case "stale_refresh":
+      return {
+        tone: "warning",
+        message:
+          "This refresh became obsolete before it could be saved. The last verified balance and verification time are unchanged.",
+        retainsSnapshot: true,
+      };
+  }
+}
+
+/** Ignore a completion unless it belongs to the current identity-scoped request. */
+export function isCurrentGasRelayerRefreshRequest(
+  activeRequest: GasRelayerRefreshRequest | null,
+  request: GasRelayerRefreshRequest,
+): boolean {
+  return (
+    activeRequest?.id === request.id && activeRequest.contextVersion === request.contextVersion
+  );
+}
+
+function getGasRelayerReaderFailureMessage(reason: string): string {
+  switch (reason) {
+    case "invalid_address":
+      return "The configured relayer address could not be verified.";
+    case "invalid_configuration":
+      return "Testnet balance verification is not configured correctly.";
+    case "wrong_network":
+      return "The balance provider did not confirm Stellar Testnet.";
+    case "timeout":
+      return "Testnet balance verification timed out. Try again after the cooldown.";
+    case "provider_failure":
+      return "Stellar Testnet balance verification is temporarily unavailable.";
+    case "malformed_response":
+      return "The balance provider returned an invalid response.";
+    default:
+      return "The Testnet balance could not be verified.";
+  }
+}
 
 /** Format a Convex decimal stroop string without converting through a Number. */
 export function formatStroopsAsXlm(stroops: string): string {

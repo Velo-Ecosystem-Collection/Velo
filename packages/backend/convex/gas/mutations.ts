@@ -141,10 +141,16 @@ export const updateRelayerAccount = mutation({
 
     const now = Date.now();
     if (existing) {
+      const publicKeyChanged = existing.publicKey !== publicKey;
+      const statusChanged = existing.status !== args.status;
       await ctx.db.patch(existing._id, {
         publicKey,
         status: args.status,
         network: GAS_NETWORK,
+        ...(publicKeyChanged ? { balanceStroops: undefined, balanceUpdatedAt: undefined } : {}),
+        ...(publicKeyChanged || statusChanged
+          ? { refreshToken: undefined, refreshStartedAt: undefined }
+          : {}),
         updatedAt: now,
       });
 

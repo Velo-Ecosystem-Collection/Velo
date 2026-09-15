@@ -7,6 +7,7 @@ import {
 } from "../../../../packages/ui/src/components/ui-customs/sidebar/project-navigation.ts";
 import {
   formatStroopsAsXlm,
+  formatGasTelemetryStroops,
   createGasPolicyFormState,
   createGasPolicyStoredState,
   gasPolicyStoredStateFromUpdate,
@@ -19,12 +20,19 @@ import {
   getGasRelayerRefreshCooldownRemaining,
   getGasRelayerRefreshCooldownUntil,
   getGasRelayerRefreshFeedback,
+  getGasTelemetryAvailabilityMessage,
+  getGasTelemetryDayKeys,
+  getGasTelemetryHistoryRows,
+  getGasUsagePercentage,
+  getMillisecondsUntilNextUtcMidnight,
+  getUtcDayKey,
   isCurrentGasRelayerRefreshRequest,
   parseXlmToStroops,
   type GasPolicyDraft,
   type GasPolicyFormState,
   type GasRelayerRefreshResult,
   type GasRelayerSnapshot,
+  type GasTelemetrySnapshot,
   validateGasPolicyDraft,
 } from "./gas-ui.ts";
 
@@ -47,6 +55,108 @@ test("formats exact stroops as seven-decimal XLM without floating point conversi
   assert.equal(formatStroopsAsXlm("12345678"), "1.2345678 XLM");
   assert.equal(formatStroopsAsXlm("9223372036854775807"), "922337203685.4775807 XLM");
   assert.equal(formatStroopsAsXlm("1.0"), "Unavailable");
+});
+
+test("keeps telemetry zero, one stroop, and large exact values distinct", () => {
+  assert.equal(formatGasTelemetryStroops(null), "Unavailable");
+  assert.equal(formatGasTelemetryStroops("0"), "0.0000000 XLM");
+  assert.equal(formatGasTelemetryStroops("1"), "0.0000001 XLM");
+  assert.equal(formatGasTelemetryStroops("9223372036854775807"), "922337203685.4775807 XLM");
+});
+
+test("bounds cap usage with bigint arithmetic and never divides a zero cap", () => {
+  assert.equal(getGasUsagePercentage("0", "0"), null);
+  assert.equal(getGasUsagePercentage("0", "100"), 0);
+  assert.equal(getGasUsagePercentage("100", "100"), 100);
+  assert.equal(getGasUsagePercentage("101", "100"), 100);
+  assert.equal(getGasUsagePercentage("9007199254740991", "9223372036854775807"), 0);
+  assert.equal(getGasUsagePercentage(null, "100"), null);
+});
+
+function telemetryFixture(overrides: Partial<GasTelemetrySnapshot> = {}): GasTelemetrySnapshot {
+  return {
+    reportingDayKey: "2026-01-01",
+    confirmedFeeStroops: "1",
+    outstandingHoldsStroops: "2",
+    effectiveUsageStroops: "3",
+    policyCapStroops: "100",
+    availability: "available",
+    reasonCode: null,
+    accountingBlockReason: null,
+    sourceUpdatedAt: 1_767_242_800_000,
+    historyCompleteness: "partial",
+    history: [
+      {
+        reportingDayKey: "2025-12-26",
+        confirmedFeeStroops: null,
+        sourceUpdatedAt: null,
+      },
+      {
+        reportingDayKey: "2025-12-27",
+        confirmedFeeStroops: "0",
+        sourceUpdatedAt: 1_767_242_800_000,
+      },
+      {
+        reportingDayKey: "2025-12-28",
+        confirmedFeeStroops: null,
+        sourceUpdatedAt: null,
+      },
+      {
+        reportingDayKey: "2025-12-29",
+        confirmedFeeStroops: null,
+        sourceUpdatedAt: null,
+      },
+      {
+        reportingDayKey: "2025-12-30",
+        confirmedFeeStroops: null,
+        sourceUpdatedAt: null,
+      },
+      {
+        reportingDayKey: "2025-12-31",
+        confirmedFeeStroops: null,
+        sourceUpdatedAt: null,
+      },
+      {
+        reportingDayKey: "2026-01-01",
+        confirmedFeeStroops: "1",
+        sourceUpdatedAt: 1_767_242_800_000,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+test("preserves partial history gaps and blocked totals with valid history", () => {
+  const partial = telemetryFixture();
+  const rows = getGasTelemetryHistoryRows(partial, "2026-01-01");
+  assert.deepEqual(rows, partial.history);
+  assert.equal(rows[0]?.confirmedFeeStroops, null);
+  assert.equal(rows[1]?.confirmedFeeStroops, "0");
+
+  const blocked = telemetryFixture({
+    availability: "unavailable",
+    reasonCode: "accounting_blocked",
+    confirmedFeeStroops: null,
+    outstandingHoldsStroops: null,
+    effectiveUsageStroops: null,
+  });
+  assert.match(getGasTelemetryAvailabilityMessage(blocked), /valid history remains visible/);
+  assert.equal(getGasTelemetryHistoryRows(blocked, "2026-01-01")[6]?.confirmedFeeStroops, "1");
+});
+
+test("refreshes reporting days across UTC month and year rollover", () => {
+  assert.equal(getUtcDayKey(Date.parse("2025-12-31T23:59:59.999Z")), "2025-12-31");
+  assert.equal(getUtcDayKey(Date.parse("2026-01-01T00:00:00.000Z")), "2026-01-01");
+  assert.equal(getMillisecondsUntilNextUtcMidnight(Date.parse("2025-12-31T23:59:59.999Z")), 1);
+  assert.deepEqual(getGasTelemetryDayKeys("2026-01-01"), [
+    "2025-12-26",
+    "2025-12-27",
+    "2025-12-28",
+    "2025-12-29",
+    "2025-12-30",
+    "2025-12-31",
+    "2026-01-01",
+  ]);
 });
 
 const RELAYER_SNAPSHOT = {

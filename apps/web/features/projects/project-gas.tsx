@@ -22,6 +22,7 @@ import type { Id } from "@repo/backend/convex/_generated/dataModel";
 
 import { GasPolicyForm } from "./gas-policy-form";
 import { GasRelayerPanel } from "./gas-relayer-panel";
+import { GasTelemetry } from "./gas-telemetry";
 import { formatStroopsAsXlm, getGasAccessState, type GasPolicySnapshot } from "./gas-ui";
 
 type ProjectGasProps = {
@@ -189,7 +190,7 @@ function PolicySummary({ policy }: { policy: GasPolicySnapshot | null | undefine
             <SummaryRow label="Daily cap">
               <span className="font-medium">{formatStroopsAsXlm(policy.dailyCapStroops)}</span>
             </SummaryRow>
-            <SummaryRow label="Hourly wallet quota">
+            <SummaryRow label="Configured requests per wallet">
               <span className="font-medium">{policy.walletHourlyLimit} request(s) per wallet</span>
             </SummaryRow>
             <SummaryRow label="Allowed contracts">
@@ -282,6 +283,8 @@ function ProjectGasContent({ projectId }: ProjectGasProps) {
           relayer={relayer}
         />
       </div>
+
+      <GasTelemetry projectId={typedProjectId} policy={policy} />
 
       <GasPolicyForm projectId={typedProjectId} policy={policy} role={access.role} />
 

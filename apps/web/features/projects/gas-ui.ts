@@ -18,6 +18,7 @@ export type GasRelayerSnapshot = Exclude<
   FunctionReturnType<typeof api.gas.queries.getRelayerAccount>,
   null
 >;
+export type GasTelemetrySnapshot = FunctionReturnType<typeof api.gas.queries.getTelemetry>;
 export type GasRelayerRefreshResult = FunctionReturnType<
   typeof api.gas.balance_action.refreshRelayerBalance
 >;
@@ -58,6 +59,14 @@ export type GasPolicySnapshot = {
   updatedAt?: number;
   network?: "testnet";
 };
+
+export type GasTelemetryHistoryRow = {
+  reportingDayKey: string;
+  confirmedFeeStroops: string | null;
+  sourceUpdatedAt: number | null;
+};
+
+const GAS_TELEMETRY_HISTORY_DAYS = 7;
 
 /** The browser-facing values kept while an operator edits a policy draft. */
 export type GasPolicyDraft = {
@@ -271,6 +280,155 @@ export function formatStroopsAsXlm(stroops: string): string {
   const fractionalStroops = (value % STROOPS_PER_XLM).toString().padStart(7, "0");
 
   return `${wholeXlm.toString()}.${fractionalStroops} XLM`;
+}
+
+/** Format an optional telemetry total while keeping null distinct from zero. */
+export function formatGasTelemetryStroops(stroops: string | null): string {
+  return stroops === null ? "Unavailable" : formatStroopsAsXlm(stroops);
+}
+
+/** Return the canonical UTC calendar day for a valid instant. */
+export function getUtcDayKey(value: Date | number): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error("Invalid UTC date");
+  return date.toISOString().slice(0, 10);
+}
+
+/** Calculate the delay until the next UTC midnight without local-time assumptions. */
+export function getMillisecondsUntilNextUtcMidnight(value: Date | number): number {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new Error("Invalid UTC date");
+
+  const nextMidnight = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1);
+  return Math.max(1, nextMidnight - date.getTime());
+}
+
+/** Build seven ascending UTC days ending at the requested reporting day. */
+export function getGasTelemetryDayKeys(reportingDayKey: string): string[] {
+  const start = new Date(`${reportingDayKey}T00:00:00.000Z`);
+  if (!Number.isFinite(start.getTime()) || getUtcDayKey(start) !== reportingDayKey) {
+    return [];
+  }
+
+  return Array.from({ length: GAS_TELEMETRY_HISTORY_DAYS }, (_, index) => {
+    const day = new Date(start.getTime());
+    day.setUTCDate(day.getUTCDate() - (GAS_TELEMETRY_HISTORY_DAYS - 1 - index));
+    return getUtcDayKey(day);
+  });
+}
+
+/** Keep backend null gaps as null while normalizing history to seven ascending days. */
+export function getGasTelemetryHistoryRows(
+  telemetry: GasTelemetrySnapshot | null | undefined,
+  reportingDayKey: string,
+): GasTelemetryHistoryRow[] {
+  const dayKeys = getGasTelemetryDayKeys(reportingDayKey);
+  const historyByDay = new Map(
+    telemetry?.reportingDayKey === reportingDayKey
+      ? telemetry.history.map((entry) => [entry.reportingDayKey, entry] as const)
+      : [],
+  );
+
+  return dayKeys.map((dayKey) => {
+    const entry = historyByDay.get(dayKey);
+    return {
+      reportingDayKey: dayKey,
+      confirmedFeeStroops: entry?.confirmedFeeStroops ?? null,
+      sourceUpdatedAt: entry?.sourceUpdatedAt ?? null,
+    };
+  });
+}
+
+/** Convert exact stroops to an approximate chart coordinate only. */
+export function getGasTelemetryChartValue(stroops: string | null): number | null {
+  if (stroops === null || !/^(0|[1-9]\d*)$/.test(stroops)) return null;
+
+  const value = Number(BigInt(stroops)) / Number(STROOPS_PER_XLM);
+  return Number.isFinite(value) ? value : null;
+}
+
+/** Calculate a bounded visual cap percentage using integer arithmetic. */
+export function getGasUsagePercentage(
+  effectiveUsageStroops: string | null,
+  policyCapStroops: string | null,
+): number | null {
+  if (effectiveUsageStroops === null || policyCapStroops === null) return null;
+  if (!/^(0|[1-9]\d*)$/.test(effectiveUsageStroops) || !/^(0|[1-9]\d*)$/.test(policyCapStroops)) {
+    return null;
+  }
+
+  const effectiveUsage = BigInt(effectiveUsageStroops);
+  const policyCap = BigInt(policyCapStroops);
+  if (policyCap === 0n) return null;
+
+  const boundedPercentage =
+    effectiveUsage >= policyCap
+      ? 100n
+      : effectiveUsage <= 0n
+        ? 0n
+        : (effectiveUsage * 100n) / policyCap;
+  return Number(boundedPercentage);
+}
+
+/** Explain why current accounting totals are unavailable without exposing backend details. */
+export function getGasTelemetryAvailabilityMessage(
+  telemetry: Pick<GasTelemetrySnapshot, "availability" | "reasonCode"> | undefined,
+): string {
+  if (telemetry === undefined) return "Loading fee telemetry from the accounting source.";
+  if (telemetry.availability === "available") {
+    return "Effective usage combines today’s confirmed fees with outstanding holds across days.";
+  }
+
+  switch (telemetry.reasonCode) {
+    case "missing_policy":
+      return "No Gas policy is configured, so current fee totals are unavailable.";
+    case "uninitialized_accounting":
+      return "Accounting has not been initialized, so current fee totals are unavailable.";
+    case "accounting_blocked":
+      return "Accounting is blocked for review. Current totals are unavailable; valid history remains visible when available.";
+    case "inconsistent_counters":
+      return "Accounting counters are inconsistent, so current fee totals are unavailable.";
+    case "overflow":
+      return "Accounting exceeded its supported exact-value range, so current totals are unavailable.";
+    case "ambiguous_policy_identity":
+      return "The project has an ambiguous policy record, so current fee totals are unavailable.";
+    case "ambiguous_accounting_identity":
+      return "The project has ambiguous accounting records, so current fee totals are unavailable.";
+    case "requested_day_before_policy_window":
+      return "This reporting day precedes the policy accounting window, so current totals are unavailable.";
+    case "invalid_policy":
+      return "The stored Gas policy could not be verified, so current fee totals are unavailable.";
+    case null:
+      return "Fee totals are unavailable from the accounting source.";
+  }
+}
+
+/** Keep history completeness language explicit about unknown gaps. */
+export function getGasTelemetryHistoryMessage(
+  completeness: GasTelemetrySnapshot["historyCompleteness"] | undefined,
+): string {
+  switch (completeness) {
+    case "complete":
+      return "Complete seven-day history is available.";
+    case "partial":
+      return "Partial history: unavailable days remain gaps and are not treated as zero.";
+    case "unavailable":
+    case undefined:
+      return "Seven-day history is unavailable until trustworthy accounting data exists.";
+  }
+}
+
+/** Format a source-update timestamp without applying relayer freshness rules. */
+export function formatGasTelemetryTimestamp(value: number | null): string {
+  if (
+    value === null ||
+    !Number.isSafeInteger(value) ||
+    value <= 0 ||
+    !Number.isFinite(new Date(value).getTime())
+  ) {
+    return "Unavailable";
+  }
+  return new Date(value).toISOString();
 }
 
 /** Format stored stroops as an exact, editable XLM decimal string. */

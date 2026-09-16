@@ -4,6 +4,7 @@ import { shortenAddress } from "@/core/wallet/format";
 import { useWallet } from "@/core/wallet/wallet-provider";
 import { api } from "@repo/backend/convex/_generated/api";
 import { Id } from "@repo/backend/convex/_generated/dataModel";
+import { CopyButton } from "@repo/ui/components/common/copy-button";
 import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/ui/alert";
 import { Button } from "@repo/ui/components/ui/button";
 import {
@@ -30,9 +31,42 @@ import {
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import {
+  gasExampleHref,
+  gasIntegrationGuideHref,
+  gasIntegrationSnippets,
+} from "./project-integration-guidance";
+
 type ProjectIntegrationProps = {
   projectId: string;
 };
+
+type GasSnippetCardProps = {
+  title: string;
+  description: string;
+  snippet: string;
+  copyLabel: string;
+};
+
+function GasSnippetCard({ title, description, snippet, copyLabel }: GasSnippetCardProps) {
+  return (
+    <article className="min-w-0 overflow-hidden rounded-lg border border-zinc-200 bg-white">
+      <div className="flex flex-col gap-3 border-b border-zinc-200 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-zinc-900">{title}</h3>
+          <p className="mt-1 text-xs leading-relaxed text-zinc-600">{description}</p>
+        </div>
+        <CopyButton value={snippet} label={copyLabel} size="sm" className="shrink-0 self-start" />
+      </div>
+      <pre
+        className="max-w-full overflow-x-auto bg-zinc-950 p-4 font-mono text-xs leading-relaxed text-zinc-100"
+        aria-label={title + " code"}
+      >
+        {snippet}
+      </pre>
+    </article>
+  );
+}
 
 export function ProjectIntegration({ projectId }: ProjectIntegrationProps) {
   const wallet = useWallet();
@@ -430,6 +464,89 @@ export async function POST() {
           </div>
         </div>
       </div>
+
+      <section
+        className="min-w-0 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm"
+        aria-labelledby="gas-station-integration-title"
+      >
+        <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-3">
+          <CodeIcon className="size-5 text-zinc-500" />
+          <h2 id="gas-station-integration-title" className="text-sm font-semibold text-zinc-800">
+            Gas Station
+          </h2>
+        </div>
+        <div className="grid gap-5 p-5">
+          <div className="grid gap-2 text-sm text-zinc-700">
+            <p>
+              Gas sponsorship and submission belong on your trusted server. Configure{" "}
+              <code>VELO_GAS_API_KEY</code> and an explicit <code>VELO_BASE_URL</code> in the server
+              environment; neither value is selected from this project page or interpolated into
+              client code.
+            </p>
+            <p>
+              The snippets use a caller-owned operation ID, a stable idempotency key, and bounded
+              deadlines. If submission becomes uncertain, recover through{" "}
+              <code>VeloGasSubmissionUnknownError.recovery</code> with identity-only{" "}
+              <code>getStatus()</code>; never submit the signed XDR again.
+            </p>
+          </div>
+
+          <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+            <GasSnippetCard
+              title="Sponsor and submit"
+              description="Use from a server route or worker after your own caller authorization."
+              snippet={gasIntegrationSnippets.sponsorAndSubmit}
+              copyLabel="sponsor and submit snippet"
+            />
+            <GasSnippetCard
+              title="Recover status by identity"
+              description="Resume a stored operation without sending its signed XDR again."
+              snippet={gasIntegrationSnippets.statusRecovery}
+              copyLabel="status recovery snippet"
+            />
+          </div>
+
+          <div className="grid gap-2 text-xs leading-relaxed text-zinc-600">
+            <p>
+              Only <code>succeeded</code> means success. <code>claimed</code>,{" "}
+              <code>submission_unknown</code>, and <code>submitted</code> remain unresolved;{" "}
+              <code>failed</code> and <code>cancelled</code> are terminal non-success states. A null{" "}
+              <code>actualFeeStroops</code> remains unknown. Authorization and durable
+              operation/recovery storage belong to the consuming server. The optional{" "}
+              <code>waitForResult()</code> path in the second snippet is bounded observation, not a
+              replacement for durable recovery.
+            </p>
+            <p>
+              The executable{" "}
+              <a
+                href={gasExampleHref}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-zinc-900 underline underline-offset-2"
+              >
+                Next.js Gas example
+              </a>{" "}
+              uses a demo bearer guard for local terminal access only. Production applications must
+              replace it with their own authentication and project authorization; the example has no
+              durable operation store or later status endpoint. Read the full{" "}
+              <a
+                href={gasIntegrationGuideHref}
+                target="_blank"
+                rel="noreferrer"
+                className="font-medium text-zinc-900 underline underline-offset-2"
+              >
+                Gas integration guide
+              </a>{" "}
+              for recovery semantics and setup.
+            </p>
+            <p className="text-zinc-500">
+              Guidance inspected against workspace source revision{" "}
+              <code>c8dedeff0a6d885c82126a7a281245a74ad4a1eb</code>. The SDK package version remains
+              unchanged; registry publication and deployed acceptance are not implied.
+            </p>
+          </div>
+        </div>
+      </section>
 
       <div className="flex gap-2 items-center text-xs text-zinc-500 justify-center py-4 border-t border-zinc-200">
         <BookOpenIcon className="size-4" />

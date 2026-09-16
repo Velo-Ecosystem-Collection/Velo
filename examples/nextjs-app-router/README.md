@@ -2,6 +2,10 @@
 
 This is a simple demo application showing how to integrate `@carts1024/velo-sdk` into a Next.js App Router application.
 
+For copyable server-side Gas Station guidance, workspace provenance, and
+identity-only recovery semantics, see the
+[D3 Gas integration guide](../../docs/instawards/Velo-Instawards-Deliverable-3-Integration-Guide.md).
+
 ## Prerequisites
 
 - Node.js >= 18

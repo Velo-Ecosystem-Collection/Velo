@@ -293,6 +293,45 @@ its fixed messages never include abort reasons, raw exceptions, credentials,
 or XDR. Local observation expiry/cancellation is not backend reservation
 expiry or reconciliation.
 
+### Dashboard Gas Station guidance
+
+The project integration page provides two copyable, server-side snippets:
+one for `sponsorAndSubmit()` and one for identity-only status recovery.
+The displayed source is kept in
+[apps/web/features/projects/project-integration-guidance.ts](../../apps/web/features/projects/project-integration-guidance.ts)
+and is compiled and executed against this workspace package entry point by
+[project-integration-guidance.test.ts](../../apps/web/features/projects/project-integration-guidance.test.ts).
+
+Set both variables explicitly in the consuming server environment:
+
+```bash
+VELO_GAS_API_KEY=replace_with_a_gas_scoped_project_key
+VELO_BASE_URL=https://replace-with-your-velo-deployment.example
+```
+
+The snippets never interpolate project-page API-key data into client code.
+The caller owns the stable operation ID and derives a stable idempotency key
+from it. Authorization and durable operation/recovery storage belong to the
+consuming server. On `VeloGasSubmissionUnknownError`, persist and reconcile
+`error.recovery` with `velo.gas.getStatus()`; do not send the signed XDR again.
+`waitForResult()` is an optional bounded identity-only observer.
+
+Only `succeeded` is success. `claimed`, `submission_unknown`, and
+`submitted` remain unresolved; `failed` and `cancelled` are terminal
+non-success results. `actualFeeStroops: null` remains unknown.
+
+The executable [Next.js App Router Gas example](../../examples/nextjs-app-router/)
+contains the full route, streamed-input bound, and redacted response pattern.
+Its bearer token is a local demo caller guard, not production authentication;
+the example has no durable operation store or later status endpoint. The
+[D3 integration guide](../../docs/instawards/Velo-Instawards-Deliverable-3-Integration-Guide.md)
+has workspace setup and recovery guidance.
+
+This guidance was inspected against source revision
+`c8dedeff0a6d885c82126a7a281245a74ad4a1eb`. The package remains
+`0.1.0-alpha.2`; the Gas source additions are not claimed as an npm
+publication or deployed acceptance.
+
 ### Dual-Anchor Routing (V2)
 
 Velo SDK (V2) supports routing payments through different anchors: `inhouse` (default) or `pdax`.

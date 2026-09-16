@@ -20,6 +20,7 @@ import { Component, type ErrorInfo, type ReactNode, useState } from "react";
 
 import type { Id } from "@repo/backend/convex/_generated/dataModel";
 
+import { GasActivity } from "./gas-activity";
 import { GasPolicyForm } from "./gas-policy-form";
 import { GasRelayerPanel } from "./gas-relayer-panel";
 import { GasTelemetry } from "./gas-telemetry";
@@ -285,6 +286,8 @@ function ProjectGasContent({ projectId }: ProjectGasProps) {
       </div>
 
       <GasTelemetry projectId={typedProjectId} policy={policy} />
+
+      <GasActivity projectId={typedProjectId} />
 
       <GasPolicyForm projectId={typedProjectId} policy={policy} role={access.role} />
 

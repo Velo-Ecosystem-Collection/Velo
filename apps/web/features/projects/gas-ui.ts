@@ -18,10 +18,107 @@ export type GasRelayerSnapshot = Exclude<
   FunctionReturnType<typeof api.gas.queries.getRelayerAccount>,
   null
 >;
+export type GasLogSnapshot = FunctionReturnType<
+  typeof api.gas.queries.listLogsPage
+>["page"][number];
+export type GasExecutionDetailSnapshot = Exclude<
+  FunctionReturnType<typeof api.gas.queries.getExecutionDetail>,
+  null
+>;
 export type GasTelemetrySnapshot = FunctionReturnType<typeof api.gas.queries.getTelemetry>;
 export type GasRelayerRefreshResult = FunctionReturnType<
   typeof api.gas.balance_action.refreshRelayerBalance
 >;
+
+export type GasLifecycleState = GasLogSnapshot["lifecycle"];
+export type GasDecisionCode = GasLogSnapshot["decisionCode"];
+export type GasRejectionCode = Exclude<GasLogSnapshot["rejectionCode"], null>;
+export type GasExecutionStatus = GasExecutionDetailSnapshot["status"];
+
+/** Every stored audit lifecycle state has an explicit operator-facing label. */
+export const GAS_LIFECYCLE_LABELS = {
+  reserved: "Reserved",
+  rejected: "Rejected",
+  expired: "Expired",
+  claimed: "Claimed for execution",
+  submission_unknown: "Submission uncertain",
+  submitted: "Submitted — unresolved",
+  succeeded: "Succeeded",
+  failed: "Failed",
+  cancelled: "Cancelled",
+} satisfies Record<GasLifecycleState, string>;
+
+/** Every stored audit decision has an explicit operator-facing label. */
+export const GAS_DECISION_LABELS = {
+  reserved: "Reserved",
+  rejected: "Rejected",
+} satisfies Record<GasDecisionCode, string>;
+
+/** Every stored rejection reason has an explicit operator-facing label. */
+export const GAS_REJECTION_LABELS = {
+  policy_disabled: "Policy disabled",
+  daily_cap_exceeded: "Daily cap exceeded",
+  wallet_rate_limited: "Wallet quota exceeded",
+  contract_not_whitelisted: "Contract not allowlisted",
+  unsupported_transaction: "Unsupported transaction",
+  wrong_network: "Wrong network",
+  invalid_signature: "Invalid signature",
+  duplicate_transaction: "Duplicate transaction",
+} satisfies Record<GasRejectionCode, string>;
+
+/** Durable execution labels keep submitted and uncertain states unresolved. */
+export const GAS_EXECUTION_STATUS_LABELS = {
+  claimed: "Claimed — unresolved",
+  submission_unknown: "Submission uncertain — unresolved",
+  submitted: "Submitted — unresolved",
+  succeeded: "Succeeded",
+  failed: "Failed",
+  cancelled: "Cancelled",
+} satisfies Record<GasExecutionStatus, string>;
+
+export type GasExplorerLinkKind = "inner" | "outer";
+
+export type GasExplorerLink = {
+  kind: GasExplorerLinkKind;
+  hash: string;
+  label: string;
+  url: string;
+};
+
+export const STELLAR_EXPERT_TESTNET_ORIGIN = "https://stellar.expert/explorer/testnet";
+
+const STELLAR_TRANSACTION_HASH_PATTERN = /^[a-fA-F0-9]{64}$/;
+
+/** Build a Testnet explorer lookup only from a validated transaction hash. */
+export function getGasExplorerLink(
+  hash: string | null | undefined,
+  kind: GasExplorerLinkKind,
+): GasExplorerLink | null {
+  if (typeof hash !== "string" || !STELLAR_TRANSACTION_HASH_PATTERN.test(hash)) return null;
+
+  return {
+    kind,
+    hash,
+    label: kind === "inner" ? "Inner transaction lookup" : "Outer FeeBump lookup",
+    url: `${STELLAR_EXPERT_TESTNET_ORIGIN}/tx/${hash}`,
+  };
+}
+
+/** Keep an absent fee visibly unknown while preserving exact zero and seven-decimal formatting. */
+export function formatGasActivityFee(stroops: string | null | undefined): string {
+  return stroops === null || stroops === undefined ? "Unknown" : formatStroopsAsXlm(stroops);
+}
+
+/** Format activity and receipt dates as readable, unambiguous UTC timestamps. */
+export function formatGasActivityTimestamp(value: number | string | null | undefined): string {
+  if (value === null || value === undefined) return "Unavailable";
+  if (typeof value === "number" && (!Number.isSafeInteger(value) || value <= 0)) {
+    return "Unavailable";
+  }
+
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : "Unavailable";
+}
 
 export type GasRelayerBalanceState = "unverified" | "zero" | "observed";
 export type GasRelayerBalanceFreshness = "fresh" | "stale" | "never_verified" | "invalid_timestamp";

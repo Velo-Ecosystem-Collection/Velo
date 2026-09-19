@@ -5,20 +5,26 @@ import type {
   GasLogProjection,
   GasPolicyProjection,
   RelayerAccountProjection,
+  GasTelemetryProjection,
 } from "./projections";
 
 import { query } from "../_generated/server";
 import { requireGasConsoleAccess } from "./authorization";
+import { findExecutionAttemptByRequestId } from "./execution";
 import {
   gasLogProjectionValidator,
   gasPolicyProjectionValidator,
+  gasSubmitResultProjectionValidator,
+  gasTelemetryProjectionValidator,
+  projectGasExecutionAttempt,
   projectGasPolicy,
   projectGasLog,
   projectRelayerAccount,
   relayerAccountProjectionValidator,
 } from "./projections";
+import { readGasTelemetry, normalizeTelemetryDayKey } from "./telemetry";
 import { GAS_NETWORK } from "./types";
-import { assertValidGasPolicyState } from "./validation";
+import { assertValidGasPolicyState, normalizeGasRequestId } from "./validation";
 
 /** Read the authenticated project's Testnet Gas policy. */
 export const getPolicy = query({
@@ -85,5 +91,46 @@ export const listLogsPage = query({
       splitCursor?: string | null;
       pageStatus?: "SplitRecommended" | "SplitRequired" | null;
     };
+  },
+});
+
+/**
+ * Read exact fee telemetry for an explicit UTC reporting day. The caller must
+ * advance the argument at the UTC boundary and after resume; this query never
+ * reads the wall clock or mutates accounting state.
+ */
+export const getTelemetry = query({
+  args: {
+    projectId: v.id("projects"),
+    utcDayKey: v.string(),
+  },
+  returns: gasTelemetryProjectionValidator,
+  handler: async (ctx, args): Promise<GasTelemetryProjection> => {
+    await requireGasConsoleAccess(ctx, args.projectId, "read");
+    const utcDayKey = normalizeTelemetryDayKey(args.utcDayKey);
+    return await readGasTelemetry(ctx, args.projectId, utcDayKey);
+  },
+});
+
+/** Read one retained, sanitized execution attempt by project-scoped request ID. */
+export const getExecutionDetail = query({
+  args: {
+    projectId: v.id("projects"),
+    requestId: v.string(),
+  },
+  returns: v.union(
+    // The execution projection is intentionally the same DTO used by submit
+    // replay; no raw attempt fields are added at the dashboard boundary.
+    gasSubmitResultProjectionValidator,
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    await requireGasConsoleAccess(ctx, args.projectId, "read");
+    const requestId = normalizeGasRequestId(args.requestId);
+    const attempt = await findExecutionAttemptByRequestId(ctx, args.projectId, requestId);
+    if (attempt === "ambiguous") {
+      throw new Error("Multiple Gas execution attempts exist for request");
+    }
+    return attempt ? projectGasExecutionAttempt(attempt) : null;
   },
 });

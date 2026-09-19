@@ -282,6 +282,9 @@ export const relayerAccounts = defineTable({
   status: gasRelayerStatusValidator,
   balanceStroops: v.optional(v.int64()),
   balanceUpdatedAt: v.optional(v.number()),
+  /** Internal fencing fields for one authenticated balance refresh. */
+  refreshToken: v.optional(v.string()),
+  refreshStartedAt: v.optional(v.number()),
   createdAt: v.number(),
   updatedAt: v.number(),
 })

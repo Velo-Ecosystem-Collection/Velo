@@ -20,6 +20,7 @@ type SectionId =
   | "config"
   | "checkouts"
   | "intents"
+  | "gas-station"
   | "webhooks"
   | "nextjs"
   | "express"
@@ -52,6 +53,7 @@ const SECTIONS: DocSection[] = [
   { id: "wallets-reference", title: "Methods & Troubleshooting", category: "Velo Wallets" },
   { id: "checkouts", title: "Checkout Sessions", category: "SDK Reference" },
   { id: "intents", title: "Payment Intents", category: "SDK Reference" },
+  { id: "gas-station", title: "Gas Station", category: "SDK Reference" },
   { id: "webhooks", title: "Webhook Verification", category: "SDK Reference" },
   { id: "nextjs", title: "Next.js App Router", category: "Guides & Examples" },
   { id: "express", title: "Express Server", category: "Guides & Examples" },
@@ -113,6 +115,84 @@ console.log(\`Found \${page.data.length} payment intents.\`);
 if (page.hasMore) {
   const nextCursor = page.nextCursor;
   // load next page...
+}`,
+    gasServerRoute: `// app/api/gas/route.ts
+import { NextResponse } from "next/server";
+import {
+  Velo,
+  VeloGasSubmissionUnknownError,
+} from "@carts1024/velo-sdk";
+
+const velo = new Velo({
+  apiKey: process.env.VELO_GAS_API_KEY!,
+  baseUrl: process.env.VELO_BASE_URL!,
+  environment: "testnet",
+  timeoutMs: 30_000,
+});
+
+export async function POST(request: Request) {
+  // Authenticate the caller and authorize the project before reading the body.
+  const body = (await request.json()) as {
+    operationId?: string;
+    signedTransactionXdr?: string;
+  };
+  const operationId = body.operationId?.trim();
+
+  if (!operationId || !body.signedTransactionXdr) {
+    return NextResponse.json({ error: "Invalid Gas request" }, { status: 400 });
+  }
+
+  try {
+    const result = await velo.gas.sponsorAndSubmit(body.signedTransactionXdr, {
+      idempotencyKey: "my-app-gas:" + operationId,
+      correlationId: "my-app-gas:" + operationId,
+      timeoutMs: 30_000,
+    });
+
+    return NextResponse.json({
+      operationId,
+      status: result.status,
+      requestId: result.requestId,
+      transactionHash: result.transactionHash,
+      outerTransactionHash: result.outerTransactionHash,
+      actualFeeStroops: result.actualFeeStroops,
+    });
+  } catch (error) {
+    if (error instanceof VeloGasSubmissionUnknownError) {
+      // Persist error.recovery and reconcile by identity. Never send the XDR again.
+      const result = await velo.gas.getStatus(error.recovery);
+      return NextResponse.json({ operationId, ...result });
+    }
+
+    throw error;
+  }
+}`,
+    gasStatusRecovery: `import {
+  Velo,
+  type GasExecutionIdentity,
+} from "@carts1024/velo-sdk";
+
+const velo = new Velo({
+  apiKey: process.env.VELO_GAS_API_KEY!,
+  baseUrl: process.env.VELO_BASE_URL!,
+  environment: "testnet",
+});
+
+// Store only this identity in your durable server record.
+const identity: GasExecutionIdentity = {
+  requestId: "gas-request-id",
+  transactionHash: "64-character-inner-transaction-hash",
+};
+
+const status = await velo.gas.waitForResult(identity, {
+  timeoutMs: 30_000,
+  maxAttempts: 10,
+  initialDelayMs: 500,
+  maxDelayMs: 5_000,
+});
+
+if (status.status === "succeeded") {
+  console.log(status.outerTransactionHash, status.actualFeeStroops);
 }`,
     webhookVerify: `import { Velo } from "@carts1024/velo-sdk";
 
@@ -1231,6 +1311,245 @@ const session = await velo.checkout.sessions.create({
   updatedAt: "2026-07-01T00:05:00.000Z"
 }`}
                 </pre>
+              </>
+            )}
+
+            {activeSection === "gas-station" && (
+              <>
+                <p>
+                  Velo Gas Station sponsors the network fee for an eligible, user-signed Stellar
+                  Testnet Soroban transaction. Your application still builds the transaction and the
+                  user still signs it. Velo supplies the relayer fee source and returns execution
+                  and fee evidence through the server-side SDK.
+                </p>
+
+                <div className="my-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                  <AlertTriangleIcon className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-500" />
+                  <div className="text-sm">
+                    <strong>Server-side and Testnet only</strong>
+                    <p className="mt-1">
+                      Gas sponsorship must run in a trusted server route or worker. Never put the
+                      Gas API key, signed XDR, relayer signer, or recovery credentials in browser
+                      code or browser storage. The current alpha Gas boundary is Stellar Testnet.
+                    </p>
+                  </div>
+                </div>
+
+                <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
+                  The integration flow
+                </h3>
+                <ol className="list-decimal space-y-2 pl-6 text-zinc-600 dark:text-zinc-400">
+                  <li>Build a valid Soroban invocation for Stellar Testnet.</li>
+                  <li>Ask the user&apos;s wallet to sign the transaction XDR.</li>
+                  <li>Send the signed XDR and your stable operation ID to your server.</li>
+                  <li>
+                    Call <code>velo.gas.sponsorAndSubmit()</code> from that server.
+                  </li>
+                  <li>
+                    Return a safe projection to the browser and observe by identity until terminal.
+                  </li>
+                </ol>
+
+                <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
+                  Configure the project
+                </h3>
+                <p>
+                  A project owner configures the Gas Station before an integrator can sponsor a
+                  transaction. Open the project&apos;s <strong>Gas Station</strong> page at{" "}
+                  <code>/projects/&lt;projectId&gt;/gas</code>.
+                </p>
+                <ol className="list-decimal space-y-2 pl-6 text-zinc-600 dark:text-zinc-400">
+                  <li>
+                    An editor or owner enables sponsorship, sets a positive daily cap and wallet
+                    hourly quota, and adds the allowed contract IDs one per line.
+                  </li>
+                  <li>
+                    Only an owner can add or change the relayer metadata. In the{" "}
+                    <strong>Relayer funding &amp; balance</strong> panel, choose{" "}
+                    <strong>Add a relayer account</strong>, enter the public <code>G...</code>{" "}
+                    Testnet address, select <strong>Active</strong>, and save.
+                  </li>
+                  <li>
+                    Fund that same public address with Testnet XLM, then choose{" "}
+                    <strong>Refresh balance</strong>. Never enter a secret key in Velo.
+                  </li>
+                  <li>
+                    The Convex deployment operator must configure the matching private signer in{" "}
+                    <code>VELO_GAS_TESTNET_RELAYER_SIGNERS_JSON</code>. The dashboard stores only
+                    public metadata; it does not create custody.
+                  </li>
+                </ol>
+                <p className="text-sm text-muted-foreground">
+                  Viewers can read policy and relayer status. Editors can change policy. Owners can
+                  change relayer metadata. A balance snapshot older than five minutes is stale, and
+                  metadata status is not proof of signer readiness.
+                </p>
+
+                <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
+                  Server configuration
+                </h3>
+                <p>
+                  Use a Gas-scoped project API key and an explicit deployment URL. Keep both values
+                  in your server environment:
+                </p>
+                {renderCodeBlock(
+                  "VELO_GAS_API_KEY=replace_with_a_server_only_project_key\nVELO_BASE_URL=https://your-velo-deployment.example",
+                  "gasEnvironment",
+                )}
+                <p>
+                  Initialize <code>Velo</code> with <code>environment: &quot;testnet&quot;</code>{" "}
+                  and a total timeout below your hosting platform&apos;s request deadline.
+                  Authenticate your caller and authorize the project before reading the request
+                  body. Bound the request body and return only safe fields to the browser.
+                </p>
+
+                <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
+                  Sponsor, submit, and recover
+                </h3>
+                {renderCodeBlock(codeSnippets.gasServerRoute, "gasServerRoute")}
+                <p>
+                  The combined helper sponsors once and hands off the signed XDR at most once. If
+                  the handoff becomes uncertain, persist <code>error.recovery</code> and call{" "}
+                  <code>getStatus()</code>; do not submit the XDR again.
+                </p>
+                {renderCodeBlock(codeSnippets.gasStatusRecovery, "gasStatusRecovery")}
+
+                <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">Gas SDK methods</h3>
+                <div className="overflow-x-auto rounded-lg border border-border">
+                  <table className="min-w-full divide-y divide-border text-left text-sm">
+                    <thead className="bg-muted/70 font-mono text-xs text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-3">Method</th>
+                        <th className="px-4 py-3">Use it for</th>
+                        <th className="px-4 py-3">Important behavior</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      <tr>
+                        <td className="px-4 py-3 font-mono text-foreground">
+                          sponsor(xdr, options)
+                        </td>
+                        <td className="px-4 py-3">Reserve fee exposure.</td>
+                        <td className="px-4 py-3">
+                          Requires a stable idempotency key; it does not submit.
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3 font-mono text-foreground">submit(params)</td>
+                        <td className="px-4 py-3">Perform the trusted handoff.</td>
+                        <td className="px-4 py-3">
+                          Sends the original signed XDR once and is never automatically retried.
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3 font-mono text-foreground">
+                          sponsorAndSubmit(xdr, options)
+                        </td>
+                        <td className="px-4 py-3">Use the normal one-call workflow.</td>
+                        <td className="px-4 py-3">
+                          Composes sponsorship and handoff under one deadline.
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3 font-mono text-foreground">getStatus(identity)</td>
+                        <td className="px-4 py-3">Recover or inspect one operation.</td>
+                        <td className="px-4 py-3">
+                          Sends only <code>requestId</code> and the inner transaction hash.
+                        </td>
+                      </tr>
+                      <tr>
+                        <td className="px-4 py-3 font-mono text-foreground">
+                          waitForResult(identity, options)
+                        </td>
+                        <td className="px-4 py-3">Bounded status observation.</td>
+                        <td className="px-4 py-3">
+                          Polls identity-only status; it never sponsors or submits.
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
+                  Result interpretation
+                </h3>
+                <ul className="list-disc space-y-2 pl-6 text-zinc-600 dark:text-zinc-400">
+                  <li>
+                    <code>succeeded</code> is the only successful result.
+                  </li>
+                  <li>
+                    <code>claimed</code>, <code>submission_unknown</code>, and{" "}
+                    <code>submitted</code> are unresolved or running.
+                  </li>
+                  <li>
+                    <code>failed</code> and <code>cancelled</code> are terminal non-success results.
+                  </li>
+                  <li>
+                    <code>actualFeeStroops: null</code> means the actual fee is unknown, not zero.
+                  </li>
+                  <li>
+                    The inner transaction hash and FeeBump outer transaction hash are separate
+                    identities.
+                  </li>
+                </ul>
+
+                <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
+                  Policy denials and retry rules
+                </h3>
+                <ul className="list-disc space-y-2 pl-6 text-zinc-600 dark:text-zinc-400">
+                  <li>
+                    <code>contract_not_whitelisted</code> means the target is not in the project
+                    allowlist; do not retry unchanged.
+                  </li>
+                  <li>
+                    <code>daily_cap_exceeded</code> and <code>wallet_rate_limited</code> are not
+                    automatically retried.
+                  </li>
+                  <li>
+                    Reservation expiry, disabled policy, missing relayer, and provider errors are
+                    not proof of chain execution.
+                  </li>
+                  <li>
+                    Retry sponsorship only with the same signed XDR and the same idempotency key.
+                  </li>
+                  <li>
+                    After a dispatch-uncertain error, recover by identity and never resubmit the
+                    XDR.
+                  </li>
+                </ul>
+
+                <p className="text-sm text-muted-foreground">
+                  Handle typed <code>VeloAuthError</code>, <code>VeloValidationError</code>,{" "}
+                  <code>VeloRateLimitError</code>, <code>VeloProviderError</code>, and{" "}
+                  <code>VeloGasWaitError</code> errors. A transport error is not proof of a chain
+                  result.
+                </p>
+
+                <div className="my-6 flex gap-3 rounded-xl border border-border bg-muted/50 p-4">
+                  <InfoIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+                  <div className="text-sm">
+                    <strong className="mb-1 block text-foreground">Dashboard evidence</strong>
+                    The authenticated Gas Station page is the operational readback for policy,
+                    wallet quota, daily cap, relayer address and freshness, confirmed fees,
+                    outstanding holds, telemetry, paginated activity, and receipt detail with inner
+                    and outer hashes. Fixture screenshots are not live evidence.
+                  </div>
+                </div>
+
+                <p className="text-sm text-muted-foreground">
+                  The Gas helpers are available from the current workspace SDK source. The published{" "}
+                  <code>0.1.0-alpha.2</code> package has not been republished with these Gas exports
+                  yet. See the{" "}
+                  <a
+                    href="https://github.com/Velo-Ecosystem-Collection/Velo/blob/main/docs/velo-gas-station.md"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-foreground underline underline-offset-2"
+                  >
+                    full Gas Station integration guide
+                  </a>{" "}
+                  for the complete setup and validation checklist.
+                </p>
               </>
             )}
 

@@ -8,15 +8,14 @@ import type { ActionCtx } from "./_generated/server";
 
 import { internal } from "./_generated/api";
 import { env, httpAction } from "./_generated/server";
+import { readTestnetNativeBalance, type TestnetNativeBalanceResult } from "./gas/balance";
 
 const http = httpRouter();
 const MAX_BODY_BYTES = 64 * 1024;
 const ingestRef = makeFunctionReference<"mutation">("provider_events/mutation:ingestPdax");
 
-const DEFAULT_TESTNET_HORIZON_URL = "https://horizon-testnet.stellar.org";
 const DEFAULT_D2_DEPLOYMENT_NAME = "dev:capable-kingfisher-697";
 const SOURCE_COMMIT_PATTERN = /^[a-f0-9]{40}$/;
-const PUBLIC_KEY_PATTERN = /^G[A-Z2-7]{55}$/;
 const TRANSACTION_HASH_PATTERN = /^[a-f0-9]{64}$/;
 const PHASES = new Set([
   "preflight",
@@ -109,45 +108,14 @@ function parseSnapshotScope(request: Request) {
   };
 }
 
-function decimalXlmToStroops(value: unknown): bigint {
-  if (typeof value !== "string" || !/^\d+(?:\.\d{1,7})?$/.test(value)) {
-    throw new Error("Invalid Horizon balance");
-  }
-  const [whole, fraction = ""] = value.split(".");
-  if (whole === undefined) throw new Error("Invalid Horizon balance");
-  return BigInt(whole) * 10_000_000n + BigInt(fraction.padEnd(7, "0"));
+function requireFundedBalance(result: TestnetNativeBalanceResult): string {
+  if (result.status !== "success") throw new Error("Testnet account balance unavailable");
+  const balanceStroops = BigInt(result.balanceStroops);
+  if (balanceStroops <= 0n) throw new Error("Testnet account is not funded");
+  return result.balanceStroops;
 }
 
-async function readTestnetNativeBalance(publicKey: string): Promise<string> {
-  if (!PUBLIC_KEY_PATTERN.test(publicKey)) throw new Error("Invalid account address");
-  const horizonUrl = env.VELO_GAS_D2_HORIZON_URL?.trim() || DEFAULT_TESTNET_HORIZON_URL;
-  const endpoint = `${horizonUrl.replace(/\/$/, "")}/accounts/${encodeURIComponent(publicKey)}`;
-  const response = await fetch(endpoint, {
-    headers: { accept: "application/json" },
-    signal: AbortSignal.timeout(8_000),
-  });
-  if (!response.ok) throw new Error("Testnet account balance unavailable");
-
-  const value: unknown = await response.json();
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("Malformed Testnet account response");
-  }
-  const balances = (value as { balances?: unknown }).balances;
-  if (!Array.isArray(balances)) throw new Error("Malformed Testnet account response");
-  const native = balances.find(
-    (balance): balance is { asset_type?: unknown; balance?: unknown } =>
-      Boolean(balance) &&
-      typeof balance === "object" &&
-      !Array.isArray(balance) &&
-      (balance as { asset_type?: unknown }).asset_type === "native",
-  );
-  if (!native) throw new Error("Native Testnet balance unavailable");
-  const stroops = decimalXlmToStroops(native.balance);
-  if (stroops <= 0n) throw new Error("Testnet account is not funded");
-  return stroops.toString();
-}
-
-async function readOperatorSnapshot(request: Request, ctx: ActionCtx) {
+export async function readOperatorSnapshot(request: Request, ctx: ActionCtx) {
   if (!constantTimeTokenMatch(request)) return operatorResponse(401, { error: "Unauthorized" });
   const scope = parseSnapshotScope(request);
   if (!scope) return operatorResponse(400, { error: "Invalid snapshot scope" });
@@ -168,10 +136,12 @@ async function readOperatorSnapshot(request: Request, ctx: ActionCtx) {
     if (readiness.status !== "ready" || !readiness.publicKey) {
       return operatorResponse(503, { error: "Relayer custody is not ready" });
     }
-    const [signerBalanceStroops, userBalanceStroops] = await Promise.all([
+    const [signerBalance, userBalance] = await Promise.all([
       readTestnetNativeBalance(readiness.publicKey),
       readTestnetNativeBalance(data.userPublicKey),
     ]);
+    const signerBalanceStroops = requireFundedBalance(signerBalance);
+    const userBalanceStroops = requireFundedBalance(userBalance);
 
     return operatorResponse(200, {
       schemaVersion: 1,

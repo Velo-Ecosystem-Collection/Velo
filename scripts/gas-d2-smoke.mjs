@@ -721,7 +721,7 @@ async function pollExecution({
   return { ok: false, code: "polling_exhausted" };
 }
 
-async function readScopedSnapshot(config, dependencies, scope) {
+export async function readScopedSnapshot(config, dependencies, scope) {
   const result = await safelyRead(() => dependencies.readSnapshot(config, scope));
   if (!result.ok) return result;
   if (isNormalizedSnapshot(result.value)) return result;
@@ -855,7 +855,7 @@ async function probeTestnetTransaction(config, transactionHash, { fetchImpl }) {
   return { ok: false, code: "malformed_transaction_response" };
 }
 
-function isExpiredInvocation(facts, now) {
+export function isExpiredInvocation(facts, now) {
   return (
     typeof facts?.value?.innerMaxTime === "number" &&
     Number.isSafeInteger(facts.value.innerMaxTime) &&
@@ -1100,7 +1100,7 @@ function normalizeProvenance(value, config) {
   };
 }
 
-function correlateSettledExecution(dto, snapshot) {
+export function correlateSettledExecution(dto, snapshot) {
   if (!snapshot.execution || !snapshot.execution.ledgerEvidence)
     return { ok: false, code: "execution_snapshot_missing" };
   const evidence = snapshot.execution.ledgerEvidence;
@@ -1139,7 +1139,7 @@ function correlateSettledExecution(dto, snapshot) {
   };
 }
 
-function compareReplaySnapshots(before, after, replay, initial) {
+export function compareReplaySnapshots(before, after, replay, initial) {
   const sameAttemptIdentity =
     before.execution?.requestId === after.execution?.requestId &&
     before.execution?.innerTransactionHash === after.execution?.innerTransactionHash &&
@@ -1167,7 +1167,7 @@ function compareReplaySnapshots(before, after, replay, initial) {
   };
 }
 
-function verifyPolicyDenial(response, before, after, transactionHash) {
+export function verifyPolicyDenial(response, before, after, transactionHash) {
   const noExecutionAttempt = before.execution === null && after.execution === null;
   const noReservedExposure =
     before.reservedExposureStroops === "0" &&
@@ -1357,7 +1357,7 @@ function summarizeDeployment(snapshot, provenance) {
   };
 }
 
-function summarizePreflight(preflight) {
+export function summarizePreflight(preflight) {
   return {
     status: preflight.ok ? "passed" : "blocked",
     checks: preflight.checks.map(({ name, status, failure }) => ({

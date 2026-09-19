@@ -10,7 +10,8 @@
     "prebuild": "pnpm --filter @carts1024/velo-wallets build && node ../../scripts/stage-wallet-bundle.mjs",
     "start": "next start",
     "test": "node --experimental-strip-types --test features/**/*.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:gas": "playwright test --config=playwright.gas.config.ts"
   },
   "dependencies": {
     "@carts1024/velo-sdk": "workspace:*",

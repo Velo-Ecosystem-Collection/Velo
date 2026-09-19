@@ -26,6 +26,7 @@ import {
   getGasUsagePercentage,
   getMillisecondsUntilNextUtcMidnight,
   getUtcDayKey,
+  initializeGasRelayerDraft,
   isCurrentGasRelayerRefreshRequest,
   parseXlmToStroops,
   type GasPolicyDraft,
@@ -34,6 +35,7 @@ import {
   type GasRelayerSnapshot,
   type GasTelemetrySnapshot,
   validateGasPolicyDraft,
+  validateGasRelayerDraft,
 } from "./gas-ui.ts";
 
 const VALID_CONTRACT_ID = "CC7RENKPGXGF6MMEMGJ4YWUBOBGQYOCGG33PNSONQF56UMMAQ22TWH6R";
@@ -168,6 +170,33 @@ const RELAYER_SNAPSHOT = {
   createdAt: 1_700_000_000_000,
   updatedAt: 1_700_000_000_000,
 } satisfies GasRelayerSnapshot;
+
+const VALID_RELAYER_PUBLIC_KEY = "GA54SPC34JL3I57ENALTO2V26XOFFG4VGQLFQXDGF6KJ5TJY7ODY56ST";
+
+test("initializes and validates owner relayer metadata without accepting signer secrets", () => {
+  assert.deepEqual(initializeGasRelayerDraft(null), {
+    publicKey: "",
+    status: "active",
+  });
+  assert.deepEqual(
+    validateGasRelayerDraft({
+      publicKey: `  ${VALID_RELAYER_PUBLIC_KEY.toLowerCase()}  `,
+      status: "disabled",
+    }),
+    {
+      ok: true,
+      values: {
+        publicKey: VALID_RELAYER_PUBLIC_KEY,
+        status: "disabled",
+      },
+      errors: {},
+    },
+  );
+  assert.equal(
+    validateGasRelayerDraft({ publicKey: "S-secret-key-material", status: "active" }).ok,
+    false,
+  );
+});
 
 test("distinguishes an exact zero balance from an absent balance", () => {
   assert.equal(getGasRelayerBalanceState("0"), "zero");

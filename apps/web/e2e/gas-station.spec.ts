@@ -17,6 +17,7 @@ const screenshotPath = (name: string) =>
 const ownerProjectUrl = "/projects/project-gas-owner/gas";
 const memberProjectUrl = "/projects/project-gas-member/gas";
 const validContractId = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM";
+const updatedRelayerPublicKey = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 declare global {
   interface Window {
@@ -208,6 +209,49 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await expect(page.getByRole("heading", { name: "Connect to Console" })).toBeVisible();
   });
 
+  test("lets owners add or update public relayer metadata and keeps the form owner-only", async ({
+    page,
+  }) => {
+    await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
+
+    const publicKey = page.getByRole("textbox", { name: "Relayer public address" });
+    await expect(publicKey).toBeVisible();
+    await expect(publicKey).toHaveValue("GA54SPC34JL3I57ENALTO2V26XOFFG4VGQLFQXDGF6KJ5TJY7ODY56ST");
+
+    await publicKey.fill(` ${updatedRelayerPublicKey.toLowerCase()} `);
+    await page.getByLabel("Relayer metadata status").selectOption("disabled");
+    await page.getByRole("button", { name: "Save relayer configuration" }).click();
+
+    await expect
+      .poll(async () => {
+        const savedCalls = (await calls(page)).filter(
+          (call) => call.functionName === "gas/mutations:updateRelayerAccount",
+        );
+        return savedCalls.length;
+      })
+      .toBe(1);
+
+    const mutation = (await calls(page)).find(
+      (call) => call.functionName === "gas/mutations:updateRelayerAccount",
+    );
+    expect(mutation?.status).toBe("pending");
+    expect(mutation?.args).toEqual({
+      projectId: "project-gas-owner",
+      publicKey: updatedRelayerPublicKey,
+      status: "disabled",
+    });
+
+    await resolveNext(page, "gas/mutations:updateRelayerAccount");
+    await expect(page.getByText("Relayer configuration saved.", { exact: true })).toBeVisible();
+    await expect(publicKey).toHaveValue(updatedRelayerPublicKey);
+    await expect(page.getByText("Metadata disabled", { exact: true }).first()).toBeVisible();
+
+    await gotoGas(page, { session: "editor", projectId: "project-gas-owner" });
+    await expect(page.getByRole("textbox", { name: "Relayer public address" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Save relayer configuration" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Refresh balance" })).toBeVisible();
+  });
+
   test("saves normalized policy arguments once and applies stored readback", async ({ page }) => {
     await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
 
@@ -215,9 +259,8 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await page.getByLabel("Hourly wallet quota").fill("4");
     await page.getByLabel("Allowed contract IDs").fill(`${validContractId}\n\n${validContractId}`);
 
-    const saveButton = page.locator('button[type="submit"]');
+    const saveButton = page.getByRole("button", { name: "Save policy" });
     await saveButton.click();
-    await expect(saveButton).toBeDisabled();
     await expect(page.getByRole("button", { name: "Saving…" })).toBeDisabled();
     await expect
       .poll(async () => {

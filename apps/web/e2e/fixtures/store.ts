@@ -117,7 +117,7 @@ const sessions: Record<GasFixtureSession, FixtureSession> = {
 
 const VALID_CONTRACT_ID = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM";
 const OBSERVED_AT = Date.parse("2026-09-16T12:00:00.000Z");
-const RELAYER_PUBLIC_KEY = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAREL";
+const RELAYER_PUBLIC_KEY = "GA54SPC34JL3I57ENALTO2V26XOFFG4VGQLFQXDGF6KJ5TJY7ODY56ST";
 const INNER_HASH = "a".repeat(64);
 const OUTER_HASH = "b".repeat(64);
 
@@ -645,6 +645,27 @@ export class GasFixtureStore {
       return clone(saved);
     }
 
+    if (call.functionName === "gas/mutations:updateRelayerAccount") {
+      const args = call.args as {
+        projectId: GasFixtureProjectId;
+        publicKey: string;
+        status: GasRelayerSnapshot["status"];
+      };
+      const current = relayers[args.projectId];
+      const keyChanged = current.publicKey !== args.publicKey;
+      const saved: GasRelayerSnapshot = {
+        ...current,
+        publicKey: args.publicKey,
+        status: args.status,
+        balanceStroops: keyChanged ? null : current.balanceStroops,
+        balanceUpdatedAt: keyChanged ? null : current.balanceUpdatedAt,
+        updatedAt: Date.now(),
+      };
+      relayers[args.projectId] = saved;
+      this.notify();
+      return clone(saved);
+    }
+
     if (call.functionName === "gas/balance_action:refreshRelayerBalance") {
       const projectId = this.projectIdFromArgs(call.args) ?? "project-gas-owner";
       if (this.config.scenario === "balance-cooldown")
@@ -694,6 +715,7 @@ export class GasFixtureStore {
       "gas/queries:listLogsPage",
       "gas/queries:getExecutionDetail",
       "gas/mutations:updatePolicy",
+      "gas/mutations:updateRelayerAccount",
       "gas/balance_action:refreshRelayerBalance",
     ]);
     if (!supported.has(functionName)) {

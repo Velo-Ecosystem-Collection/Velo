@@ -20,6 +20,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Id } from "@repo/backend/convex/_generated/dataModel";
 
+import { GasRelayerConfigurationForm } from "./gas-relayer-form";
 import {
   getGasRelayerBalanceFreshness,
   getGasRelayerBalanceState,
@@ -397,48 +398,54 @@ export function GasRelayerPanel({ projectId, walletAddress, role, relayer }: Gas
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-          <div className="grid min-w-0 gap-2">
-            <h2 className="text-lg font-semibold">Relayer funding &amp; balance</h2>
-            <CardDescription>
-              Verified native XLM observation for the configured Testnet fee relayer.
-            </CardDescription>
+    <div className="grid min-w-0 gap-4">
+      <Card>
+        <CardHeader>
+          <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+            <div className="grid min-w-0 gap-2">
+              <h2 className="text-lg font-semibold">Relayer funding &amp; balance</h2>
+              <CardDescription>
+                Verified native XLM observation for the configured Testnet fee relayer.
+              </CardDescription>
+            </div>
+            {relayer ? (
+              <Badge variant={relayer.status === "active" ? "success" : "gray"}>
+                {relayer.status === "active" ? "Metadata active" : "Metadata disabled"}
+              </Badge>
+            ) : null}
           </div>
-          {relayer ? (
-            <Badge variant={relayer.status === "active" ? "success" : "gray"}>
-              {relayer.status === "active" ? "Metadata active" : "Metadata disabled"}
-            </Badge>
+        </CardHeader>
+        <CardContent className="grid min-w-0 gap-5">
+          {relayer === undefined ? <GasRelayerLoading /> : null}
+
+          {relayer === null ? (
+            <Alert>
+              <InfoIcon />
+              <AlertTitle>No relayer configured</AlertTitle>
+              <AlertDescription>
+                This project has no configured public Testnet relayer address to fund or verify.
+                Relayer metadata must be configured by an owner before a balance can be observed.
+              </AlertDescription>
+            </Alert>
           ) : null}
-        </div>
-      </CardHeader>
-      <CardContent className="grid min-w-0 gap-5">
-        {relayer === undefined ? <GasRelayerLoading /> : null}
 
-        {relayer === null ? (
-          <Alert>
-            <InfoIcon />
-            <AlertTitle>No relayer configured</AlertTitle>
-            <AlertDescription>
-              This project has no configured public Testnet relayer address to fund or verify.
-              Relayer metadata must be configured by an owner before a balance can be observed.
-            </AlertDescription>
-          </Alert>
-        ) : null}
+          {relayer ? (
+            <ConfiguredRelayerDetails
+              relayer={relayer}
+              now={now}
+              canRefresh={canRefresh}
+              cooldownRemaining={cooldownRemaining}
+              isRefreshing={isRefreshing}
+              feedback={feedback}
+              onRefresh={handleRefresh}
+            />
+          ) : null}
+        </CardContent>
+      </Card>
 
-        {relayer ? (
-          <ConfiguredRelayerDetails
-            relayer={relayer}
-            now={now}
-            canRefresh={canRefresh}
-            cooldownRemaining={cooldownRemaining}
-            isRefreshing={isRefreshing}
-            feedback={feedback}
-            onRefresh={handleRefresh}
-          />
-        ) : null}
-      </CardContent>
-    </Card>
+      {role === "owner" && relayer !== undefined ? (
+        <GasRelayerConfigurationForm projectId={projectId} relayer={relayer} />
+      ) : null}
+    </div>
   );
 }

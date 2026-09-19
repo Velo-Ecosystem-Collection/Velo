@@ -1,4 +1,4 @@
-import { assertValidContractId } from "@repo/stellar/validation";
+import { assertValidContractId, assertValidPublicKey } from "@repo/stellar/validation";
 
 import type { api } from "@repo/backend/convex/_generated/api";
 import type { FunctionReturnType } from "convex/server";
@@ -18,6 +18,27 @@ export type GasRelayerSnapshot = Exclude<
   FunctionReturnType<typeof api.gas.queries.getRelayerAccount>,
   null
 >;
+export type GasRelayerStatus = GasRelayerSnapshot["status"];
+export type GasRelayerDraft = {
+  publicKey: string;
+  status: GasRelayerStatus;
+};
+export type GasRelayerDraftErrors = Partial<Record<"publicKey", string>>;
+export type GasRelayerUpdateArgs = {
+  publicKey: string;
+  status: GasRelayerStatus;
+};
+export type GasRelayerValidationResult =
+  | {
+      ok: true;
+      values: GasRelayerUpdateArgs;
+      errors: Record<string, never>;
+    }
+  | {
+      ok: false;
+      values: null;
+      errors: GasRelayerDraftErrors;
+    };
 export type GasLogSnapshot = FunctionReturnType<
   typeof api.gas.queries.listLogsPage
 >["page"][number];
@@ -162,6 +183,51 @@ export type GasTelemetryHistoryRow = {
   confirmedFeeStroops: string | null;
   sourceUpdatedAt: number | null;
 };
+
+/** Initialize the owner-only relayer metadata form without exposing signer material. */
+export function initializeGasRelayerDraft(
+  relayer: GasRelayerSnapshot | null | undefined,
+): GasRelayerDraft {
+  return {
+    publicKey: relayer?.publicKey ?? "",
+    status: relayer?.status ?? "active",
+  };
+}
+
+/** Keep remote-update comparisons focused on fields the owner can edit. */
+export function areGasRelayerDraftsEqual(first: GasRelayerDraft, second: GasRelayerDraft): boolean {
+  return first.publicKey === second.publicKey && first.status === second.status;
+}
+
+/** Normalize and checksum-validate the public relayer address before saving. */
+export function validateGasRelayerDraft(draft: GasRelayerDraft): GasRelayerValidationResult {
+  if (!draft.publicKey.trim()) {
+    return {
+      ok: false,
+      values: null,
+      errors: { publicKey: "Enter the relayer's Stellar public address." },
+    };
+  }
+
+  try {
+    return {
+      ok: true,
+      values: {
+        publicKey: assertValidPublicKey(draft.publicKey),
+        status: draft.status,
+      },
+      errors: {},
+    };
+  } catch {
+    return {
+      ok: false,
+      values: null,
+      errors: {
+        publicKey: "Enter a valid Stellar public address beginning with G.",
+      },
+    };
+  }
+}
 
 const GAS_TELEMETRY_HISTORY_DAYS = 7;
 

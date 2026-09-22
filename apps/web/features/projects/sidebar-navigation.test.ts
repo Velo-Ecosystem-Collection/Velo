@@ -20,6 +20,7 @@ test("sidebar exposes the five Velo principles as navigation groups", () => {
   assert.match(sidebarSource, /title: "Verify"[\s\S]*title: "Contracts"/);
   assert.match(sidebarSource, /title: "Observe"[\s\S]*title: "Events"/);
   assert.match(sidebarSource, /title: "Pay"[\s\S]*title: "Payments"/);
+  assert.match(sidebarSource, /title: "Pay"[\s\S]*title: "Gas Station"/);
   assert.match(sidebarSource, /title: "Settle"[\s\S]*title: "Settlement"/);
 });
 

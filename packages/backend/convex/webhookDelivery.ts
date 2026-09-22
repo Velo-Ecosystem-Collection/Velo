@@ -2,8 +2,9 @@
 
 import crypto from "crypto";
 
+import { isCorrelationId } from "@repo/observability";
 import { makeFunctionReference } from "convex/server";
-import { ConvexError, v } from "convex/values";
+import { v } from "convex/values";
 
 import type { Doc } from "./_generated/dataModel";
 import type { WebhookDeliveryId } from "./webhook_deliveries/types";
@@ -24,7 +25,6 @@ type DeliveryTarget = {
   providerEvent?: Doc<"providerEvents"> | null;
 };
 
-const CORRELATION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{7,127}$/;
 const WEBHOOK_CONNECT_TIMEOUT_MS = 2_000;
 const WEBHOOK_TOTAL_TIMEOUT_MS = 8_000;
 const MAX_WEBHOOK_ATTEMPTS = 5;
@@ -33,13 +33,7 @@ const RETRY_DELAYS_SECONDS = [0, 15, 60, 300, 900];
 const telemetryRef = makeFunctionReference<"mutation">("telemetry_outbox/mutations:enqueue");
 
 function testCorrelationId(value: string | undefined) {
-  if (value === undefined) {
-    return crypto.randomUUID();
-  }
-  if (!CORRELATION_ID_PATTERN.test(value)) {
-    throw new ConvexError("Invalid correlation ID");
-  }
-  return value;
+  return value !== undefined && isCorrelationId(value) ? value : crypto.randomUUID();
 }
 
 function buildPayload(
@@ -510,7 +504,9 @@ export const trigger = internalAction({
     let deliveryId = args.deliveryId;
     const attemptCount = args.attemptCount ?? 1;
     let overrideEventId: string | undefined = undefined;
-    const correlationId = args.correlationId ?? target.paymentIntent?.correlationId;
+    const correlationId = testCorrelationId(
+      args.correlationId ?? target.paymentIntent?.correlationId,
+    );
     const traceparent = args.traceparent ?? target.paymentIntent?.traceparent;
 
     const sourceIdentity = [

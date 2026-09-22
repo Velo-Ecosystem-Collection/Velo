@@ -20,6 +20,11 @@ const expireJourneyStages = makeFunctionReference<"mutation">("journey_stages/mu
 const expirePlaygroundExecutions = makeFunctionReference<"mutation">(
   "playground_projects/mutations:expireExecutions",
 );
+const expireGasLogs = makeFunctionReference<"mutation">("gas/retention:expireLogs");
+const recoverGasExecution = makeFunctionReference<"mutation">("gas/execution:recoverAbandoned");
+const reconcileGasExecution = makeFunctionReference<"action">(
+  "gas/reconciliation_action:reconcileDue",
+);
 const recoverBillingReservations = makeFunctionReference<"mutation">(
   "billing/mutations:recoverExpiredReservations",
 );
@@ -43,6 +48,13 @@ crons.interval("capture bounded telemetry gauges", { minutes: 1 }, captureTeleme
 crons.interval("expire safe journey stages", { hours: 1 }, expireJourneyStages, { limit: 100 });
 crons.interval("expire project playground history", { hours: 1 }, expirePlaygroundExecutions, {
   limit: 100,
+});
+crons.interval("expire retained gas logs", { hours: 1 }, expireGasLogs, { limit: 100 });
+crons.interval("recover abandoned Gas executions", { minutes: 1 }, recoverGasExecution, {
+  limit: SCHEDULED_WORKER_PAGE_SIZE,
+});
+crons.interval("reconcile pending Gas FeeBumps", { minutes: 1 }, reconcileGasExecution, {
+  limit: SCHEDULED_WORKER_PAGE_SIZE,
 });
 crons.interval("recover expired billing reservations", { minutes: 1 }, recoverBillingReservations, {
   limit: SCHEDULED_WORKER_PAGE_SIZE,

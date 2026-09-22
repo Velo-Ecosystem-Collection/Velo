@@ -16,6 +16,7 @@
     "@repo/observability": "workspace:*",
     "@repo/pdax": "workspace:*",
     "@repo/stellar": "workspace:*",
+    "@stellar/stellar-sdk": "14.2.0",
     "@upstash/redis": "^1.38.0",
     "convex": "^1.42.2"
   },

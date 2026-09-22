@@ -76,3 +76,16 @@ test("veloErrorResponse returns normalized envelope and request id header", asyn
   assert.equal(body.error.code, "payment_intent_not_found");
   assert.equal(body.error.requestId, response.headers.get("X-Request-Id"));
 });
+
+test("veloErrorResponse replaces secret-shaped request IDs", async () => {
+  const response = veloErrorResponse({
+    status: 500,
+    type: "api_error",
+    code: "internal_error",
+    message: "Internal server error.",
+    requestId: `tk_live_${"a".repeat(32)}`,
+  });
+  const body = (await response.json()) as { error: { requestId: string } };
+  assert.notEqual(body.error.requestId, `tk_live_${"a".repeat(32)}`);
+  assert.equal(body.error.requestId, response.headers.get("X-Request-Id"));
+});

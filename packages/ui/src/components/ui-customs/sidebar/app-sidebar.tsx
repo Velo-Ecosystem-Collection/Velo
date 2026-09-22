@@ -33,6 +33,8 @@ import {
 } from "lucide-react";
 import * as React from "react";
 
+import { isSidebarPathActive, projectDestination } from "./project-navigation";
+
 export type SidebarProps = React.ComponentProps<typeof Sidebar> & {
   user: SidebarUser | null;
   projects?: SwitcherProject[];
@@ -47,12 +49,6 @@ export type SidebarProps = React.ComponentProps<typeof Sidebar> & {
   onConnect?: () => void;
   isConnecting?: boolean;
 };
-
-function isPathActive(currentPath: string | undefined, url: string) {
-  if (!currentPath) return false;
-  if (url === "/dashboard") return currentPath === url;
-  return currentPath === url || currentPath.startsWith(`${url}/`);
-}
 
 export function AppSidebar({
   user,
@@ -71,6 +67,7 @@ export function AppSidebar({
 }: SidebarProps) {
   const activeProject = projects.find((project) => project.id === activeProjectId);
   const projectBaseUrl = activeProject ? `/projects/${activeProject.id}` : "/dashboard";
+  const gasUrl = projectDestination(activeProjectId, "/gas") ?? "/dashboard";
   const publicProofUrl = activeProject?.slug ? `/verify/${activeProject.slug}` : "/dashboard";
   const settingsUrl = activeProject ? `/projects/${activeProject.id}/settings` : undefined;
 
@@ -82,7 +79,7 @@ export function AppSidebar({
     },
   ].map((item) => ({
     ...item,
-    isActive: isPathActive(currentPath, item.url),
+    isActive: isSidebarPathActive(currentPath, item.url),
   }));
 
   const navGroups = [
@@ -183,6 +180,12 @@ export function AppSidebar({
           icon: CreditCardIcon,
           disabled: !activeProject,
         },
+        {
+          title: "Gas Station",
+          url: gasUrl,
+          icon: WalletIcon,
+          disabled: !activeProjectId,
+        },
       ],
     },
     {
@@ -201,9 +204,11 @@ export function AppSidebar({
     ...group,
     items: group.items.map((item) => ({
       ...item,
-      isActive: !item.disabled && isPathActive(currentPath, item.url),
+      isActive: !item.disabled && isSidebarPathActive(currentPath, item.url),
     })),
-    isActive: group.items.some((item) => !item.disabled && isPathActive(currentPath, item.url)),
+    isActive: group.items.some(
+      (item) => !item.disabled && isSidebarPathActive(currentPath, item.url),
+    ),
   }));
 
   return (

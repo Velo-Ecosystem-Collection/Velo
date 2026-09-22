@@ -297,6 +297,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       }
     }
 
+    if (activeProjectId) {
+      urls.push(`/projects/${activeProjectId}/gas`);
+    }
+
     for (const url of urls) {
       router.prefetch(url);
     }

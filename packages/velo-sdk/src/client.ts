@@ -9,11 +9,14 @@ import type {
   VerifyWebhookParams,
 } from "./types.ts";
 
+import { createGasApi, type GasApi } from "./gas.ts";
 import { HttpClient } from "./http.ts";
 import { verifyWebhookSignature } from "./webhooks.ts";
 
 export class Velo {
   private readonly http: HttpClient;
+
+  readonly gas: GasApi;
 
   static readonly webhooks = {
     verify: async (params: VerifyWebhookParams): Promise<WebhookEvent> => {
@@ -37,6 +40,7 @@ export class Velo {
       throw new Error("API key is required");
     }
     this.http = new HttpClient(config);
+    this.gas = createGasApi(this.http);
   }
 
   readonly checkout = {

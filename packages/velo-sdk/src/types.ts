@@ -64,6 +64,64 @@ export type RequestOptions = {
   submission?: boolean;
 };
 
+export type GasSponsorOptions = Omit<RequestOptions, "idempotencyKey"> & {
+  idempotencyKey: string;
+};
+
+export type GasWaitOptions = Omit<RequestOptions, "maxRetries" | "submission"> & {
+  /** Maximum number of status calls, including calls that fail transiently. Defaults to 10. */
+  maxAttempts?: number;
+  /** Initial delay between status calls in milliseconds. Defaults to 500. */
+  initialDelayMs?: number;
+  /** Maximum exponential delay between status calls in milliseconds. Defaults to 5000. */
+  maxDelayMs?: number;
+};
+
+export type GasSponsorReservation = {
+  object: "gas_sponsor_reservation";
+  requestId: string;
+  replayed: boolean;
+  decision: "reserved";
+  transactionHash: string;
+  sourceWallet: string;
+  targetContractIds: string[];
+  innerMaxFeeStroops: string;
+  reservedStroops: string;
+  expiresAt: string;
+};
+
+export type GasExecutionStatus =
+  | "claimed"
+  | "submission_unknown"
+  | "submitted"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+export type GasExecutionIdentity = {
+  requestId: string;
+  /** Inner transaction hash returned by the Gas sponsorship response. */
+  transactionHash: string;
+};
+
+export type GasSubmitParams = GasExecutionIdentity & {
+  /** The original user-signed XDR, supplied transiently for the handoff only. */
+  transactionXdr: string;
+};
+
+export type GasSubmitResult = {
+  object: "gas_submit_result";
+  requestId: string;
+  /** Inner transaction hash; the outer FeeBump hash is separate. */
+  transactionHash: string;
+  outerTransactionHash: string | null;
+  status: GasExecutionStatus;
+  reservedStroops: string;
+  actualFeeStroops: string | null;
+  expiresAt: string;
+  reconciliationRequired: boolean;
+};
+
 export type ListPaymentIntentsQuery = {
   status?: PaymentIntentStatus;
   limit?: number;

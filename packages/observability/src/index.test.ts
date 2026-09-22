@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   deterministicSample,
+  isCorrelationId,
   parsePlaygroundTelemetryEvent,
   parseTelemetryContext,
   projectSafeEvent,
@@ -49,6 +50,13 @@ test("accepts only validated correlation and W3C trace context", () => {
     },
   );
   assert.equal(parseTelemetryContext({ requestCorrelationId: "Bearer secret" }), null);
+});
+
+test("correlation IDs reject complete API keys, Stellar seeds, and JWT-shaped values", () => {
+  assert.equal(isCorrelationId("request-00000001"), true);
+  assert.equal(isCorrelationId(`tk_live_${"a".repeat(32)}`), false);
+  assert.equal(isCorrelationId(`S${"A".repeat(55)}`), false);
+  assert.equal(isCorrelationId("header.payload.signature"), false);
 });
 
 test("projects only actual catalog values and creates valid unique OTLP identifiers", () => {

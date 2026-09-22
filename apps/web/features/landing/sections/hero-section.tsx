@@ -46,7 +46,7 @@ export function HeroSection() {
       </div>
 
       {/* Floating Decorative Grid or Glow overlay */}
-      <div className="pointer-events-none absolute inset-0 z-10 bg-[linear-gradient(to_bottom,transparent_40%,var(--background))]" />
+      <div className="hero-fade-overlay pointer-events-none absolute inset-0 z-10" />
 
       {/* Header / Mini Nav inside Hero */}
       <header className="relative z-20 mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6">

@@ -348,7 +348,10 @@ test("concurrent claims serialize to one claim and one cooldown", async () => {
         )
         .unique(),
   );
-  expect(bucket?.tokens).toBe(0);
+  // The second mutation may run a few milliseconds later and legitimately
+  // retain a fractional refill, but it must remain below one token.
+  expect(bucket?.tokens).toBeGreaterThanOrEqual(0);
+  expect(bucket?.tokens).toBeLessThan(1);
 });
 
 test("expired and duplicate completions are stale, while a later claim fences an older result", async () => {

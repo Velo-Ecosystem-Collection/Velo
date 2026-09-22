@@ -232,6 +232,14 @@ function ChartTooltipContent({
 
 const ChartLegend = RechartsPrimitive.Legend;
 
+// Keep Recharts behind the shared chart wrapper so feature code uses the
+// repository's configured dependency and styling context consistently.
+const BarChart = RechartsPrimitive.BarChart;
+const Bar = RechartsPrimitive.Bar;
+const CartesianGrid = RechartsPrimitive.CartesianGrid;
+const XAxis = RechartsPrimitive.XAxis;
+const YAxis = RechartsPrimitive.YAxis;
+
 function ChartLegendContent({
   className,
   hideIcon = false,
@@ -321,4 +329,9 @@ export {
   ChartLegend,
   ChartLegendContent,
   ChartStyle,
+  BarChart,
+  Bar,
+  CartesianGrid,
+  XAxis,
+  YAxis,
 };

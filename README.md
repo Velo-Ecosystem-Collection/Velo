@@ -508,6 +508,7 @@ claims of present availability.
 
 - [Velo master context](docs/velo-master-context.md) — product scope, trust boundaries, source map, and full environment reference.
 - [Velo Pay checkout](docs/velo-pay-checkout.md) — PaymentIntent and hosted checkout lifecycle.
+- [Velo Gas Station](docs/velo-gas-station.md) — server-side SDK integration, relayer setup, policy, recovery, and Testnet validation.
 - [E2E demo guide](docs/demo-setup.md) — merchant onboarding, payment, webhook, and PDAX UAT walkthrough.
 - [Velo SDK reference](packages/velo-sdk/README.md) — client setup, payment APIs, pagination, errors, and webhook verification.
 - [Registry contract](contracts/registry/README.md) and [PayAccess contract](contracts/pay_access/README.md) — Soroban interfaces and tests.

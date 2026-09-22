@@ -51,6 +51,287 @@ const paymentIntent = await velo.paymentIntents.retrieve("pi_12345");
 console.log(`Payment status: ${paymentIntent.status}`);
 ```
 
+### Reserving Gas sponsorship (unreleased source addition)
+
+The current source checkout also exposes `velo.gas.sponsor()` for trusted
+server code. This addition is not in the published `0.1.0-alpha.2` package;
+the package version remains unchanged. Configure the deployed Velo URL
+explicitly and keep the API key, caller authorization, signed XDR, and
+operation key on the server:
+
+```ts
+import { Velo } from "@carts1024/velo-sdk";
+
+const velo = new Velo({
+  apiKey: process.env.VELO_API_KEY!,
+  // Replace the SOW target with the verified deployment URL for your environment.
+  baseUrl: process.env.VELO_BASE_URL ?? "https://www.velo-build.dev",
+});
+
+// Authorize the caller in your own server/session layer before this point.
+// signedTransactionXdr is an existing user-signed Testnet Soroban invocation.
+const reservation = await velo.gas.sponsor(signedTransactionXdr, {
+  idempotencyKey: `checkout:${operationId}`, // caller-held and stable on recovery
+});
+
+console.log(reservation.requestId, reservation.reservedStroops);
+```
+
+Sponsorship reserves the project's fee exposure; it does not submit the
+transaction or confirm ledger execution. Transient sponsorship failures use
+the configured retry count and one total deadline, reusing the exact signed
+XDR, serialized body, idempotency key, and correlation headers. Policy
+denials (`daily_cap_exceeded` and `wallet_rate_limited`) are returned without
+automatic retry. If sponsorship times out before an identity is returned,
+retry the exact signed XDR with the same idempotency key to recover the
+original reservation. Do not create or sign a new operation automatically.
+Submission, status retrieval, composed `sponsorAndSubmit()`, and bounded
+`waitForResult()` workflows are unreleased source additions; the published
+`0.1.0-alpha.2` package does not include them.
+
+### Composing sponsorship and submission (unreleased source addition)
+
+`sponsorAndSubmit()` is a server-only convenience for a trusted application
+server that already has the user's signed Testnet Soroban XDR. Its exact
+signature is:
+
+```ts
+sponsorAndSubmit(
+  transactionXdr: string,
+  options: GasSponsorOptions,
+): Promise<GasSubmitResult>
+```
+
+The caller must provide a stable idempotency key. The SDK snapshots the
+normalized XDR and request context, establishes one deadline for sponsorship
+and handoff, reuses the reservation identity, and calls submit at most once.
+Keep the API key, signed XDR, and operation key in server-only code; do not
+call this method from browser code or expose those values in a client response.
+
+```ts
+const result = await velo.gas.sponsorAndSubmit(signedTransactionXdr, {
+  idempotencyKey: `checkout:${operationId}`,
+  correlationId: `checkout:${operationId}`,
+});
+
+if (result.status === "succeeded") {
+  // Successful execution: the outer hash and actual fee are available when settled.
+  console.log(result.outerTransactionHash, result.actualFeeStroops);
+} else {
+  // `claimed`, `submission_unknown`, and `submitted` are still running.
+  // `failed` and `cancelled` are terminal non-success results.
+  console.log(`Gas execution is ${result.status}`);
+}
+```
+
+Only `status: "succeeded"` indicates success. The helper returns the first
+validated submission DTO and does not wait for ledger settlement. Use
+`waitForResult()` when the server-side caller wants bounded observation.
+
+### Submitting a sponsored transaction (unreleased source addition)
+
+The current source checkout also exposes `velo.gas.submit()` for the trusted
+server handoff. Keep the request ID and inner transaction hash from the
+reservation before sending the original user-signed Testnet XDR:
+
+```ts
+const identity = {
+  requestId: reservation.requestId,
+  transactionHash: reservation.transactionHash, // inner transaction hash
+};
+
+const result = await velo.gas.submit(
+  {
+    ...identity,
+    transactionXdr: signedTransactionXdr,
+  },
+  { correlationId: "checkout-operation-1001" },
+);
+
+if (result.status === "succeeded") {
+  console.log(result.outerTransactionHash, result.actualFeeStroops);
+} else {
+  console.log(`Gas execution is ${result.status}`);
+}
+```
+
+The SDK sends the XDR only during this handoff and never retries it
+automatically, even when conflicting retry options are supplied. A running
+result (`claimed`, `submission_unknown`, or `submitted`) is not a successful
+transaction; `failed` and `cancelled` are terminal non-success results even
+when the HTTP response is `200`.
+
+### Manually recovering Gas status (unreleased source addition)
+
+After a local timeout, disconnect, or cancellation, do not infer chain
+cancellation and do not submit the XDR again. Recover with the identity saved
+before handoff:
+
+```ts
+const status = await velo.gas.getStatus(identity);
+
+console.log({
+  status: status.status,
+  innerHash: status.transactionHash,
+  outerHash: status.outerTransactionHash,
+  actualFeeStroops: status.actualFeeStroops, // null means unknown
+});
+```
+
+`getStatus()` posts only `{ requestId, transactionHash }`, preserves the
+inner/outer hash distinction, and returns the same six execution states. Keep
+the identity as a safe recovery record; never persist the signed XDR, API key,
+or relayer credentials in browser storage or logs.
+
+### Bounded Gas result observation (unreleased source addition)
+
+`waitForResult()` is an opt-in, server-side observer built on repeated
+identity-only `getStatus()` calls:
+
+```ts
+const result = await velo.gas.waitForResult(identity, {
+  timeoutMs: 30_000, // total wait budget; defaults to the SDK timeout
+  maxAttempts: 10, // status calls, including transient failures
+  initialDelayMs: 500, // first backoff delay
+  maxDelayMs: 5_000, // exponential delay cap
+  signal: request.signal, // optional caller cancellation
+  correlationId: operationId,
+});
+
+if (result.status === "succeeded") {
+  console.log(result.outerTransactionHash, result.actualFeeStroops);
+}
+```
+
+`GasWaitOptions` is `RequestOptions` without `maxRetries` or `submission`,
+plus the optional `maxAttempts`, `initialDelayMs`, and `maxDelayMs` limits.
+The defaults are 10 calls, 500 ms initial delay, and a 5-second cap. Limits
+must be positive safe integers, timer durations must fit JavaScript's
+supported timer range, and `maxDelayMs` must be at least `initialDelayMs`.
+Each call receives only the remaining total budget. Network failures, request
+timeouts, HTTP 408, transient 429, and 5xx responses may be retried by the
+observer; authentication, validation, policy-denial (including
+`daily_cap_exceeded` and `wallet_rate_limited`), and malformed-response errors
+are returned immediately. A valid `Retry-After` is treated as a minimum delay.
+
+The observer stops immediately on `succeeded`, `failed`, or `cancelled`; only
+`succeeded` is transaction success. If the budget or attempt limit is reached,
+it returns the last validated DTO when one exists, including nullable fee
+fields. Otherwise it throws `VeloGasWaitError` with reason `timeout` or
+`attempts_exhausted`. Cancellation always throws that error with reason
+`cancelled`. Its safe `recovery` contains only the normalized request ID and
+inner transaction hash, so a trusted server can resume without the XDR:
+
+```ts
+import { VeloGasWaitError } from "@carts1024/velo-sdk";
+
+try {
+  const result = await velo.gas.waitForResult(identity, {
+    timeoutMs: 5_000,
+    signal: request.signal,
+  });
+  console.log(result.status);
+} catch (error) {
+  if (error instanceof VeloGasWaitError) {
+    const resumed = await velo.gas.waitForResult(error.recovery, {
+      timeoutMs: 30_000,
+      correlationId: operationId,
+    });
+    console.log(resumed.status);
+  } else {
+    throw error;
+  }
+}
+```
+
+Local wait expiry or cancellation stops SDK observation only. It does not
+expire the backend reservation, cancel a chain transaction, or change backend
+reconciliation; those lifecycle decisions remain independent.
+
+If submission crosses the transport boundary but the local result is unknown,
+recover with the identity carried by the typed error. Do not submit the XDR a
+second time:
+
+```ts
+import { VeloGasSubmissionUnknownError } from "@carts1024/velo-sdk";
+
+try {
+  await velo.gas.sponsorAndSubmit(signedTransactionXdr, {
+    idempotencyKey: `checkout:${operationId}`,
+  });
+} catch (error) {
+  if (error instanceof VeloGasSubmissionUnknownError) {
+    const recovered = await velo.gas.getStatus(error.recovery);
+    console.log(recovered.status, recovered.outerTransactionHash);
+  } else {
+    throw error;
+  }
+}
+```
+
+### Gas errors and recovery
+
+Gas errors preserve the server's stable code, HTTP status, validated request
+ID, and `Retry-After` hint without exposing response bodies or arbitrary server
+messages:
+
+| Situation                                                                                            | SDK result                                                                                                   | Recovery                                                                              |
+| ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| Authentication, whitelist, cap/quota, expiry, handoff, or provider error                             | Typed `VeloAuthError`, `VeloValidationError`, `VeloRateLimitError`, or `VeloProviderError`                   | Handle the stable `code`; do not treat it as a transaction outcome.                   |
+| Transient sponsorship failure                                                                        | Automatic retry within `maxRetries` and the total `timeoutMs`                                                | Every retry uses the same caller-held idempotency key and exact input.                |
+| Submission timeout, disconnect, local cancellation, or malformed success response after XDR dispatch | `VeloGasSubmissionUnknownError` with `reason` `timeout`, `network_error`, `cancelled`, or `invalid_response` | Call `velo.gas.getStatus(error.recovery)`; never submit the XDR again automatically.  |
+| Cancellation before a request is dispatched                                                          | The caller's existing `AbortSignal.reason`                                                                   | The request did not dispatch; callers may decide whether to retry.                    |
+| Bounded observation deadline or attempt exhaustion                                                   | Last validated `GasSubmitResult`, or `VeloGasWaitError` with `reason` `timeout`/`attempts_exhausted`         | Resume with `waitForResult(error.recovery)` when no DTO was returned.                 |
+| Bounded observation cancellation                                                                     | `VeloGasWaitError` with `reason` `cancelled` and safe `recovery` identity                                    | Resume with `waitForResult(error.recovery)`; no sponsorship or XDR submission occurs. |
+
+`VeloGasSubmissionUnknownError` extends `VeloSubmissionUnknownError`. Its
+`recovery` contains only the normalized request ID and inner transaction hash;
+it never contains the signed XDR, API key, response body, or exception cause.
+An unknown local outcome does not mean the chain transaction was cancelled.
+`VeloGasWaitError` follows the same redaction boundary for observation recovery;
+its fixed messages never include abort reasons, raw exceptions, credentials,
+or XDR. Local observation expiry/cancellation is not backend reservation
+expiry or reconciliation.
+
+### Dashboard Gas Station guidance
+
+The project integration page provides two copyable, server-side snippets:
+one for `sponsorAndSubmit()` and one for identity-only status recovery.
+The displayed source is kept in
+[apps/web/features/projects/project-integration-guidance.ts](../../apps/web/features/projects/project-integration-guidance.ts)
+and is compiled and executed against this workspace package entry point by
+[project-integration-guidance.test.ts](../../apps/web/features/projects/project-integration-guidance.test.ts).
+
+Set both variables explicitly in the consuming server environment:
+
+```bash
+VELO_GAS_API_KEY=replace_with_a_gas_scoped_project_key
+VELO_BASE_URL=https://replace-with-your-velo-deployment.example
+```
+
+The snippets never interpolate project-page API-key data into client code.
+The caller owns the stable operation ID and derives a stable idempotency key
+from it. Authorization and durable operation/recovery storage belong to the
+consuming server. On `VeloGasSubmissionUnknownError`, persist and reconcile
+`error.recovery` with `velo.gas.getStatus()`; do not send the signed XDR again.
+`waitForResult()` is an optional bounded identity-only observer.
+
+Only `succeeded` is success. `claimed`, `submission_unknown`, and
+`submitted` remain unresolved; `failed` and `cancelled` are terminal
+non-success results. `actualFeeStroops: null` remains unknown.
+
+The executable [Next.js App Router Gas example](../../examples/nextjs-app-router/)
+contains the full route, streamed-input bound, and redacted response pattern.
+Its bearer token is a local demo caller guard, not production authentication;
+the example has no durable operation store or later status endpoint. The
+[D3 integration guide](../../docs/instawards/Velo-Instawards-Deliverable-3-Integration-Guide.md)
+has workspace setup and recovery guidance.
+
+This guidance was inspected against source revision
+`c8dedeff0a6d885c82126a7a281245a74ad4a1eb`. The package remains
+`0.1.0-alpha.2`; the Gas source additions are not claimed as an npm
+publication or deployed acceptance.
+
 ### Dual-Anchor Routing (V2)
 
 Velo SDK (V2) supports routing payments through different anchors: `inhouse` (default) or `pdax`.

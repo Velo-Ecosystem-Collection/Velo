@@ -1,6 +1,6 @@
 import crypto from "crypto";
 
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
 
 /**
  * Extracts the API Key from the authorization header or the custom x-api-key header.

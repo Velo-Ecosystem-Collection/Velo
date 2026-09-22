@@ -81,3 +81,38 @@ outbox telemetry, bounded gauge scans, and exporter claims. The switch defaults 
 is unset. Existing outbox rows remain available for the hourly expiry worker to delete.
 
 Sprint 10 is **IMPLEMENTED — LIVE EVIDENCE PENDING**. See the [architecture](../../../docs/architecture/sprint-10-end-to-end-observability-and-redaction.md), [operator runbook](../../../docs/operations/sprint-10-observability-and-redaction-runbook.md), and [evidence report](../../../docs/references/sprint-10-observability-redaction-and-overhead-report.md).
+
+## Testnet Gas relayer custody
+
+`VELO_GAS_TESTNET_RELAYER_SIGNERS_JSON` is an optional, typed Convex environment variable whose
+value is a bounded JSON array of exact entries shaped as
+`{ "projectId": "<Convex project ID>", "network": "testnet", "secretKey": "<deployment-only Stellar seed>" }`.
+The value is consumed only by the Node-runtime `convex/gas/relayer.ts` boundary. Missing or invalid
+configuration fails closed; seeds and SDK keypairs are never returned, stored, logged, or included
+in errors. The internal `gas.relayer.readiness` action returns only a fixed status, `testnet`, and
+the verified public key when ready.
+
+Operate a custody rotation in this order: pause the project's Gas policy, disable its
+`relayerAccounts` metadata, replace the deployment configuration and stored public metadata out of
+band, reactivate the metadata, run the internal readiness action, and resume the policy only after
+the derived public key matches exactly. Readiness intentionally requires active metadata, so it is
+the verification step after reactivation rather than a step performed while custody is disabled.
+An environment change alone must not authorize signing. Existing attempts retain their original
+pinned fee source and remain eligible for reconciliation and settlement while custody is disabled;
+rotation never rebuilds them with the replacement account.
+
+Gas audit cleanup runs hourly through `gas/retention.ts`, with a maximum 100-row indexed page, a
+fixed sweep cutoff, and an internal continuation cursor. Ambiguous identities, missing policies,
+and accounting faults are skipped fail-closed and revisited on the next hourly sweep. Legacy
+unsent holds are released atomically with deletion; execution-owned audit rows are deleted without
+deleting their attempts, pinned identities, evidence, accounting, replay records, or unresolved
+exposure. There is no resolved-record deletion policy for terminal replay.
+
+If accounting is blocked, inspect the policy's `accountingBlockReason` and `accountingBlockedAt`,
+the attempt's pinned hold/day/evidence/lifecycle, and the matching `gasDailyAccounting` row before
+repairing source data through a reviewed operator migration. Do not clear a block through ordinary
+policy updates. After the source is understood, use the existing bounded internal
+`internal.gas.settlement.catchUp` procedure. For exhausted network reconciliation, use only the
+existing identity-only `internal.gas.reconciliation_action.operatorReconcile({ projectId,
+requestId })` action; it accepts no XDR, provider evidence, endpoint, or signing authority and does
+not reset the automatic deadline.

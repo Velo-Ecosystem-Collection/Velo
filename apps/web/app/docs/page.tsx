@@ -1,6 +1,9 @@
 "use client";
 
 import { AppShell } from "@/core/app-shell";
+import { GasIntegrationPromptCard } from "@/features/docs/gas-integration-prompt-card";
+import { PaymentIntentsIntegrationPromptCard } from "@/features/docs/payment-intents-integration-prompt-card";
+import { WebhookVerificationIntegrationPromptCard } from "@/features/docs/webhook-verification-integration-prompt-card";
 import {
   CheckIcon,
   CopyIcon,
@@ -1194,6 +1197,8 @@ const session = await velo.checkout.sessions.create({
                   their wallet, sign, and pay on-chain.
                 </p>
 
+                <PaymentIntentsIntegrationPromptCard />
+
                 {renderCodeBlock(codeSnippets.createCheckout, "createCheckoutDemo")}
 
                 <h3 className="mt-8 mb-4 text-lg font-bold text-foreground">Request Parameters</h3>
@@ -1273,8 +1278,11 @@ const session = await velo.checkout.sessions.create({
               <>
                 <p>
                   Underneath every checkout session is a **Payment Intent**. Use payment intent
-                  methods to fetch transaction details or run reconciliation reports on your server.
+                  methods to create, retrieve, or list payment records on your server. Checkout
+                  Sessions and Payment Intents use the same creation endpoint.
                 </p>
+
+                <PaymentIntentsIntegrationPromptCard />
 
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
                   Retrieve a Payment Intent
@@ -1299,7 +1307,7 @@ const session = await velo.checkout.sessions.create({
   id: "pi_12345",
   object: "payment_intent",
   paymentIntentId: "pi_12345",
-  status: "paid", // "created" | "pending" | "paid" | "failed" | "expired" | "cancelled"
+  status: "paid", // "awaiting_route" | "created" | "pending" | "paid" | "failed" | "expired" | "cancelled"
   amount: "10.00",
   asset: "USDC",
   description: "Order #1001",
@@ -1322,6 +1330,8 @@ const session = await velo.checkout.sessions.create({
                   user still signs it. Velo supplies the relayer fee source and returns execution
                   and fee evidence through the server-side SDK.
                 </p>
+
+                <GasIntegrationPromptCard />
 
                 <div className="my-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
                   <AlertTriangleIcon className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-500" />
@@ -1559,6 +1569,10 @@ const session = await velo.checkout.sessions.create({
                   Velo sends webhook events to your server to notify you about payment lifecycle
                   changes. To prevent request spoofing, you must verify the signature header.
                 </p>
+
+                <div className="my-6">
+                  <WebhookVerificationIntegrationPromptCard />
+                </div>
 
                 <div className="my-6 flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-950 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
                   <AlertTriangleIcon className="mt-0.5 size-5 shrink-0 text-red-600 dark:text-red-500" />

@@ -1,18 +1,49 @@
 {
   "name": "@carts1024/velo-sdk",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "private": false,
+  "description": "Server-side Node.js SDK for Velo payments, webhooks, and Stellar Testnet Gas Station sponsorship.",
+  "keywords": [
+    "gas-sponsorship",
+    "payments",
+    "soroban",
+    "stellar",
+    "velo",
+    "webhooks"
+  ],
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "lint:fix": "oxlint --fix . && oxfmt --write . && tsc --noEmit",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run test",
     "test": "node --experimental-strip-types --test src/*.test.ts"
   },
   "devDependencies": {
     "@repo/typescript-config": "workspace:*",
     "@types/node": "^22.15.3",
     "typescript": "5.9.2"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

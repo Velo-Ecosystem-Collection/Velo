@@ -2,12 +2,26 @@
 
 All notable changes to the Velo SDK will be documented in this file.
 
-## [Unreleased]
+## [0.1.0-alpha.3] - 2026-09-23
 
 ### Added
 
-- Optional durable `PaymentIntent.correlationId` for end-to-end payment journey lookup.
+- Testnet Gas sponsorship with `velo.gas.sponsor()` and the composed
+  `sponsorAndSubmit()` workflow.
+- Identity-based `submit()`, `getStatus()`, and bounded `waitForResult()` APIs
+  with replay-safe recovery for uncertain submission outcomes.
+- Typed Gas execution states, policy errors, bounded retries, cancellation,
+  and redacted recovery identities.
+- Optional durable `PaymentIntent.correlationId` for end-to-end payment
+  journey lookup.
 - Optional `RequestOptions.traceparent` propagation for existing W3C traces.
+
+### Changed
+
+- Publish the package as ESM JavaScript with TypeScript declarations and an
+  explicit public `alpha` dist-tag.
+- Document server-only Gas usage, Testnet scope, idempotency, and safe status
+  recovery.
 
 ## [0.1.0-alpha.2] - 2026-07-02
 

@@ -217,6 +217,9 @@ html:not(.dark) {
   .form-error {
     @apply mt-1 text-sm font-semibold text-red-500 italic;
   }
+  .hero-fade-overlay {
+    background-image: linear-gradient(to bottom, transparent 40%, var(--background));
+  }
 }
 
 @media (pointer: coarse) {

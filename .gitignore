@@ -23,6 +23,7 @@ coverage
 
 # Build Outputs
 .next/
+apps/web/.next-gas-e2e/
 out/
 build
 dist
@@ -40,6 +41,7 @@ yarn-error.log*
 # Misc
 .DS_Store
 *.pem
+.kilo/
 .codex/
 .claude/
 .agents/

@@ -1,6 +1,7 @@
 "use client";
 
 import { AppShell } from "@/core/app-shell";
+import { GasIntegrationPromptCard } from "@/features/docs/gas-integration-prompt-card";
 import {
   CheckIcon,
   CopyIcon,
@@ -1322,6 +1323,8 @@ const session = await velo.checkout.sessions.create({
                   user still signs it. Velo supplies the relayer fee source and returns execution
                   and fee evidence through the server-side SDK.
                 </p>
+
+                <GasIntegrationPromptCard />
 
                 <div className="my-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
                   <AlertTriangleIcon className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-500" />

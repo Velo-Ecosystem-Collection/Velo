@@ -92,7 +92,7 @@ test("opens and selects the preview with keyboard access at a narrow width", asy
   expect(hasHorizontalPageOverflow).toBe(false);
 
   const results = await new AxeBuilder({ page })
-    .include('[aria-labelledby="gas-integration-prompt-title"]')
+    .include('[aria-labelledby="gas-station-integration-prompt-title"]')
     .analyze();
   const serious = results.violations.filter(
     (violation) => violation.impact === "serious" || violation.impact === "critical",

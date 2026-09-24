@@ -1,6 +1,7 @@
 "use client";
 
 import { AppShell } from "@/core/app-shell";
+import { CheckoutIntegrationPromptCard } from "@/features/docs/checkout-integration-prompt-card";
 import { GasIntegrationPromptCard } from "@/features/docs/gas-integration-prompt-card";
 import {
   CheckIcon,
@@ -1194,6 +1195,8 @@ const session = await velo.checkout.sessions.create({
                   session, you generate a secure hosted Velo checkout URL where customers connect
                   their wallet, sign, and pay on-chain.
                 </p>
+
+                <CheckoutIntegrationPromptCard />
 
                 {renderCodeBlock(codeSnippets.createCheckout, "createCheckoutDemo")}
 

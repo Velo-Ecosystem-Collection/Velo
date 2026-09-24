@@ -31,7 +31,19 @@ test("sidebar renders project logos and exposes settings navigation", () => {
   assert.match(switcherSource, /<FolderIcon className="size-4" \/>/);
   assert.match(navUserSource, /SettingsIcon/);
   assert.match(navUserSource, /settingsUrl/);
-  assert.match(navUserSource, />Settings</);
+  assert.match(navUserSource, />Project Settings</);
+  assert.match(switcherSource, /project\.slug\s*\?\s*`\/\$\{project\.slug\} · `/);
+  assert.match(switcherSource, /activeProject\.slug \? `\/\$\{activeProject\.slug\} · `/);
+});
+
+test("project settings includes owner-only retirement with typed confirmation and identifiers", () => {
+  assert.match(settingsSource, /api\.projects\.mutation\.retire/);
+  assert.match(settingsSource, /confirmationName !== project\.name/);
+  assert.match(settingsSource, /clearSelectedProject\(project\._id\)/);
+  assert.match(settingsSource, /router\.replace\("\/dashboard"\)/);
+  assert.match(settingsSource, /aria-live="assertive"/);
+  assert.match(settingsSource, /Project ID/);
+  assert.match(settingsSource, /Unique slug/);
 });
 
 test("project settings route renders inside app shell sidebar", () => {

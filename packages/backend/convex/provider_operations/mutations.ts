@@ -56,6 +56,11 @@ export const reserve = internalMutation({
       };
     }
 
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.retiredAt !== undefined) {
+      throw new ConvexError("Project is retired or unavailable");
+    }
+
     const now = Date.now();
     const operationId = await ctx.db.insert("providerOperations", {
       ...args,
@@ -370,6 +375,7 @@ export const redrive = mutation({
     const project = await ctx.db.get(operation.projectId);
     if (
       !project ||
+      project.retiredAt !== undefined ||
       (project.ownerTokenIdentifier !== identity.tokenIdentifier &&
         project.ownerAddress !== identity.subject)
     ) {

@@ -248,6 +248,11 @@ export const reserve = internalMutation({
         : { status: "idempotency_key_conflict" };
     }
 
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.retiredAt !== undefined) {
+      return { status: "unauthorized" };
+    }
+
     const existingTransactionLog = await findTransactionLog(
       ctx,
       args.projectId,

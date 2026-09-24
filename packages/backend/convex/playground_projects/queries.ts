@@ -310,6 +310,8 @@ export const getPublicShare = query({
     ) {
       return null;
     }
+    const project = await ctx.db.get(share.projectId);
+    if (!project || project.retiredAt !== undefined) return null;
     return {
       _id: share._id,
       snapshot: JSON.parse(share.snapshotJson) as unknown,

@@ -51,7 +51,7 @@ export function ProjectSwitcher({
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
-              <div className="flex aspect-square size-8 shrink-0 overflow-hidden items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+              <div className="flex aspect-square size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
                 {activeProject?.logoUrl ? (
                   <img src={activeProject.logoUrl} alt="" className="size-full object-cover" />
                 ) : (
@@ -68,7 +68,7 @@ export function ProjectSwitcher({
                 </span>
                 <span className="truncate text-xs text-muted-foreground">
                   {activeProject
-                    ? `Status: ${activeProject.status}`
+                    ? `${activeProject.slug ? `/${activeProject.slug} · ` : ""}Status: ${activeProject.status}`
                     : projects.length > 0
                       ? "Choose from projects"
                       : "Create a new project"}
@@ -92,23 +92,26 @@ export function ProjectSwitcher({
                 onClick={() => onSelectProject?.(project.id)}
                 className="gap-2 p-2"
               >
-                <div className="flex size-6 shrink-0 overflow-hidden items-center justify-center rounded-md border">
+                <div className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-md border">
                   {project.logoUrl ? (
                     <img src={project.logoUrl} alt="" className="size-full object-cover" />
                   ) : (
                     <FolderIcon className="size-3.5 shrink-0" />
                   )}
                 </div>
-                <div className="flex flex-col flex-1">
-                  <span className="font-medium text-sm">{project.name}</span>
-                  <span className="text-xs text-muted-foreground capitalize">{project.status}</span>
+                <div className="flex flex-1 flex-col">
+                  <span className="text-sm font-medium">{project.name}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {project.slug ? `/${project.slug} · ` : ""}
+                    <span className="capitalize">{project.status}</span>
+                  </span>
                 </div>
               </DropdownMenuItem>
             ))}
             {projects.length > 0 && <DropdownMenuSeparator />}
             <DropdownMenuItem
               onClick={() => onCreateProject?.()}
-              className="gap-2 p-2 cursor-pointer"
+              className="cursor-pointer gap-2 p-2"
             >
               <div className="flex size-6 items-center justify-center rounded-md border bg-transparent">
                 <Plus className="size-4" />

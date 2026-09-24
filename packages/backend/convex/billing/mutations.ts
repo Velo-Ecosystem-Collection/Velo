@@ -311,6 +311,10 @@ export const reserve = internalMutation({
       };
     }
 
+    if (project.retiredAt !== undefined) {
+      throw new Error("Project is retired");
+    }
+
     const now = Date.now();
     const lot = await selectCreditLot(
       ctx,

@@ -25,6 +25,8 @@ export const storePollResult = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.retiredAt !== undefined) return null;
     const observedAt = Date.now();
 
     for (const event of args.events) {

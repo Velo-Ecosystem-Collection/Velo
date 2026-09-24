@@ -5,8 +5,12 @@ import { internalMutation, mutation } from "../_generated/server";
 import { ensureOrganizationForIdentity } from "../organizations/helpers";
 import {
   draftProjectArgs,
+  allocateProjectSlug,
+  buildProjectMetadata,
   normalizeAddress,
+  normalizeProjectName,
   normalizeTransactionHash,
+  requireUniqueActiveProjectName,
   requireIdentity,
   requireProjectOwner,
   requireUniqueSlug,
@@ -18,9 +22,21 @@ export const createDraft = mutation({
     const identity = await requireIdentity(ctx);
     const now = Date.now();
     const ownerAddress = normalizeAddress(args.ownerAddress);
-    const slug = args.slug.trim().toLowerCase();
-
-    await requireUniqueSlug(ctx, slug);
+    const name = args.name.trim();
+    const description = args.description.trim();
+    const slug = await allocateProjectSlug(ctx, args.slug);
+    await requireUniqueActiveProjectName(ctx, {
+      name,
+      ownerAddress,
+      ownerTokenIdentifier: identity.tokenIdentifier,
+    });
+    const metadata = await buildProjectMetadata(
+      name,
+      slug,
+      description,
+      args.website,
+      ownerAddress,
+    );
     const organization = await ensureOrganizationForIdentity(
       ctx,
       identity,
@@ -30,12 +46,13 @@ export const createDraft = mutation({
 
     return await ctx.db.insert("projects", {
       organizationId: organization._id,
-      name: args.name.trim(),
+      name,
+      normalizedName: normalizeProjectName(name),
       slug,
-      description: args.description.trim(),
+      description,
       website: args.website?.trim() || undefined,
-      metadataJson: args.metadataJson,
-      metadataHash: args.metadataHash,
+      metadataJson: metadata.metadataJson,
+      metadataHash: metadata.metadataHash,
       ownerAddress,
       ownerTokenIdentifier: identity.tokenIdentifier,
       status: "draft",
@@ -82,7 +99,7 @@ export const markRegistrationSynced = mutation({
     createdLedger: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const project = await requireProjectOwner(ctx, args.id);
+    const project = await requireProjectOwner(ctx, args.id, { allowRetired: true });
 
     if (!project.registrationTxHash) {
       throw new Error("Project has no registration transaction to sync");
@@ -115,7 +132,7 @@ export const markRegistrationStale = mutation({
     id: v.id("projects"),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwner(ctx, args.id);
+    await requireProjectOwner(ctx, args.id, { allowRetired: true });
 
     const now = Date.now();
     await ctx.db.patch(args.id, {
@@ -132,7 +149,7 @@ export const markRegistrationError = mutation({
     registrationError: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwner(ctx, args.id);
+    await requireProjectOwner(ctx, args.id, { allowRetired: true });
 
     const now = Date.now();
     await ctx.db.patch(args.id, {
@@ -162,19 +179,39 @@ export const updateDraft = mutation({
     }
 
     const ownerAddress = normalizeAddress(args.ownerAddress);
+    const name = args.name.trim();
+    const description = args.description.trim();
+    const normalizedName = normalizeProjectName(name);
 
     const slug = args.slug.trim().toLowerCase();
     if (slug !== project.slug) {
       await requireUniqueSlug(ctx, slug);
     }
 
-    await ctx.db.patch(args.id, {
-      name: args.name.trim(),
+    if (normalizedName !== normalizeProjectName(project.normalizedName ?? project.name)) {
+      await requireUniqueActiveProjectName(ctx, {
+        name,
+        ownerAddress: project.ownerAddress,
+        ownerTokenIdentifier: project.ownerTokenIdentifier!,
+        excludeProjectId: project._id,
+      });
+    }
+    const metadata = await buildProjectMetadata(
+      name,
       slug,
-      description: args.description.trim(),
+      description,
+      args.website,
+      ownerAddress,
+    );
+
+    await ctx.db.patch(args.id, {
+      name,
+      normalizedName,
+      slug,
+      description,
       website: args.website?.trim() || undefined,
-      metadataJson: args.metadataJson,
-      metadataHash: args.metadataHash,
+      metadataJson: metadata.metadataJson,
+      metadataHash: metadata.metadataHash,
       ownerAddress,
       ownerTokenIdentifier: project.ownerTokenIdentifier,
       defaultPaymentAnchor: args.defaultPaymentAnchor,
@@ -196,10 +233,11 @@ export const updateSettings = mutation({
     defaultPaymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwner(ctx, args.id);
+    const project = await requireProjectOwner(ctx, args.id);
 
     const name = args.name.trim();
     const description = args.description.trim();
+    const normalizedName = normalizeProjectName(name);
 
     if (!name) {
       throw new Error("Project name is required");
@@ -209,8 +247,18 @@ export const updateSettings = mutation({
       throw new Error("Project description is required");
     }
 
+    if (normalizedName !== normalizeProjectName(project.normalizedName ?? project.name)) {
+      await requireUniqueActiveProjectName(ctx, {
+        name,
+        ownerAddress: project.ownerAddress,
+        ownerTokenIdentifier: project.ownerTokenIdentifier!,
+        excludeProjectId: project._id,
+      });
+    }
+
     await ctx.db.patch(args.id, {
       name,
+      normalizedName,
       description,
       ...(args.defaultPaymentAnchor !== undefined
         ? { defaultPaymentAnchor: args.defaultPaymentAnchor }
@@ -222,6 +270,31 @@ export const updateSettings = mutation({
       projectId: args.id,
       eventType: "project.updated",
     });
+  },
+});
+
+export const retire = mutation({
+  args: {
+    id: v.id("projects"),
+    confirmationName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const project = await requireProjectOwner(ctx, args.id, { allowRetired: true });
+    if (args.confirmationName !== project.name) {
+      throw new Error("Project name confirmation does not match");
+    }
+
+    if (project.retiredAt === undefined) {
+      const identity = await requireIdentity(ctx);
+      const retiredAt = Date.now();
+      await ctx.db.patch(args.id, {
+        retiredAt,
+        retiredByTokenIdentifier: identity.tokenIdentifier,
+        updatedAt: retiredAt,
+      });
+    }
+
+    return null;
   },
 });
 
@@ -325,6 +398,11 @@ export const generateApiKeyInternal = internalMutation({
     paymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
   },
   handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.id);
+    if (!project || project.retiredAt !== undefined) {
+      throw new Error("Project is retired or unavailable");
+    }
+
     const randomBytes = new Uint8Array(16);
     crypto.getRandomValues(randomBytes);
     const token = Array.from(randomBytes)

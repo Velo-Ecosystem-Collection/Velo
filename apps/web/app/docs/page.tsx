@@ -1,8 +1,8 @@
 "use client";
 
 import { AppShell } from "@/core/app-shell";
-import { CheckoutIntegrationPromptCard } from "@/features/docs/checkout-integration-prompt-card";
 import { GasIntegrationPromptCard } from "@/features/docs/gas-integration-prompt-card";
+import { PaymentIntentsIntegrationPromptCard } from "@/features/docs/payment-intents-integration-prompt-card";
 import {
   CheckIcon,
   CopyIcon,
@@ -1196,7 +1196,7 @@ const session = await velo.checkout.sessions.create({
                   their wallet, sign, and pay on-chain.
                 </p>
 
-                <CheckoutIntegrationPromptCard />
+                <PaymentIntentsIntegrationPromptCard />
 
                 {renderCodeBlock(codeSnippets.createCheckout, "createCheckoutDemo")}
 
@@ -1277,8 +1277,11 @@ const session = await velo.checkout.sessions.create({
               <>
                 <p>
                   Underneath every checkout session is a **Payment Intent**. Use payment intent
-                  methods to fetch transaction details or run reconciliation reports on your server.
+                  methods to create, retrieve, or list payment records on your server. Checkout
+                  Sessions and Payment Intents use the same creation endpoint.
                 </p>
+
+                <PaymentIntentsIntegrationPromptCard />
 
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
                   Retrieve a Payment Intent
@@ -1303,7 +1306,7 @@ const session = await velo.checkout.sessions.create({
   id: "pi_12345",
   object: "payment_intent",
   paymentIntentId: "pi_12345",
-  status: "paid", // "created" | "pending" | "paid" | "failed" | "expired" | "cancelled"
+  status: "paid", // "awaiting_route" | "created" | "pending" | "paid" | "failed" | "expired" | "cancelled"
   amount: "10.00",
   asset: "USDC",
   description: "Order #1001",

@@ -9,17 +9,23 @@ import { Velo } from "@carts1024/velo-sdk";
 import * as ts from "typescript";
 
 import {
-  checkoutIntegrationPrompt,
-  checkoutPromptSdkExamples,
-} from "./checkout-integration-prompt.ts";
+  paymentIntentsIntegrationPrompt,
+  paymentIntentsPromptSdkExamples,
+} from "./payment-intents-integration-prompt.ts";
 
-test("Checkout prompt covers SDK setup, states, durable idempotency, and trusted fulfillment", () => {
-  for (const method of [
+test("Payment Intents prompt covers secure SDK setup, lifecycle, and fulfillment", () => {
+  for (const detail of [
+    "velo.paymentIntents.create()",
     "velo.checkout.sessions.create()",
+    "POST /api/v2/payment-intents",
+    "both return a `PaymentIntent`",
     "velo.paymentIntents.retrieve()",
+    "velo.paymentIntents.list()",
     "Velo.webhooks.verify()",
+    "Checkout Sessions is an alternative SDK name",
+    "do not call both methods as separate steps",
   ]) {
-    assert.ok(checkoutIntegrationPrompt.includes(method), `missing SDK method: ${method}`);
+    assert.ok(paymentIntentsIntegrationPrompt.includes(detail), `missing prompt detail: ${detail}`);
   }
 
   for (const guidance of [
@@ -33,9 +39,10 @@ test("Checkout prompt covers SDK setup, states, durable idempotency, and trusted
     "durable and idempotent",
     "success redirect",
     "Testnet",
-    "PDAX",
+    "Optional PDAX routing",
+    "authentication, persistence, routing, package manager, and deployment conventions",
   ]) {
-    assert.ok(checkoutIntegrationPrompt.includes(guidance), `missing guidance: ${guidance}`);
+    assert.ok(paymentIntentsIntegrationPrompt.includes(guidance), `missing guidance: ${guidance}`);
   }
 
   for (const status of [
@@ -47,16 +54,23 @@ test("Checkout prompt covers SDK setup, states, durable idempotency, and trusted
     "expired",
     "cancelled",
   ]) {
-    assert.ok(checkoutIntegrationPrompt.includes("`" + status + "`"));
+    assert.ok(paymentIntentsIntegrationPrompt.includes("`" + status + "`"));
   }
 
-  assert.match(checkoutIntegrationPrompt, /payment\.succeeded[\s\S]*?webhook event type/);
-  assert.match(checkoutIntegrationPrompt, /In one database transaction[\s\S]*?durable outbox/);
+  assert.match(paymentIntentsIntegrationPrompt, /payment\.succeeded[\s\S]*?webhook event type/);
   assert.match(
-    checkoutIntegrationPrompt,
+    paymentIntentsIntegrationPrompt,
+    /In one database transaction[\s\S]*?durable outbox/,
+  );
+  assert.match(
+    paymentIntentsIntegrationPrompt,
     /Before dispatching the SDK request[\s\S]*?stable attempt/,
   );
-  assert.doesNotMatch(checkoutIntegrationPrompt, /(?:sk|tk)_(?:live|test)_[A-Za-z0-9]{12,}/);
+  assert.match(
+    paymentIntentsIntegrationPrompt,
+    /# Integrate Velo Payment Intents into this project\./,
+  );
+  assert.doesNotMatch(paymentIntentsIntegrationPrompt, /(?:sk|tk)_(?:live|test)_[A-Za-z0-9]{12,}/);
 });
 
 function compilePromptExamples() {
@@ -73,22 +87,31 @@ function compilePromptExamples() {
     incremental: false,
     noEmit: true,
   };
-  const examplePath = resolve(testDirectory, "__checkout_prompt_examples__.ts");
-  const [initializeExample, createSessionExample, retrieveExample, verifyExample] =
-    Object.values(checkoutPromptSdkExamples);
+  const examplePath = resolve(testDirectory, "__payment_intents_prompt_examples__.ts");
+  const {
+    initialize,
+    createPaymentIntent,
+    retrievePaymentIntent,
+    listPaymentIntents,
+    verifyWebhook,
+  } = paymentIntentsPromptSdkExamples;
   const source = [
-    initializeExample,
-    createSessionExample,
-    `declare const trustedOrder: Parameters<typeof createCheckoutForAttempt>[0];
-declare const checkoutAttempt: Parameters<typeof createCheckoutForAttempt>[1];
-declare const checkoutAttempts: Parameters<typeof createCheckoutForAttempt>[2];
-await createCheckoutForAttempt(trustedOrder, checkoutAttempt, checkoutAttempts);
-`,
-    retrieveExample,
-    verifyExample,
-    `declare const rawBody: string;
-declare const signature: string | null;
-await verifyCheckoutWebhook(rawBody, signature);`,
+    initialize,
+    createPaymentIntent,
+    [
+      "declare const trustedOrder: Parameters<typeof createPaymentIntentForAttempt>[0];",
+      "declare const paymentAttempt: Parameters<typeof createPaymentIntentForAttempt>[1];",
+      "declare const paymentAttempts: Parameters<typeof createPaymentIntentForAttempt>[2];",
+      "await createPaymentIntentForAttempt(trustedOrder, paymentAttempt, paymentAttempts);",
+    ].join("\n"),
+    retrievePaymentIntent,
+    listPaymentIntents,
+    verifyWebhook,
+    [
+      "declare const rawBody: string;",
+      "declare const signature: string | null;",
+      "await verifyPaymentWebhook(rawBody, signature);",
+    ].join("\n"),
   ].join("\n\n");
   const host = ts.createCompilerHost(options);
   const originalGetSourceFile = host.getSourceFile.bind(host);
@@ -107,7 +130,7 @@ await verifyCheckoutWebhook(rawBody, signature);`,
   return ts.getPreEmitDiagnostics(program);
 }
 
-test("typed prompt examples compile and exercise the workspace SDK with mocked transport", async () => {
+test("typed prompt examples compile and exercise create, retrieve, and paginated list", async () => {
   const diagnostics = compilePromptExamples();
   assert.deepEqual(
     diagnostics.map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n")),
@@ -115,14 +138,14 @@ test("typed prompt examples compile and exercise the workspace SDK with mocked t
   );
 
   const paymentIntent = {
-    id: "pi_checkout_prompt_test",
+    id: "pi_payment_intents_prompt_test",
     object: "payment_intent",
-    paymentIntentId: "pi_checkout_prompt_test",
+    paymentIntentId: "pi_payment_intents_prompt_test",
     status: "created",
     amount: "12.34",
     asset: "USDC",
     description: "Test order 42",
-    checkoutUrl: "https://checkout.testnet.example/pay/pi_checkout_prompt_test",
+    checkoutUrl: "https://checkout.testnet.example/pay/pi_payment_intents_prompt_test",
     successUrl: "https://merchant.example/orders/42/success",
     cancelUrl: "https://merchant.example/orders/42/cancel",
     expiresAt: "2026-10-01T00:30:00.000Z",
@@ -132,7 +155,7 @@ test("typed prompt examples compile and exercise the workspace SDK with mocked t
   const webhookSecret = "test-webhook-secret-placeholder";
   const rawBody = JSON.stringify({
     version: "1",
-    id: "evt_checkout_prompt_test",
+    id: "evt_payment_intents_prompt_test",
     type: "payment.succeeded",
     test: true,
     sentAt: "2026-10-01T00:01:00.000Z",
@@ -159,6 +182,7 @@ test("typed prompt examples compile and exercise the workspace SDK with mocked t
   const requests: Array<{ url: string; method: string; headers: Headers; body: string | null }> =
     [];
   const attachedPaymentIntents: Array<Record<string, unknown>> = [];
+  const testResults: Record<string, unknown> = {};
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = async (input, init) => {
@@ -169,23 +193,39 @@ test("typed prompt examples compile and exercise the workspace SDK with mocked t
       body: typeof init?.body === "string" ? init.body : null,
     };
     requests.push(request);
-    return new Response(JSON.stringify(paymentIntent), {
+
+    const body =
+      request.method === "POST"
+        ? paymentIntent
+        : request.url.includes("?status=paid&limit=50&cursor=")
+          ? { object: "list", data: [], hasMore: false, nextCursor: null }
+          : request.url.includes("?status=paid&limit=50")
+            ? { object: "list", data: [paymentIntent], hasMore: true, nextCursor: "page-2" }
+            : paymentIntent;
+
+    return new Response(JSON.stringify(body), {
       status: request.method === "POST" ? 201 : 200,
       headers: { "Content-Type": "application/json" },
     });
   };
 
-  const [initializeExample, createSessionExample, retrieveExample, verifyExample] =
-    Object.values(checkoutPromptSdkExamples);
+  const {
+    initialize,
+    createPaymentIntent,
+    retrievePaymentIntent,
+    listPaymentIntents,
+    verifyWebhook,
+  } = paymentIntentsPromptSdkExamples;
   const source = [
-    initializeExample,
-    createSessionExample,
-    `await createCheckoutForAttempt(trustedOrder, checkoutAttempt, checkoutAttempts);
-`,
-    retrieveExample,
-    verifyExample,
-    `const verifiedEvent = await verifyCheckoutWebhook(rawBody, signature);
-console.info(verifiedEvent.type);`,
+    initialize,
+    createPaymentIntent,
+    "const createdIntent = await createPaymentIntentForAttempt(trustedOrder, paymentAttempt, paymentAttempts);\ntestResults.createdId = createdIntent.paymentIntentId;",
+    retrievePaymentIntent,
+    "testResults.retrievedId = intent.id;",
+    listPaymentIntents,
+    "testResults.listedIds = listedIntents.map((item) => item.id);",
+    verifyWebhook,
+    "const verifiedEvent = await verifyPaymentWebhook(rawBody, signature);\ntestResults.verifiedType = verifiedEvent.type;",
   ].join("\n\n");
   const javascript = ts.transpileModule(source, {
     compilerOptions: {
@@ -216,8 +256,8 @@ console.info(verifiedEvent.type);`,
         successUrl: "https://merchant.example/orders/42/success",
         cancelUrl: "https://merchant.example/orders/42/cancel",
       },
-      checkoutAttempt: { id: "attempt-42-1", idempotencyKey: "order-42-checkout-attempt-1" },
-      checkoutAttempts: {
+      paymentAttempt: { id: "attempt-42-1", idempotencyKey: "order-42-payment-attempt-1" },
+      paymentAttempts: {
         async attachPaymentIntent(input: Record<string, unknown>) {
           attachedPaymentIntents.push(input);
         },
@@ -225,17 +265,18 @@ console.info(verifiedEvent.type);`,
       paymentIntentId: paymentIntent.id,
       rawBody,
       signature,
+      testResults,
       console: { info() {} },
     });
   } finally {
     globalThis.fetch = originalFetch;
   }
 
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 4);
   assert.equal(requests[0]?.url, "https://api.testnet.example/api/v2/payment-intents");
   assert.equal(requests[0]?.method, "POST");
   assert.equal(requests[0]?.headers.get("authorization"), "Bearer test-api-key-placeholder");
-  assert.equal(requests[0]?.headers.get("idempotency-key"), "order-42-checkout-attempt-1");
+  assert.equal(requests[0]?.headers.get("idempotency-key"), "order-42-payment-attempt-1");
   assert.deepEqual(JSON.parse(requests[0]?.body ?? "{}"), {
     amount: "12.34",
     asset: "USDC",
@@ -249,7 +290,7 @@ console.info(verifiedEvent.type);`,
       {
         orderId: "order-42",
         attemptId: "attempt-42-1",
-        paymentIntentId: paymentIntent.paymentIntentId,
+        paymentIntentId: paymentIntent.id,
         status: "created",
         expiresAt: paymentIntent.expiresAt,
       },
@@ -257,7 +298,21 @@ console.info(verifiedEvent.type);`,
   );
   assert.equal(
     requests[1]?.url,
-    "https://api.testnet.example/api/v2/payment-intents/pi_checkout_prompt_test",
+    "https://api.testnet.example/api/v2/payment-intents/pi_payment_intents_prompt_test",
   );
   assert.equal(requests[1]?.method, "GET");
+  assert.equal(
+    requests[2]?.url,
+    "https://api.testnet.example/api/v2/payment-intents?status=paid&limit=50",
+  );
+  assert.equal(
+    requests[3]?.url,
+    "https://api.testnet.example/api/v2/payment-intents?status=paid&limit=50&cursor=page-2",
+  );
+  assert.deepEqual(JSON.parse(JSON.stringify(testResults)), {
+    createdId: paymentIntent.id,
+    retrievedId: paymentIntent.id,
+    listedIds: [paymentIntent.id],
+    verifiedType: "payment.succeeded",
+  });
 });

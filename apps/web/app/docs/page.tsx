@@ -3,6 +3,7 @@
 import { AppShell } from "@/core/app-shell";
 import { GasIntegrationPromptCard } from "@/features/docs/gas-integration-prompt-card";
 import { PaymentIntentsIntegrationPromptCard } from "@/features/docs/payment-intents-integration-prompt-card";
+import { WebhookVerificationIntegrationPromptCard } from "@/features/docs/webhook-verification-integration-prompt-card";
 import {
   CheckIcon,
   CopyIcon,
@@ -1568,6 +1569,10 @@ const session = await velo.checkout.sessions.create({
                   Velo sends webhook events to your server to notify you about payment lifecycle
                   changes. To prevent request spoofing, you must verify the signature header.
                 </p>
+
+                <div className="my-6">
+                  <WebhookVerificationIntegrationPromptCard />
+                </div>
 
                 <div className="my-6 flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-950 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
                   <AlertTriangleIcon className="mt-0.5 size-5 shrink-0 text-red-600 dark:text-red-500" />

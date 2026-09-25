@@ -407,6 +407,44 @@ test("policy denial is replayable, redacted, and consumes neither budget nor wal
   });
 });
 
+test("withdrawal maintenance fence rejects new Gas admissions without consuming quota", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t);
+    await createPolicy(t, scope.projectId);
+    const relayerId = await t.run(async (ctx) => {
+      const relayerId = await ctx.db.insert("relayerAccounts", {
+        projectId: scope.projectId,
+        publicKey: OWNER,
+        network: GAS_NETWORK,
+        status: "disabled",
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      await ctx.db.insert("gasProjectMaintenance", {
+        projectId: scope.projectId,
+        withdrawalRequestId: "withdrawal-in-progress",
+        ownerWallet: OWNER,
+        relayerId,
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      return relayerId;
+    });
+    void relayerId;
+
+    const result = await t.mutation(internal.gas.admission.reserve, admissionArgs(scope));
+    expect(result).toMatchObject({
+      status: "decision",
+      log: { decisionCode: "rejected", rejectionCode: "policy_disabled" },
+    });
+    const state = await readAdmissionState(t, scope.projectId);
+    expect(state.policy?.dailyReservedStroops).toBe(0n);
+    expect(state.logs).toHaveLength(1);
+    expect(state.bucket).toBeNull();
+  });
+});
+
 test("a formerly denied request can be retried with a new key after policy correction", async () => {
   await withFixedTime(async () => {
     const t = convexTest(schema, modules);

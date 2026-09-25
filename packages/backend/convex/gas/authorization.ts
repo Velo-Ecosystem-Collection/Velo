@@ -5,6 +5,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { ProjectRole } from "../playground_projects/helpers";
 
 import { requireProjectRole } from "../playground_projects/helpers";
+import { requireIdentity } from "../projects/helpers";
 
 /** Capabilities available to authenticated Gas console callers. */
 export type GasConsoleCapability = "read" | "updatePolicy" | "updateRelayer";
@@ -56,6 +57,25 @@ export async function requireGasConsoleAccess(
   const minimumRole = minimumRoleByCapability[capability];
 
   return await requireProjectRole(ctx, projectId, minimumRole);
+}
+
+/** Owner funds access remains available after retirement so managed relayers can be emptied. */
+export async function requireGasFundsOwnerAccess(
+  ctx: QueryCtx | MutationCtx,
+  projectId: Id<"projects">,
+) {
+  const identity = await requireIdentity(ctx);
+  const project = await ctx.db.get(projectId);
+  if (!project) throw new Error("Project not found");
+  const address = String(identity.subject).trim().toUpperCase();
+  if (!/^G[A-Z2-7]{55}$/.test(address)) throw new Error("Unauthorized");
+  if (
+    project.ownerAddress !== address &&
+    project.ownerTokenIdentifier !== identity.tokenIdentifier
+  ) {
+    throw new Error("Owner access required");
+  }
+  return { identity, project, address, role: "owner" as const };
 }
 
 /**

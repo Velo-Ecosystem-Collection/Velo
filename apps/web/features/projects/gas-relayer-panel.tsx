@@ -8,7 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/ui/aler
 import { Button } from "@repo/ui/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@repo/ui/components/ui/card";
 import { Skeleton } from "@repo/ui/components/ui/skeleton";
-import { useAction } from "convex/react";
+import { useAction, useMutation } from "convex/react";
 import {
   AlertCircleIcon,
   CheckCircle2Icon,
@@ -20,7 +20,10 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { Id } from "@repo/backend/convex/_generated/dataModel";
 
+import { GasManagedActivation } from "./gas-managed-activation";
 import { GasRelayerConfigurationForm } from "./gas-relayer-form";
+import { GasRelayerFunding } from "./gas-relayer-funding";
+import { GasRelayerWithdrawal } from "./gas-relayer-withdrawal";
 import {
   getGasRelayerBalanceFreshness,
   getGasRelayerBalanceState,
@@ -32,6 +35,7 @@ import {
   isValidGasRelayerTimestamp,
   type GasPolicyRole,
   type GasRelayerBalanceFreshness,
+  type GasRelayerProvisioningSnapshot,
   type GasRelayerRefreshFeedback,
   type GasRelayerRefreshRequest,
   type GasRelayerSnapshot,
@@ -42,10 +46,8 @@ type GasRelayerPanelProps = {
   walletAddress: string | null;
   role: GasPolicyRole;
   relayer: GasRelayerSnapshot | null | undefined;
+  provisioning: GasRelayerProvisioningSnapshot | undefined;
 };
-
-const STELLAR_LAB_FUND_URL = "https://lab.stellar.org/account/fund";
-const STELLAR_LAB_GUIDANCE_URL = "https://developers.stellar.org/docs/tools/lab/account";
 
 function relayerContextKey(
   projectId: Id<"projects">,
@@ -136,39 +138,19 @@ function RefreshFeedback({ feedback }: { feedback: GasRelayerRefreshFeedback }) 
   );
 }
 
-function RelayerFundingInstructions({ publicKey }: { publicKey: string }) {
+function RelayerAccountExplorer({ publicKey }: { publicKey: string }) {
   return (
     <Alert>
       <InfoIcon />
-      <AlertTitle>Fund the existing configured address</AlertTitle>
+      <AlertTitle>Testnet account</AlertTitle>
       <AlertDescription>
-        <p>
-          Copy the public address above and paste it into Stellar Lab&apos;s Fund Account page on
-          Testnet. Fund this existing address, then return here and refresh the balance. Funding
-          does not change metadata status or prove signer readiness.
-        </p>
         <div className="flex flex-wrap gap-2 pt-1">
           <Button asChild size="sm" variant="outline">
-            <a href={STELLAR_LAB_FUND_URL} target="_blank" rel="noreferrer">
-              Fund with Stellar Lab
-              <ExternalLinkIcon />
-            </a>
-          </Button>
-          <Button asChild size="sm" variant="outline">
             <a href={accountExplorerUrl(publicKey)} target="_blank" rel="noreferrer">
-              View account in Stellar Expert
+              View on Stellar Expert
               <ExternalLinkIcon />
             </a>
           </Button>
-          <a
-            className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-primary underline-offset-4 hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-            href={STELLAR_LAB_GUIDANCE_URL}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Read Stellar Lab funding guidance
-            <ExternalLinkIcon className="size-3" />
-          </a>
         </div>
       </AlertDescription>
     </Alert>
@@ -193,6 +175,8 @@ function GasRelayerLoading() {
 }
 
 type ConfiguredRelayerDetailsProps = {
+  projectId: Id<"projects">;
+  role: GasPolicyRole;
   relayer: GasRelayerSnapshot;
   now: number;
   canRefresh: boolean;
@@ -203,6 +187,8 @@ type ConfiguredRelayerDetailsProps = {
 };
 
 function ConfiguredRelayerDetails({
+  projectId,
+  role,
   relayer,
   now,
   canRefresh,
@@ -280,7 +266,8 @@ function ConfiguredRelayerDetails({
         </AlertDescription>
       </Alert>
 
-      <RelayerFundingInstructions publicKey={relayer.publicKey} />
+      <RelayerAccountExplorer publicKey={relayer.publicKey} />
+      <GasRelayerFunding projectId={projectId} role={role} />
 
       <div className="grid gap-2 border-t border-border/70 pt-4">
         <div className="flex flex-wrap items-center gap-3">
@@ -316,12 +303,22 @@ function ConfiguredRelayerDetails({
   );
 }
 
-export function GasRelayerPanel({ projectId, walletAddress, role, relayer }: GasRelayerPanelProps) {
+export function GasRelayerPanel({
+  projectId,
+  walletAddress,
+  role,
+  relayer,
+  provisioning,
+}: GasRelayerPanelProps) {
   const refreshRelayerBalance = useAction(api.gas.balance_action.refreshRelayerBalance);
+  const retryProvisioning = useMutation(api.gas.mutations.retryProvisioning);
+  const setManagedRelayerStatus = useMutation(api.gas.mutations.setManagedRelayerStatus);
   const [now, setNow] = useState(() => Date.now());
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<GasRelayerRefreshFeedback | null>(null);
+  const [provisioningBusy, setProvisioningBusy] = useState(false);
+  const [provisioningMessage, setProvisioningMessage] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const activeRequestRef = useRef<GasRelayerRefreshRequest | null>(null);
   const contextKey = relayerContextKey(projectId, walletAddress, relayer);
@@ -397,6 +394,48 @@ export function GasRelayerPanel({ projectId, walletAddress, role, relayer }: Gas
       });
   }
 
+  async function handleProvisioningRetry() {
+    if (role !== "owner" || provisioningBusy) return;
+    setProvisioningBusy(true);
+    setProvisioningMessage(null);
+    try {
+      const result = await retryProvisioning({ projectId });
+      setProvisioningMessage(
+        result === "queued"
+          ? "Provisioning was queued. This page will show the address after encrypted storage is confirmed."
+          : result === "already_pending"
+            ? "Provisioning is already in progress."
+            : result === "already_ready"
+              ? "A managed relayer is already ready."
+              : "A manually configured relayer is already present and was left unchanged.",
+      );
+    } catch {
+      setProvisioningMessage("Provisioning could not be queued. Refresh the page and try again.");
+    } finally {
+      setProvisioningBusy(false);
+    }
+  }
+
+  async function handleManagedRelayerStatus(status: "active" | "disabled") {
+    if (role !== "owner" || provisioningBusy) return;
+    setProvisioningBusy(true);
+    setProvisioningMessage(null);
+    try {
+      await setManagedRelayerStatus({ projectId, status });
+      setProvisioningMessage(
+        status === "disabled"
+          ? "Sponsorship is paused. Resume it after reviewing the policy and funding balance."
+          : "The relayer is active. Sponsorship remains disabled until an editor enables its policy.",
+      );
+    } catch {
+      setProvisioningMessage("The relayer state could not be changed. Refresh and try again.");
+    } finally {
+      setProvisioningBusy(false);
+    }
+  }
+
+  const managedRelayer = provisioning?.managed === true;
+
   return (
     <div className="grid min-w-0 gap-4">
       <Card>
@@ -420,17 +459,52 @@ export function GasRelayerPanel({ projectId, walletAddress, role, relayer }: Gas
 
           {relayer === null ? (
             <Alert>
-              <InfoIcon />
-              <AlertTitle>No relayer configured</AlertTitle>
+              {provisioning?.state === "pending" ? <RefreshCwIcon /> : <InfoIcon />}
+              <AlertTitle>
+                {provisioning?.state === "pending"
+                  ? "Relayer provisioning in progress"
+                  : provisioning?.state === "failed"
+                    ? "Relayer provisioning needs attention"
+                    : "No relayer configured"}
+              </AlertTitle>
               <AlertDescription>
-                This project has no configured public Testnet relayer address to fund or verify.
-                Relayer metadata must be configured by an owner before a balance can be observed.
+                {provisioning?.state === "pending"
+                  ? "The Testnet address will appear after its encrypted signer record is committed."
+                  : provisioning?.state === "failed"
+                    ? provisioning.errorCode === "provisioning_disabled"
+                      ? "Managed relayer provisioning is disabled for this deployment. An operator must enable the Testnet feature flag before retrying."
+                      : provisioning.errorCode === "configuration_unavailable"
+                        ? "The deployment encryption key or deployment identity is not configured. No signer or address was stored."
+                        : provisioning.errorCode === "configuration_invalid"
+                          ? "The deployment encryption keyring is invalid. No signer or address was stored."
+                          : "Provisioning did not complete. No replacement address was published; an owner can retry after resolving the setup issue."
+                    : "This project has no configured public Testnet relayer address to fund or verify."}
               </AlertDescription>
             </Alert>
           ) : null}
 
+          {role === "owner" &&
+          relayer === null &&
+          (provisioning?.state === "failed" || provisioning?.state === "not_configured") ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => void handleProvisioningRetry()}
+              disabled={provisioningBusy}
+            >
+              <RefreshCwIcon className={provisioningBusy ? "animate-spin" : undefined} />
+              {provisioningBusy
+                ? "Provisioning…"
+                : provisioning.state === "failed"
+                  ? "Retry provisioning"
+                  : "Provision managed Testnet relayer"}
+            </Button>
+          ) : null}
+
           {relayer ? (
             <ConfiguredRelayerDetails
+              projectId={projectId}
+              role={role}
               relayer={relayer}
               now={now}
               canRefresh={canRefresh}
@@ -443,7 +517,67 @@ export function GasRelayerPanel({ projectId, walletAddress, role, relayer }: Gas
         </CardContent>
       </Card>
 
-      {role === "owner" && relayer !== undefined ? (
+      {managedRelayer && provisioning?.state === "ready" && role === "owner" ? (
+        <Card>
+          <CardHeader>
+            <h2 className="text-lg font-semibold">Managed relayer controls</h2>
+            <CardDescription>
+              Velo stores this Testnet signer as authenticated ciphertext in Convex. Velo&apos;s
+              backend can decrypt it to sign sponsored FeeBump transactions.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            <div className="flex flex-wrap gap-2">
+              {provisioning.relayerStatus === "active" ? (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  onClick={() => void handleManagedRelayerStatus("disabled")}
+                  disabled={provisioningBusy}
+                >
+                  Pause sponsorship
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void handleManagedRelayerStatus("active")}
+                  disabled={provisioningBusy}
+                >
+                  Resume relayer
+                </Button>
+              )}
+            </div>
+            {provisioningMessage ? (
+              <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
+                {provisioningMessage}
+              </p>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {managedRelayer && provisioning?.state === "ready" && role === "owner" ? (
+        <>
+          {provisioning.relayerStatus === "active" ? (
+            <GasManagedActivation projectId={projectId} />
+          ) : null}
+          <Card>
+            <CardHeader>
+              <h2 className="text-lg font-semibold">Managed account withdrawal</h2>
+              <CardDescription>
+                Withdrawal pauses sponsorship, waits for active Gas commitments to settle, preserves
+                account reserves, and sends only to your authenticated owner wallet.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <GasRelayerWithdrawal projectId={projectId} />
+            </CardContent>
+          </Card>
+        </>
+      ) : null}
+
+      {role === "owner" && relayer !== undefined && !managedRelayer ? (
         <GasRelayerConfigurationForm projectId={projectId} relayer={relayer} />
       ) : null}
     </div>

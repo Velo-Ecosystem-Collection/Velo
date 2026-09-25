@@ -6,7 +6,7 @@ import { expect, test } from "vitest";
 import type { DataModel, Doc, Id } from "../../_generated/dataModel";
 import type { TestConvexForDataModelAndIdentity } from "convex-test";
 
-import { api } from "../../_generated/api";
+import { api, internal } from "../../_generated/api";
 import {
   GAS_DECISION_CODES,
   GAS_LIFECYCLE_STATES,
@@ -123,6 +123,491 @@ test("Gas console reads are viewer-scoped and missing records return null", asyn
   ).rejects.toThrow("Unauthorized");
 
   expect(await owner.query(api.gas.queries.getPolicy, { projectId })).toBeNull();
+});
+
+test("managed custody status is owner-authorized and never returns encrypted fields", async () => {
+  const t = convexTest(schema, modules);
+  const owner = asWallet(t, OWNER);
+  const viewer = asWallet(t, VIEWER);
+  const projectId = await createProject(t);
+  await addMembership(t, projectId, VIEWER, "viewer");
+  await t.run(async (ctx) => {
+    await ctx.db.insert("relayerAccounts", {
+      projectId,
+      publicKey: RELAYER_PUBLIC_KEY,
+      network: GAS_NETWORK,
+      status: "active",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert("gasRelayerCustody", {
+      projectId,
+      network: GAS_NETWORK,
+      status: "ready",
+      attemptToken: "private-token",
+      attemptCount: 1,
+      publicKey: RELAYER_PUBLIC_KEY,
+      deploymentId: "dev:private-deployment",
+      keyVersion: "v1",
+      nonce: "private-nonce",
+      ciphertext: "private-ciphertext",
+      authTag: "private-auth-tag",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+  });
+
+  const expected = {
+    state: "ready",
+    managed: true,
+    publicKey: RELAYER_PUBLIC_KEY,
+    relayerStatus: "active",
+    errorCode: null,
+  };
+  const result = await owner.query(api.gas.queries.getProvisioningStatus, { projectId });
+  expect(result).toEqual(expected);
+  expect(await viewer.query(api.gas.queries.getProvisioningStatus, { projectId })).toEqual(
+    expected,
+  );
+  expect(Object.keys(result).sort()).toEqual([
+    "errorCode",
+    "managed",
+    "publicKey",
+    "relayerStatus",
+    "state",
+  ]);
+  expect(JSON.stringify(result)).not.toMatch(
+    /ciphertext|nonce|authTag|deploymentId|keyVersion|private-token/,
+  );
+  await expect(
+    asWallet(t, OTHER_OWNER).query(api.gas.queries.getProvisioningStatus, { projectId }),
+  ).rejects.toThrow("Unauthorized");
+});
+
+test("managed sponsorship activation requires the owner and uses only active linked contracts", async () => {
+  const t = convexTest(schema, modules);
+  const owner = asWallet(t, OWNER);
+  const editor = asWallet(t, EDITOR);
+  const projectId = await createProject(t);
+  await addMembership(t, projectId, EDITOR, "editor");
+  await t.run(async (ctx) => {
+    await ctx.db.insert("relayerAccounts", {
+      projectId,
+      publicKey: RELAYER_PUBLIC_KEY,
+      network: GAS_NETWORK,
+      status: "active",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert("gasRelayerCustody", {
+      projectId,
+      network: GAS_NETWORK,
+      status: "ready",
+      attemptToken: "private-token",
+      attemptCount: 1,
+      publicKey: RELAYER_PUBLIC_KEY,
+      deploymentId: "dev:private-deployment",
+      keyVersion: "v1",
+      nonce: "private-nonce",
+      ciphertext: "private-ciphertext",
+      authTag: "private-auth-tag",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert("projectContracts", {
+      projectId,
+      ownerAddress: OWNER,
+      registryProjectId: 7,
+      contractId: CONTRACT_ID,
+      status: "active",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert("projectContracts", {
+      projectId,
+      ownerAddress: OWNER,
+      registryProjectId: 7,
+      contractId: "CC3QCZSWY3VBSCFCZOYBBHLMO5OXPWQPNFQHUBNIPOWFTYTBS5Y4AT5N",
+      status: "pending_add",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+  });
+
+  expect(await owner.query(api.gas.queries.getManagedActivationReview, { projectId })).toEqual({
+    dailyCapStroops: "100000000",
+    walletHourlyLimit: 100,
+    activeContractIds: [CONTRACT_ID],
+    policyEnabled: false,
+  });
+  await expect(
+    editor.mutation(api.gas.mutations.activateManagedSponsorship, { projectId }),
+  ).rejects.toThrow("Owner access required");
+  await owner.mutation(api.gas.mutations.updatePolicy, {
+    projectId,
+    enabled: false,
+    dailyCapStroops: "100000000",
+    walletHourlyLimit: 100,
+    allowedContractIds: [],
+  });
+  await expect(
+    editor.mutation(api.gas.mutations.updatePolicy, {
+      projectId,
+      enabled: true,
+      dailyCapStroops: "100000000",
+      walletHourlyLimit: 100,
+      allowedContractIds: [CONTRACT_ID],
+    }),
+  ).rejects.toThrow("Review and enable managed sponsorship from the owner controls");
+
+  const activated = await owner.mutation(api.gas.mutations.activateManagedSponsorship, {
+    projectId,
+  });
+  expect(activated).toMatchObject({
+    enabled: true,
+    dailyCapStroops: "100000000",
+    walletHourlyLimit: 100,
+    allowedContractIds: [CONTRACT_ID],
+  });
+});
+
+test("managed activation stays disabled without active contracts and maintenance blocks policy changes", async () => {
+  const t = convexTest(schema, modules);
+  const owner = asWallet(t, OWNER);
+  const projectId = await createProject(t);
+  const relayerId = await t.run(async (ctx) => {
+    const relayerId = await ctx.db.insert("relayerAccounts", {
+      projectId,
+      publicKey: RELAYER_PUBLIC_KEY,
+      network: GAS_NETWORK,
+      status: "active",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert("gasRelayerCustody", {
+      projectId,
+      network: GAS_NETWORK,
+      status: "ready",
+      attemptToken: "private-token",
+      attemptCount: 1,
+      publicKey: RELAYER_PUBLIC_KEY,
+      deploymentId: "dev:private-deployment",
+      keyVersion: "v1",
+      nonce: "private-nonce",
+      ciphertext: "private-ciphertext",
+      authTag: "private-auth-tag",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert("projectContracts", {
+      projectId,
+      ownerAddress: OWNER,
+      registryProjectId: 7,
+      contractId: CONTRACT_ID,
+      status: "pending_add",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    return relayerId;
+  });
+
+  const activated = await owner.mutation(api.gas.mutations.activateManagedSponsorship, {
+    projectId,
+  });
+  expect(activated).toMatchObject({ enabled: false, allowedContractIds: [] });
+  expect(
+    await owner.query(api.gas.queries.getManagedActivationReview, { projectId }),
+  ).toMatchObject({
+    activeContractIds: [],
+    policyEnabled: false,
+  });
+
+  await t.run(async (ctx) => {
+    await ctx.db.insert("gasProjectMaintenance", {
+      projectId,
+      withdrawalRequestId: "withdrawal-in-progress",
+      ownerWallet: OWNER,
+      relayerId,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+  });
+  await expect(
+    owner.mutation(api.gas.mutations.updatePolicy, {
+      projectId,
+      enabled: false,
+      dailyCapStroops: "100000000",
+      walletHourlyLimit: 100,
+      allowedContractIds: [],
+    }),
+  ).rejects.toThrow("Gas account maintenance is in progress");
+});
+
+test("retired project owners retain a safe relayer funds view", async () => {
+  const t = convexTest(schema, modules);
+  const owner = asWallet(t, OWNER);
+  const projectId = await createProject(t);
+  await t.run(async (ctx) => {
+    await ctx.db.patch(projectId, { retiredAt: NOW + 1 });
+    await ctx.db.insert("relayerAccounts", {
+      projectId,
+      publicKey: RELAYER_PUBLIC_KEY,
+      network: GAS_NETWORK,
+      status: "disabled",
+      balanceStroops: 55_000_000n,
+      balanceUpdatedAt: NOW,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert("gasRelayerCustody", {
+      projectId,
+      network: GAS_NETWORK,
+      status: "ready",
+      attemptToken: "private-token",
+      attemptCount: 1,
+      publicKey: RELAYER_PUBLIC_KEY,
+      deploymentId: "dev:private-deployment",
+      keyVersion: "v1",
+      nonce: "private-nonce",
+      ciphertext: "private-ciphertext",
+      authTag: "private-auth-tag",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+  });
+  expect(await owner.query(api.gas.queries.getRelayerFundsForOwner, { projectId })).toMatchObject({
+    retired: true,
+    managed: true,
+    publicKey: RELAYER_PUBLIC_KEY,
+    status: "disabled",
+    balanceStroops: "55000000",
+  });
+});
+
+test("Testnet faucet claims are owner-scoped and a request cooldown survives uncertain responses", async () => {
+  const t = convexTest(schema, modules);
+  const owner = asWallet(t, OWNER);
+  const projectId = await createProject(t);
+  await t.run(async (ctx) => {
+    await ctx.db.insert("relayerAccounts", {
+      projectId,
+      publicKey: RELAYER_PUBLIC_KEY,
+      network: GAS_NETWORK,
+      status: "disabled",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+  });
+
+  const first = await owner.mutation(internal.gas.balance_internal.claimFaucetRequest, {
+    projectId,
+  });
+  expect(first.status).toBe("claimed");
+  if (first.status !== "claimed") throw new Error("Expected a claimed faucet request");
+  expect(
+    await asWallet(t, OTHER_OWNER).mutation(internal.gas.balance_internal.claimFaucetRequest, {
+      projectId,
+    }),
+  ).toEqual({ status: "unauthorized" });
+  expect(
+    await owner.mutation(internal.gas.balance_internal.claimFaucetRequest, { projectId }),
+  ).toMatchObject({
+    status: "in_progress",
+    requestId: first.requestId,
+  });
+
+  await owner.mutation(internal.gas.balance_internal.finishFaucetRequest, {
+    projectId,
+    requestId: first.requestId,
+    status: "uncertain",
+    checkedAt: Date.now(),
+    errorCode: "account_not_found",
+  });
+  expect(
+    await owner.mutation(internal.gas.balance_internal.claimFaucetRequest, { projectId }),
+  ).toMatchObject({
+    status: "cooldown",
+  });
+  expect(
+    await owner.mutation(internal.gas.balance_internal.claimFaucetCheck, {
+      projectId,
+      requestId: first.requestId,
+    }),
+  ).toEqual({ status: "ready", publicKey: RELAYER_PUBLIC_KEY });
+});
+
+test("owner withdrawal confirmation pauses sponsorship behind a maintenance lock and safe cancel releases it", async () => {
+  const t = convexTest(schema, modules);
+  const owner = asWallet(t, OWNER);
+  const editor = asWallet(t, EDITOR);
+  const projectId = await createProject(t);
+  await addMembership(t, projectId, EDITOR, "editor");
+  const relayerId = await t.run(async (ctx) => {
+    const relayerId = await ctx.db.insert("relayerAccounts", {
+      projectId,
+      publicKey: RELAYER_PUBLIC_KEY,
+      network: GAS_NETWORK,
+      status: "active",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert("gasRelayerCustody", {
+      projectId,
+      network: GAS_NETWORK,
+      status: "ready",
+      attemptToken: "private-token",
+      attemptCount: 1,
+      publicKey: RELAYER_PUBLIC_KEY,
+      deploymentId: "dev:private-deployment",
+      keyVersion: "v1",
+      nonce: "private-nonce",
+      ciphertext: "private-ciphertext",
+      authTag: "private-auth-tag",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert("gasPolicies", {
+      projectId,
+      enabled: true,
+      network: GAS_NETWORK,
+      dailyCapStroops: 100_000_000n,
+      dailyReservedStroops: 0n,
+      dailyWindowKey: new Date().toISOString().slice(0, 10),
+      outstandingHoldsStroops: 0n,
+      dailyConfirmedSpendStroops: 0n,
+      accountingState: "initialized",
+      walletHourlyLimit: 100,
+      allowedContractIds: [CONTRACT_ID],
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    return relayerId;
+  });
+  const now = Date.now();
+  const requestId = "withdrawal-test-request";
+  const created = await owner.mutation(internal.gas.balance_internal.createWithdrawalIntent, {
+    projectId,
+    requestId,
+    nonce: "11e1d7e8-9d8d-49ed-8c75-c0e413a265cc",
+    amountStroops: "10000000",
+    expiresAt: now + 300_000,
+  });
+  expect(created.status).toBe("ready");
+  await owner.mutation(internal.gas.balance_internal.pinWithdrawalConsent, {
+    projectId,
+    requestId,
+    consentDigest: "a".repeat(64),
+    preparedConsentHash: "b".repeat(64),
+  });
+  await expect(
+    asWallet(t, OTHER_OWNER).mutation(internal.gas.balance_internal.authorizeWithdrawal, {
+      projectId,
+      requestId,
+      consentDigest: "a".repeat(64),
+      consentTransactionHash: "b".repeat(64),
+    }),
+  ).rejects.toThrow("Owner access required");
+
+  expect(
+    await owner.mutation(internal.gas.balance_internal.authorizeWithdrawal, {
+      projectId,
+      requestId,
+      consentDigest: "a".repeat(64),
+      consentTransactionHash: "b".repeat(64),
+    }),
+  ).toEqual({ status: "ready_to_send" });
+  const snapshot = await t.run(async (ctx) => ({
+    relayer: await ctx.db.get("relayerAccounts", relayerId),
+    policy: await ctx.db
+      .query("gasPolicies")
+      .withIndex("by_project_id", (q) => q.eq("projectId", projectId))
+      .unique(),
+    locks: await ctx.db
+      .query("gasProjectMaintenance")
+      .withIndex("by_project_id", (q) => q.eq("projectId", projectId))
+      .collect(),
+  }));
+  expect(snapshot.relayer?.status).toBe("disabled");
+  expect(snapshot.policy?.enabled).toBe(false);
+  expect(snapshot.locks).toHaveLength(1);
+  await expect(
+    editor.mutation(api.gas.mutations.updatePolicy, {
+      projectId,
+      enabled: false,
+      dailyCapStroops: "100000000",
+      walletHourlyLimit: 100,
+      allowedContractIds: [CONTRACT_ID],
+    }),
+  ).rejects.toThrow("Gas account maintenance is in progress");
+
+  expect(
+    await owner.mutation(internal.gas.balance_internal.cancelUnsentWithdrawal, {
+      projectId,
+      requestId,
+    }),
+  ).toBe("cancelled");
+  const afterCancel = await t.run(async (ctx) =>
+    ctx.db
+      .query("gasProjectMaintenance")
+      .withIndex("by_project_id", (q) => q.eq("projectId", projectId))
+      .collect(),
+  );
+  expect(afterCancel).toHaveLength(0);
+});
+
+test("only the owner can retry managed provisioning and legacy relayers are preserved", async () => {
+  const t = convexTest(schema, modules);
+  const owner = asWallet(t, OWNER);
+  const editor = asWallet(t, EDITOR);
+  const projectId = await createProject(t);
+  await addMembership(t, projectId, EDITOR, "editor");
+  await t.run(async (ctx) => {
+    await ctx.db.insert("gasRelayerCustody", {
+      projectId,
+      network: GAS_NETWORK,
+      status: "failed",
+      attemptToken: "previous-attempt",
+      attemptCount: 1,
+      errorCode: "configuration_unavailable",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+  });
+
+  await expect(editor.mutation(api.gas.mutations.retryProvisioning, { projectId })).rejects.toThrow(
+    "Owner access required",
+  );
+  expect(await owner.mutation(api.gas.mutations.retryProvisioning, { projectId })).toBe("queued");
+  expect(await owner.query(api.gas.queries.getProvisioningStatus, { projectId })).toMatchObject({
+    state: "pending",
+    managed: true,
+    errorCode: null,
+  });
+
+  const legacyProjectId = await createProject(t, OTHER_OWNER);
+  await t.run(async (ctx) => {
+    await ctx.db.insert("relayerAccounts", {
+      projectId: legacyProjectId,
+      publicKey: RELAYER_PUBLIC_KEY,
+      network: GAS_NETWORK,
+      status: "active",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+  });
+  expect(
+    await asWallet(t, OTHER_OWNER).mutation(api.gas.mutations.retryProvisioning, {
+      projectId: legacyProjectId,
+    }),
+  ).toBe("legacy_relayer_exists");
+  expect(
+    await t.run(async (ctx) =>
+      ctx.db
+        .query("gasRelayerCustody")
+        .withIndex("by_project_id", (q) => q.eq("projectId", legacyProjectId))
+        .take(2),
+    ),
+  ).toHaveLength(0);
 });
 
 test("Gas log pages are project-scoped, newest-first, and cursor-complete", async () => {

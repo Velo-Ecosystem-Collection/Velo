@@ -7,10 +7,12 @@ import { expect, test } from "vitest";
 
 import type { DataModel, Id } from "../../_generated/dataModel";
 import type { ActionCtx } from "../../_generated/server";
+import type { GasRelayerCustodyLookup } from "../../gas/custody_internal";
 import type { GasRelayerMetadataLookup } from "../../gas/public_api_internal";
 import type { TestConvexForDataModelAndIdentity } from "convex-test";
 
 import { internal } from "../../_generated/api";
+import { encryptGasRelayerSecret, parseGasCustodyKeyring } from "../../gas/custody_crypto";
 import {
   GAS_MAX_RELAYER_SIGNERS_JSON_BYTES,
   GAS_RELAYER_SIGNERS_ENV,
@@ -90,9 +92,40 @@ async function withSignerConfiguration<T>(
   }
 }
 
-function actionContext(metadata: GasRelayerMetadataLookup): ActionCtx {
+async function withManagedCustodyEnvironment<T>(
+  options: { keyring: string | undefined; deploymentId: string | undefined; enabled?: string },
+  callback: () => Promise<T>,
+): Promise<T> {
+  const names = [
+    "VELO_GAS_CUSTODY_KEYRING_JSON",
+    "VELO_GAS_CUSTODY_DEPLOYMENT_ID",
+    "VELO_GAS_MANAGED_RELAYER_PROVISIONING_ENABLED",
+  ] as const;
+  const previous = names.map((name) => process.env[name]);
+  const values = [options.keyring, options.deploymentId, options.enabled];
+  names.forEach((name, index) => {
+    const value = values[index];
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  });
+  try {
+    return await callback();
+  } finally {
+    names.forEach((name, index) => {
+      const value = previous[index];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    });
+  }
+}
+
+function actionContext(
+  metadata: GasRelayerMetadataLookup,
+  custody: GasRelayerCustodyLookup = null,
+): ActionCtx {
+  let queryCount = 0;
   return {
-    runQuery: async () => metadata,
+    runQuery: async () => (queryCount++ === 0 ? metadata : custody),
   } as unknown as ActionCtx;
 }
 
@@ -149,6 +182,167 @@ test("resolves active Testnet custody and verifies an in-memory signature", asyn
       ),
     ).toBe(true);
   });
+});
+
+test("managed custody decrypts only in the signer action and verifies the stored address", async () => {
+  const t = convexTest(schema, modules);
+  const projectId = await createProject(t, "encrypted-ready");
+  const deploymentId = "dev:gas-custody-tests";
+  const keyringJson = JSON.stringify({
+    activeVersion: "v1",
+    keys: { v1: btoa(String.fromCharCode(...new Uint8Array(32).fill(7))) },
+  });
+  const encrypted = await encryptGasRelayerSecret(
+    GAS_TEST_RELAYER_KEYPAIR.secret(),
+    parseGasCustodyKeyring(keyringJson),
+    {
+      deploymentId,
+      projectId,
+      network: GAS_NETWORK,
+      publicKey: GAS_TEST_RELAYER_KEYPAIR.publicKey(),
+    },
+  );
+  await t.run(async (ctx) => {
+    await ctx.db.insert("relayerAccounts", {
+      projectId,
+      publicKey: GAS_TEST_RELAYER_KEYPAIR.publicKey(),
+      network: GAS_NETWORK,
+      status: "active",
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    await ctx.db.insert("gasRelayerCustody", {
+      projectId,
+      network: GAS_NETWORK,
+      status: "ready",
+      attemptToken: "ready-token",
+      attemptCount: 1,
+      publicKey: GAS_TEST_RELAYER_KEYPAIR.publicKey(),
+      deploymentId,
+      ...encrypted,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+  });
+
+  await withManagedCustodyEnvironment(
+    { keyring: keyringJson, deploymentId, enabled: "true" },
+    async () => {
+      expect(await t.action(internal.gas.relayer.readiness, { projectId })).toEqual({
+        status: "ready",
+        network: GAS_NETWORK,
+        publicKey: GAS_TEST_RELAYER_KEYPAIR.publicKey(),
+      });
+      const signature = await withTestnetRelayerSigner(
+        actionContext(
+          {
+            status: "active",
+            network: GAS_NETWORK,
+            publicKey: GAS_TEST_RELAYER_KEYPAIR.publicKey(),
+          },
+          {
+            projectId,
+            network: GAS_NETWORK,
+            status: "ready",
+            attemptToken: "ready-token",
+            attemptCount: 1,
+            publicKey: GAS_TEST_RELAYER_KEYPAIR.publicKey(),
+            deploymentId,
+            ...encrypted,
+            createdAt: NOW,
+            updatedAt: NOW,
+          },
+        ),
+        projectId,
+        (signer) => signer.sign(new TextEncoder().encode("managed-key")),
+      );
+      expect(
+        GAS_TEST_RELAYER_KEYPAIR.verify(Buffer.from("managed-key"), Buffer.from(signature)),
+      ).toBe(true);
+    },
+  );
+});
+
+test("managed decryption failure does not fall back to legacy plaintext configuration", async () => {
+  const t = convexTest(schema, modules);
+  const projectId = await createProject(t, "no-fallback");
+  const metadata: GasRelayerMetadataLookup = {
+    status: "active",
+    network: GAS_NETWORK,
+    publicKey: GAS_TEST_RELAYER_KEYPAIR.publicKey(),
+  };
+  const custody: Exclude<GasRelayerCustodyLookup, null | { status: "ambiguous" }> = {
+    projectId,
+    network: GAS_NETWORK,
+    status: "ready",
+    attemptToken: "ready-token",
+    attemptCount: 1,
+    publicKey: GAS_TEST_RELAYER_KEYPAIR.publicKey(),
+    deploymentId: "dev:gas-custody-tests",
+    keyVersion: "v1",
+    nonce: "AA==",
+    ciphertext: "AA==",
+    authTag: "AA==",
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+
+  await withSignerConfiguration(signerConfiguration(projectId), async () => {
+    await withManagedCustodyEnvironment(
+      { keyring: "invalid-keyring", deploymentId: "dev:gas-custody-tests" },
+      async () => {
+        await expect(
+          withTestnetRelayerSigner(actionContext(metadata, custody), projectId, () => {
+            throw new Error("must not reach signer callback");
+          }),
+        ).rejects.toMatchObject({ status: "configuration_mismatch" });
+      },
+    );
+  });
+});
+
+test("managed custody preserves trusted signer callback failures", async () => {
+  const projectId = "projects:managed-callback-error" as Id<"projects">;
+  const keyringJson = JSON.stringify({
+    activeVersion: "v1",
+    keys: { v1: btoa(String.fromCharCode(...new Uint8Array(32).fill(17))) },
+  });
+  const keyring = parseGasCustodyKeyring(keyringJson);
+  const metadata: GasRelayerMetadataLookup = {
+    status: "active",
+    network: GAS_NETWORK,
+    publicKey: GAS_TEST_RELAYER_KEYPAIR.publicKey(),
+  };
+  const encrypted = await encryptGasRelayerSecret(GAS_TEST_RELAYER_KEYPAIR.secret(), keyring, {
+    deploymentId: "dev:gas-custody-tests",
+    projectId,
+    network: GAS_NETWORK,
+    publicKey: GAS_TEST_RELAYER_KEYPAIR.publicKey(),
+  });
+  const custody: Exclude<GasRelayerCustodyLookup, null | { status: "ambiguous" }> = {
+    projectId,
+    network: GAS_NETWORK,
+    status: "ready",
+    attemptToken: "callback-error-token",
+    attemptCount: 1,
+    publicKey: GAS_TEST_RELAYER_KEYPAIR.publicKey(),
+    deploymentId: "dev:gas-custody-tests",
+    ...encrypted,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+  const callbackFailure = new Error("trusted callback failed");
+
+  await withManagedCustodyEnvironment(
+    { keyring: keyringJson, deploymentId: "dev:gas-custody-tests" },
+    async () => {
+      await expect(
+        withTestnetRelayerSigner(actionContext(metadata, custody), projectId, () => {
+          throw callbackFailure;
+        }),
+      ).rejects.toBe(callbackFailure);
+    },
+  );
 });
 
 test("missing and malformed configuration fail before the callback", async () => {

@@ -721,6 +721,30 @@ export const expireCreditLots = internalMutation({
       const idempotencyKey = `credit-lot-expiry:${lot._id}`;
       const existing = await findLedgerEntry(ctx, lot.organizationId, lot.book, idempotencyKey);
       if (existing) continue;
+      const balance = await getOrCreateBalance(ctx, lot.organizationId, lot.book, now);
+      const balanceAvailable =
+        lot.creditClass === "promotional" ? balance.promoAvailable : balance.paidAvailable;
+      if (balanceAvailable < amount) {
+        await createBillingException(ctx, {
+          organizationId: lot.organizationId,
+          exceptionType: "ledger_mismatch",
+          dedupeKey: `credit-lot-expiry-balance-mismatch:${lot._id}`,
+          summary:
+            "Credit lot expiry was deferred because lot availability exceeds its billing balance",
+          evidence: {
+            creditLotId: lot._id,
+            balanceId: balance._id,
+            book: lot.book,
+            creditClass: lot.creditClass,
+            lotAvailable: amount.toString(),
+            balanceAvailable: balanceAvailable.toString(),
+            difference: (amount - balanceAvailable).toString(),
+            lotReserved: lot.reserved.toString(),
+            expiresAt: lot.expiresAt,
+          },
+        });
+        continue;
+      }
       await insertLedgerEntry(ctx, {
         organizationId: lot.organizationId,
         book: lot.book,
@@ -738,7 +762,6 @@ export const expireCreditLots = internalMutation({
         expired: lot.expired + amount,
         updatedAt: now,
       });
-      const balance = await getOrCreateBalance(ctx, lot.organizationId, lot.book, now);
       await moveBalance(
         ctx,
         balance,

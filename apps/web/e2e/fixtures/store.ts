@@ -9,7 +9,14 @@ import type {
 
 export const GAS_E2E_STORAGE_KEY = "velo:e2e:gas-fixture";
 
-export type GasFixtureSession = "owner" | "editor" | "viewer" | "nonmember" | "disconnected";
+export type GasFixtureSession =
+  | "owner"
+  | "editor"
+  | "viewer"
+  | "nonmember"
+  | "disconnected"
+  | "settings-owner"
+  | "settings-last-project";
 export type GasFixtureProjectId = "project-gas-owner" | "project-gas-member";
 export type GasFixtureScenario =
   | "default"
@@ -47,6 +54,7 @@ type FixtureProject = {
   status: "registered";
   ownerAddress: string;
   paymentAccessActive: boolean;
+  description: string;
 };
 
 type FixtureSession = {
@@ -76,6 +84,7 @@ const projects: Record<GasFixtureProjectId, FixtureProject> = {
     status: "registered",
     ownerAddress: OWNER_ADDRESS,
     paymentAccessActive: false,
+    description: "Owner Gas fixture project description.",
   },
   "project-gas-member": {
     _id: "project-gas-member",
@@ -84,6 +93,7 @@ const projects: Record<GasFixtureProjectId, FixtureProject> = {
     status: "registered",
     ownerAddress: OWNER_ADDRESS,
     paymentAccessActive: false,
+    description: "Member Gas fixture project description.",
   },
 };
 
@@ -112,6 +122,16 @@ const sessions: Record<GasFixtureSession, FixtureSession> = {
     address: null,
     roleByProject: {},
     ownerProjects: [],
+  },
+  "settings-owner": {
+    address: OWNER_ADDRESS,
+    roleByProject: { "project-gas-owner": "owner", "project-gas-member": "owner" },
+    ownerProjects: ["project-gas-owner", "project-gas-member"],
+  },
+  "settings-last-project": {
+    address: OWNER_ADDRESS,
+    roleByProject: { "project-gas-owner": "owner" },
+    ownerProjects: ["project-gas-owner"],
   },
 };
 
@@ -287,7 +307,9 @@ function readInitialConfig(): GasFixtureConfig {
         stored.session === "editor" ||
         stored.session === "viewer" ||
         stored.session === "nonmember" ||
-        stored.session === "disconnected") &&
+        stored.session === "disconnected" ||
+        stored.session === "settings-owner" ||
+        stored.session === "settings-last-project") &&
       (stored.projectId === "project-gas-owner" || stored.projectId === "project-gas-member")
     ) {
       return {
@@ -318,6 +340,7 @@ export class GasFixtureStore {
   private revision = 0;
   private callId = 0;
   private updateVersion = 0;
+  private retiredProjectIds = new Set<GasFixtureProjectId>();
   private connectionCount = 1;
   private isConnected = this.config.session !== "disconnected";
 
@@ -354,6 +377,7 @@ export class GasFixtureStore {
     this.isConnected = this.config.session !== "disconnected";
     this.connectionCount = 1;
     this.updateVersion = 0;
+    this.retiredProjectIds.clear();
     this.queries.clear();
     this.pagination.clear();
     for (const call of this.calls) {
@@ -582,7 +606,9 @@ export class GasFixtureStore {
 
     switch (functionName) {
       case "projects/query:listByOwner":
-        return session.ownerProjects.map((id) => clone(projects[id]));
+        return this.ownerProjectsFor(config.session).map((id) =>
+          this.projectForSettingsFixture(id, config.session),
+        );
       case "users/query:getByWallet":
         return session.address
           ? {
@@ -596,7 +622,12 @@ export class GasFixtureStore {
       case "playground_projects/queries:getMyAccess":
         return role ? { role } : null;
       case "projects/query:getById":
-        return projectId && role ? clone(projects[projectId]) : null;
+        return projectId && role && !this.retiredProjectIds.has(projectId)
+          ? {
+              ...this.projectForSettingsFixture(projectId, config.session),
+              isOwner: role === "owner",
+            }
+          : null;
       case "projects/query:listApiKeys":
         // Integration guidance must render without exposing or inventing a credential.
         return [];
@@ -619,11 +650,59 @@ export class GasFixtureStore {
         return requestId ? clone(executionDetails[requestId] ?? null) : null;
       }
       default:
+        if (
+          config.session.startsWith("settings-") &&
+          functionName === "project_contracts/query:listByProject"
+        ) {
+          return [];
+        }
+        if (
+          config.session.startsWith("settings-") &&
+          functionName === "contract_events/query:listByProject"
+        ) {
+          return {
+            events: [],
+            poller: {
+              status: "idle",
+              lastLedger: undefined,
+              lastRunAt: undefined,
+              errorMessage: undefined,
+            },
+          };
+        }
+        if (
+          config.session.startsWith("settings-") &&
+          functionName === "webhook_endpoints/query:getSummary"
+        ) {
+          return {
+            configured: false,
+            enabled: false,
+            recentDeliveries: 0,
+            successfulDeliveries: 0,
+            failedDeliveries: 0,
+          };
+        }
+        if (
+          config.session.startsWith("settings-") &&
+          functionName === "payment_intents/queries:getProjectStats"
+        ) {
+          return {
+            volumes: [],
+            counts: { total: 0, paid: 0, pending: 0, failed: 0, created: 0 },
+            webhooks: { totalDeliveries: 0, successRate: 100, averageLatency: 0 },
+          };
+        }
         throw new Error(`Unexpected Gas E2E fixture query: ${functionName}`);
     }
   }
 
   private defaultCompletion(call: GasFixtureCall): unknown {
+    if (call.functionName === "projects/mutation:retire") {
+      const args = call.args as { id: GasFixtureProjectId };
+      this.retiredProjectIds.add(args.id);
+      this.notify();
+      return null;
+    }
     if (call.functionName === "gas/mutations:updatePolicy") {
       const args = call.args as {
         projectId: GasFixtureProjectId;
@@ -709,6 +788,10 @@ export class GasFixtureStore {
       "playground_projects/queries:getMyAccess",
       "projects/query:getById",
       "projects/query:listApiKeys",
+      "project_contracts/query:listByProject",
+      "contract_events/query:listByProject",
+      "webhook_endpoints/query:getSummary",
+      "payment_intents/queries:getProjectStats",
       "gas/queries:getPolicy",
       "gas/queries:getRelayerAccount",
       "gas/queries:getTelemetry",
@@ -717,6 +800,7 @@ export class GasFixtureStore {
       "gas/mutations:updatePolicy",
       "gas/mutations:updateRelayerAccount",
       "gas/balance_action:refreshRelayerBalance",
+      "projects/mutation:retire",
     ]);
     if (!supported.has(functionName)) {
       throw new Error(`Unexpected Gas E2E fixture call: ${functionName}`);
@@ -759,6 +843,23 @@ export class GasFixtureStore {
 
   private telemetryDayFromArgs(args: unknown): string {
     return this.stringFromArgs(args, "utcDayKey") ?? "2026-09-16";
+  }
+
+  private ownerProjectsFor(session: GasFixtureSession): GasFixtureProjectId[] {
+    return sessions[session].ownerProjects.filter((id) => !this.retiredProjectIds.has(id));
+  }
+
+  private projectForSettingsFixture(
+    id: GasFixtureProjectId,
+    session: GasFixtureSession,
+  ): FixtureProject & { isOwner?: boolean } {
+    const project = clone(projects[id]);
+    if (session.startsWith("settings-")) {
+      project.name = "Owner Gas Project";
+      project.description = "Project settings fixture description.";
+      if (id === "project-gas-member") project.ownerAddress = VIEWER_ADDRESS;
+    }
+    return project;
   }
 
   private notify() {

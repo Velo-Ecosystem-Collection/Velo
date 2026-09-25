@@ -51,7 +51,7 @@ export const createPaymentIntent = mutation({
     }
 
     const project = await ctx.db.get(apiKey.projectId);
-    if (!project) {
+    if (!project || project.retiredAt !== undefined) {
       throw new ConvexError("Unauthorized: Project not found.");
     }
 
@@ -141,7 +141,7 @@ export const createFromDashboard = mutation({
     anchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
   },
   handler: async (ctx, args) => {
-    const project = await requireProjectOwner(ctx, args.projectId);
+    const project = await requireProjectOwner(ctx, args.projectId, { allowRetired: true });
     if (!project.paymentAccessActive) {
       throw new ConvexError("Payment access is not activated for this project.");
     }
@@ -188,6 +188,10 @@ export const createFromDashboard = mutation({
       if (intent?.projectId === project._id) {
         return { status: "idempotency_replay" as const, intent };
       }
+    }
+
+    if (project.retiredAt !== undefined) {
+      throw new ConvexError("Project is retired.");
     }
 
     const now = Date.now();
@@ -361,6 +365,10 @@ export const createPublicPaymentIntent = internalMutation({
           };
         }
       }
+    }
+
+    if (auth.project.retiredAt !== undefined) {
+      return { authorized: false as const, reason: "Project is retired." };
     }
 
     // Resolve payment anchor
@@ -835,6 +843,10 @@ export const prepareOrInsertPaymentIntentV2 = internalMutation({
       }
     }
 
+    if (auth.project.retiredAt !== undefined) {
+      return { status: "unauthorized" as const, reason: "Project is retired." };
+    }
+
     if (resolvedAnchor === "pdax") {
       const connection = await ctx.db
         .query("providerConnections")
@@ -1007,6 +1019,10 @@ export const insertPublicPaymentIntentV2 = internalMutation({
       }
     }
 
+    if (auth.project.retiredAt !== undefined) {
+      return { status: "unauthorized" as const, reason: "Project is retired." };
+    }
+
     const paymentIntentId = await ctx.db.insert("paymentIntents", {
       projectId: auth.project._id,
       network: currentBillingNetwork(),
@@ -1153,6 +1169,10 @@ export const createPublicPaymentIntentV2 = internalMutation({
       }
     }
 
+    if (auth.project.retiredAt !== undefined) {
+      return { status: "unauthorized" as const, reason: "Project is retired." };
+    }
+
     if (resolvedAnchor === "pdax") {
       const connection = await ctx.db
         .query("providerConnections")
@@ -1177,6 +1197,10 @@ export const createPublicPaymentIntentV2 = internalMutation({
           mappedAsset: cached.mappedAsset,
         };
       }
+    }
+
+    if (auth.project.retiredAt !== undefined) {
+      return { status: "unauthorized" as const, reason: "Project is retired." };
     }
 
     const paymentIntentId = await ctx.db.insert("paymentIntents", {
@@ -1358,6 +1382,10 @@ export const createAuthorizedPaymentIntentV2 = internalMutation({
           timings: { createMs: Date.now() - startedAt },
         };
       }
+    }
+
+    if (project.retiredAt !== undefined) {
+      return { status: "unauthorized" as const };
     }
 
     const mappedAsset = resolvedAnchor === "pdax" ? mapAssetToPdax(args.asset) : undefined;

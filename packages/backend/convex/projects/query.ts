@@ -23,20 +23,20 @@ async function ownerProjects(ctx: QueryCtx, limit = 50) {
       q.eq("ownerTokenIdentifier", identity.tokenIdentifier),
     )
     .order("desc")
-    .take(limit);
+    .collect();
 
   const legacyProjects = await ctx.db
     .query("projects")
     .withIndex("by_owner", (q) => q.eq("ownerAddress", walletAddress))
     .order("desc")
-    .take(limit);
+    .collect();
 
   const tokenProjectIds = new Set(tokenProjects.map((project) => project._id));
   const memberships = await ctx.db
     .query("projectMemberships")
     .withIndex("by_wallet_address", (q) => q.eq("walletAddress", walletAddress))
     .order("desc")
-    .take(limit);
+    .collect();
   const memberProjects = (
     await Promise.all(memberships.map((membership) => ctx.db.get(membership.projectId)))
   ).filter((project): project is Doc<"projects"> => project !== null);
@@ -50,7 +50,9 @@ async function ownerProjects(ctx: QueryCtx, limit = 50) {
       (project) => !project.ownerTokenIdentifier && !tokenProjectIds.has(project._id),
     ),
     ...memberProjects.filter((project) => !knownProjectIds.has(project._id)),
-  ].slice(0, limit);
+  ]
+    .filter((project) => project.retiredAt === undefined)
+    .slice(0, limit);
 }
 
 async function projectWithLogoUrl(ctx: QueryCtx, project: Doc<"projects">) {
@@ -197,10 +199,11 @@ export const getDashboardSummary = query({
 export const getBySlug = query({
   args: { slug: v.string() },
   handler: async (ctx, args) => {
-    return await ctx.db
+    const project = await ctx.db
       .query("projects")
       .withIndex("by_slug", (q) => q.eq("slug", args.slug))
       .unique();
+    return project?.retiredAt === undefined ? project : null;
   },
 });
 
@@ -210,8 +213,12 @@ export const getById = query({
   },
   handler: async (ctx, args) => {
     try {
-      const { project } = await requireProjectRole(ctx, args.id, "viewer");
-      return await projectWithLogoUrl(ctx, project);
+      const { identity, project } = await requireProjectRole(ctx, args.id, "viewer");
+      const isOwner =
+        project.ownerTokenIdentifier === identity.tokenIdentifier ||
+        (!project.ownerTokenIdentifier &&
+          project.ownerAddress === normalizeAddress(identity.subject));
+      return { ...(await projectWithLogoUrl(ctx, project)), isOwner };
     } catch {
       return null;
     }
@@ -229,6 +236,8 @@ export const getPublicVerification = query({
     if (!project) {
       return null;
     }
+
+    if (project.retiredAt !== undefined) return null;
 
     const activeContracts = await activeContractsForProject(ctx, project._id);
     const hasMismatch =
@@ -398,7 +407,7 @@ export const verifyApiKeyAndGetProject = query({
     }
 
     const project = await ctx.db.get(apiKey.projectId);
-    if (!project) {
+    if (!project || project.retiredAt !== undefined) {
       return { authorized: false };
     }
 

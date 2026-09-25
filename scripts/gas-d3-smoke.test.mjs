@@ -45,6 +45,7 @@ const CONFIG = {
   allowedXdr: "allowed-xdr-is-never-persisted",
   deniedXdr: "denied-xdr-is-never-persisted",
   deploymentName: "dev:capable-kingfisher-697",
+  expectedEnvironment: "development",
   expectedSourceCommit: DEPLOYED_SOURCE_COMMIT,
   timeoutMs: 1_000,
   pollLimit: 3,
@@ -101,8 +102,8 @@ function snapshotFor(scope, options = {}) {
       ...(scope.idempotencyKeyHash ? { idempotencyKeyHash: scope.idempotencyKeyHash } : {}),
     },
     deployment: {
-      deploymentId: CONFIG.deploymentName,
-      environment: "development",
+      deploymentId: options.deploymentId ?? CONFIG.deploymentName,
+      environment: options.environment ?? "development",
       network: "testnet",
     },
     signer: {
@@ -145,7 +146,14 @@ function makeFixture({
   networkPassphrase = "Test SDF Network ; September 2015",
   provenanceStatus = 200,
   transactionProbe = () => ({ status: "not_found" }),
-  snapshot = snapshotFor,
+  deploymentName = CONFIG.deploymentName,
+  deploymentEnvironment = "development",
+  snapshot = (scope, options) =>
+    snapshotFor(scope, {
+      ...options,
+      deploymentId: deploymentName,
+      environment: deploymentEnvironment,
+    }),
   malformed = false,
 } = {}) {
   const calls = [];
@@ -172,8 +180,8 @@ function makeFixture({
         return Response.json({ error: "unavailable" }, { status: provenanceStatus });
       return Response.json({
         schemaVersion: 1,
-        deploymentId: CONFIG.deploymentName,
-        environment: "development",
+        deploymentId: deploymentName,
+        environment: deploymentEnvironment,
         network: "testnet",
         verified: true,
         deployedSourceCommit: DEPLOYED_SOURCE_COMMIT,
@@ -300,6 +308,28 @@ test("runs pending-to-settled SDK execution, replay, and whitelist denial", asyn
   assert.equal(report.denial.accountingUnchanged, true);
   assert.equal(verifyD3SmokeReport(report).ok, true, JSON.stringify(verifyD3SmokeReport(report)));
   assert.equal(fixture.handoffCount, 2, "one initial handoff and one same-identity replay");
+});
+
+test("accepts a production Testnet report and verifies its deployment evidence offline", async () => {
+  const deploymentName = "prod:agreeable-salmon-748";
+  const config = {
+    ...CONFIG,
+    deploymentName,
+    expectedEnvironment: "production",
+  };
+  const fixture = makeFixture({ deploymentName, deploymentEnvironment: "production" });
+  const report = await runD3SmokeExecution({ config, dependencies: fixture.dependencies });
+  assert.equal(report.status, "passed", JSON.stringify(report));
+  assert.equal(report.deployment.deploymentId, deploymentName);
+  assert.equal(report.deployment.environment, "production");
+  assert.equal(verifyD3SmokeReport(report).ok, true);
+  assert.equal(
+    verifyD3SmokeReport({
+      ...report,
+      deployment: { ...report.deployment, environment: "mainnet" },
+    }).ok,
+    false,
+  );
 });
 
 test("accepts an immediately settled SDK result without observing again", async () => {
@@ -440,10 +470,28 @@ test("validates D3 config bounds and maps D3 names through the D2 loader", async
     VELO_GAS_D3_OPERATOR_TOKEN: "operator-token",
     VELO_GAS_D3_ALLOWED_XDR: CONFIG.allowedXdr,
     VELO_GAS_D3_DENIED_XDR: CONFIG.deniedXdr,
+    VELO_GAS_D3_DEPLOYMENT_NAME: "prod:agreeable-salmon-748",
+    VELO_GAS_D3_EXPECTED_ENVIRONMENT: "production",
     VELO_GAS_D3_POLL_LIMIT: "121",
   });
   assert.equal(loaded.ok, false);
   assert.equal(loaded.invalid.includes("VELO_GAS_D3_POLL_LIMIT"), true);
+  assert.equal(loaded.config.deploymentName, "prod:agreeable-salmon-748");
+  assert.equal(loaded.config.expectedEnvironment, "production");
+  const unsupportedEnvironment = await loadD3SmokeConfig({
+    VELO_GAS_D3_MODE: "preflight",
+    VELO_GAS_D3_API_ORIGIN: "https://api.example.test",
+    VELO_GAS_D3_PROJECT_ID: PROJECT_ID,
+    VELO_GAS_D3_RPC_URL: "https://rpc.example.test",
+    VELO_GAS_D3_OPERATOR_SNAPSHOT_URL: "https://operator.example.test/snapshot",
+    VELO_GAS_D3_PROVENANCE_URL: "https://operator.example.test/provenance",
+    VELO_GAS_D3_OPERATOR_TOKEN: "operator-token",
+    VELO_GAS_D3_ALLOWED_XDR: CONFIG.allowedXdr,
+    VELO_GAS_D3_DENIED_XDR: CONFIG.deniedXdr,
+    VELO_GAS_D3_EXPECTED_ENVIRONMENT: "staging",
+  });
+  assert.equal(unsupportedEnvironment.ok, false);
+  assert.equal(unsupportedEnvironment.invalid.includes("VELO_GAS_D3_EXPECTED_ENVIRONMENT"), true);
   const unsafeUrl = await loadD3SmokeConfig({
     VELO_GAS_D3_MODE: "preflight",
     VELO_GAS_D3_API_ORIGIN: "https://user:password@example.test",

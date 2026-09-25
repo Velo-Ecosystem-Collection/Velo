@@ -2,7 +2,8 @@ name: CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
+    tags: ["**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -27,7 +28,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.25.0
+          version: 11.24.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -46,6 +47,24 @@ jobs:
 
       - name: Run Tests
         run: pnpm test
+
+      - name: Run D2 and D3 Gas Smoke Tests
+        run: node --experimental-strip-types --test scripts/gas-d2-smoke.test.mjs scripts/gas-d3-smoke.test.mjs
+
+      - name: Install Playwright Browsers
+        run: pnpm --filter web exec playwright install --with-deps chromium firefox webkit
+
+      - name: Run Three-Browser Gas Suite
+        run: pnpm --filter web test:e2e:gas
+
+      - name: Upload Gas Browser Failure Artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gas-playwright-failure-artifacts
+          path: apps/web/playwright-report/gas-test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Benchmark Harness Smoke Test
         run: pnpm benchmark:smoke
@@ -85,7 +104,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10.25.0
+          version: 11.24.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

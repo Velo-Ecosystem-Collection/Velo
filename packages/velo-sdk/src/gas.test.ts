@@ -56,6 +56,15 @@ function jsonResponse(payload: unknown, status = 200, headers?: HeadersInit): Re
   });
 }
 
+function jsonResponseWithoutStream(payload: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: new Headers({ "Content-Type": "application/json" }),
+    text: async () => JSON.stringify(payload),
+  } as Response;
+}
+
 function defaultOptions(): GasSponsorOptions {
   return { idempotencyKey: "gas-operation-0001" };
 }
@@ -1198,7 +1207,10 @@ test("gas.waitForResult returns the last DTO on exhaustion or deadline", async (
   let calls = 0;
   globalThis.fetch = async () => {
     calls++;
-    return jsonResponse(validSubmitResult({ status: "submitted", actualFeeStroops: null }), 202);
+    return jsonResponseWithoutStream(
+      validSubmitResult({ status: "submitted", actualFeeStroops: null }),
+      202,
+    );
   };
 
   clock.install();

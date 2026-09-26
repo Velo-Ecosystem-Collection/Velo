@@ -16,6 +16,11 @@
       "cache": false,
       "inputs": [".oxlintrc.json"]
     },
+    "web#lint:fix": {
+      "dependsOn": ["@carts1024/velo-sdk#build"],
+      "cache": false,
+      "inputs": [".oxlintrc.json"]
+    },
     "@repo/backend#lint:fix": {
       "dependsOn": ["^build"],
       "cache": false,

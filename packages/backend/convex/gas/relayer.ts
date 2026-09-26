@@ -5,10 +5,23 @@ import { v } from "convex/values";
 
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import type { GasCustodyContext, GasEncryptedSecret } from "./custody_crypto";
+import type { GasRelayerCustodyLookup } from "./custody_internal";
+import type { TestnetRelayerSigner } from "./custody_provider";
 import type { GasRelayerMetadataLookup } from "./public_api_internal";
 
 import { internal } from "../_generated/api";
 import { env, internalAction } from "../_generated/server";
+import {
+  GasCustodyCryptoError,
+  parseGasCustodyKeyring,
+  type GasCustodyKeyring,
+} from "./custody_crypto";
+import {
+  createSigner,
+  EncryptedConvexGasRelayerCustodyProvider,
+  type GasRelayerCustodyProvider,
+} from "./custody_provider";
 import { GAS_NETWORK } from "./types";
 
 export const GAS_RELAYER_SIGNERS_ENV = "VELO_GAS_TESTNET_RELAYER_SIGNERS_JSON" as const;
@@ -20,6 +33,11 @@ const RELAYER_CONFIGURATION_UNAVAILABLE = "configuration_unavailable" as const;
 const RELAYER_CONFIGURATION_MISMATCH = "configuration_mismatch" as const;
 const RELAYER_METADATA_UNAVAILABLE = "metadata_unavailable" as const;
 const RELAYER_METADATA_DISABLED = "metadata_disabled" as const;
+const custodyEnv = env as typeof env & {
+  readonly VELO_GAS_CUSTODY_KEYRING_JSON: string | undefined;
+  readonly VELO_GAS_CUSTODY_DEPLOYMENT_ID: string | undefined;
+  readonly VELO_GAS_MANAGED_RELAYER_PROVISIONING_ENABLED: string | undefined;
+};
 
 export type RelayerReadinessStatus =
   | "ready"
@@ -46,10 +64,7 @@ export const relayerReadinessValidator = v.object({
   publicKey: v.union(v.string(), v.null()),
 });
 
-export type TestnetRelayerSigner = Readonly<{
-  publicKey: string;
-  sign(payload: Uint8Array): Uint8Array;
-}>;
+export type { TestnetRelayerSigner } from "./custody_provider";
 
 export class RelayerCustodyError extends Error {
   readonly status: Exclude<RelayerReadinessStatus, "ready">;
@@ -67,8 +82,15 @@ type ParsedSigner = Readonly<{
   keypair: Keypair;
 }>;
 
+type ManagedSignerContext = Readonly<{
+  provider: GasRelayerCustodyProvider;
+  context: Omit<GasCustodyContext, "keyVersion">;
+  encrypted: GasEncryptedSecret;
+}>;
+
 type ResolvedRelayer =
-  | (RelayerReadiness & { status: "ready"; keypair: Keypair })
+  | (RelayerReadiness & { status: "ready"; keypair: Keypair; managedSigner?: never })
+  | (RelayerReadiness & { status: "ready"; keypair?: never; managedSigner: ManagedSignerContext })
   | (RelayerReadiness & { status: Exclude<RelayerReadinessStatus, "ready"> });
 
 function unavailable(status: Exclude<RelayerReadinessStatus, "ready">): ResolvedRelayer {
@@ -176,18 +198,18 @@ function normalizeMetadataPublicKey(metadata: GasRelayerMetadataLookup): string 
   }
 }
 
-async function resolveRelayer(ctx: ActionCtx, projectId: Id<"projects">): Promise<ResolvedRelayer> {
-  const configuration = parseSignerConfiguration(env.VELO_GAS_TESTNET_RELAYER_SIGNERS_JSON);
-  if (!configuration.ok) return unavailable(configuration.status);
-
-  const configured = configuration.entries.find((entry) => entry.projectId === projectId);
-  if (!configured) return unavailable(RELAYER_CONFIGURATION_MISMATCH);
-
+async function resolveRelayer(
+  ctx: ActionCtx,
+  projectId: Id<"projects">,
+  options: { allowDisabled?: boolean; requireManaged?: boolean } = {},
+): Promise<ResolvedRelayer> {
   let metadata: GasRelayerMetadataLookup;
+  let custody: GasRelayerCustodyLookup;
   try {
-    metadata = await ctx.runQuery(internal.gas.public_api_internal.getRelayerMetadata, {
-      projectId,
-    });
+    [metadata, custody] = await Promise.all([
+      ctx.runQuery(internal.gas.public_api_internal.getRelayerMetadata, { projectId }),
+      ctx.runQuery(internal.gas.execution.getCustodyRecord, { projectId }),
+    ]);
   } catch {
     return unavailable(RELAYER_METADATA_UNAVAILABLE);
   }
@@ -195,11 +217,73 @@ async function resolveRelayer(ctx: ActionCtx, projectId: Id<"projects">): Promis
   if (!metadata || metadata.status === "ambiguous") {
     return unavailable(RELAYER_METADATA_UNAVAILABLE);
   }
-  if (metadata.status === "disabled") return unavailable(RELAYER_METADATA_DISABLED);
+  if (metadata.status === "disabled" && options.allowDisabled !== true) {
+    return unavailable(RELAYER_METADATA_DISABLED);
+  }
 
   const metadataPublicKey = normalizeMetadataPublicKey(metadata);
   if (metadataPublicKey === null) return unavailable(RELAYER_METADATA_UNAVAILABLE);
-  if (metadata.network !== GAS_NETWORK || metadataPublicKey !== configured.publicKey) {
+  if (metadata.network !== GAS_NETWORK) {
+    return unavailable(RELAYER_CONFIGURATION_MISMATCH);
+  }
+
+  if (custody?.status === "ambiguous") return unavailable(RELAYER_METADATA_UNAVAILABLE);
+  if (custody) {
+    if (custody.status !== "ready") return unavailable(RELAYER_CONFIGURATION_UNAVAILABLE);
+    if (
+      !custody.publicKey ||
+      !custody.deploymentId ||
+      !custody.keyVersion ||
+      !custody.nonce ||
+      !custody.ciphertext ||
+      !custody.authTag ||
+      custody.publicKey !== metadataPublicKey
+    ) {
+      return unavailable(RELAYER_CONFIGURATION_MISMATCH);
+    }
+    const configuredDeploymentId = custodyEnv.VELO_GAS_CUSTODY_DEPLOYMENT_ID?.trim();
+    if (!configuredDeploymentId || configuredDeploymentId !== custody.deploymentId) {
+      return unavailable(RELAYER_CONFIGURATION_MISMATCH);
+    }
+
+    try {
+      const keyring = parseGasCustodyKeyring(custodyEnv.VELO_GAS_CUSTODY_KEYRING_JSON);
+      return {
+        status: "ready",
+        network: GAS_NETWORK,
+        publicKey: custody.publicKey,
+        managedSigner: {
+          provider: new EncryptedConvexGasRelayerCustodyProvider(keyring),
+          context: {
+            deploymentId: configuredDeploymentId,
+            projectId,
+            network: GAS_NETWORK,
+            publicKey: custody.publicKey,
+          },
+          encrypted: {
+            keyVersion: custody.keyVersion,
+            nonce: custody.nonce,
+            ciphertext: custody.ciphertext,
+            authTag: custody.authTag,
+          },
+        },
+      };
+    } catch (error) {
+      if (error instanceof GasCustodyCryptoError && error.code === "configuration_unavailable") {
+        return unavailable(RELAYER_CONFIGURATION_UNAVAILABLE);
+      }
+      return unavailable(RELAYER_CONFIGURATION_MISMATCH);
+    }
+  }
+
+  if (options.requireManaged === true) return unavailable(RELAYER_CONFIGURATION_UNAVAILABLE);
+
+  // Compatibility provider for previously configured manual relayers. It is
+  // reachable only when no managed custody record exists for this project.
+  const configuration = parseSignerConfiguration(env.VELO_GAS_TESTNET_RELAYER_SIGNERS_JSON);
+  if (!configuration.ok) return unavailable(configuration.status);
+  const configured = configuration.entries.find((entry) => entry.projectId === projectId);
+  if (!configured || metadataPublicKey !== configured.publicKey) {
     return unavailable(RELAYER_CONFIGURATION_MISMATCH);
   }
 
@@ -209,6 +293,32 @@ async function resolveRelayer(ctx: ActionCtx, projectId: Id<"projects">): Promis
     publicKey: configured.publicKey,
     keypair: configured.keypair,
   };
+}
+
+async function withResolvedSigner<T>(
+  resolved: ResolvedRelayer,
+  callback: (signer: TestnetRelayerSigner) => Promise<T> | T,
+): Promise<T> {
+  if (resolved.status !== "ready") throw new RelayerCustodyError(resolved.status);
+  if (resolved.managedSigner) {
+    try {
+      return await resolved.managedSigner.provider.withSigner(
+        resolved.managedSigner.context,
+        resolved.managedSigner.encrypted,
+        callback,
+      );
+    } catch (error) {
+      if (error instanceof GasCustodyCryptoError && error.code === "configuration_unavailable") {
+        throw new RelayerCustodyError(RELAYER_CONFIGURATION_UNAVAILABLE);
+      }
+      if (error instanceof GasCustodyCryptoError) {
+        throw new RelayerCustodyError(RELAYER_CONFIGURATION_MISMATCH);
+      }
+      throw error;
+    }
+  }
+  if (resolved.keypair) return await callback(createSigner(resolved.keypair));
+  throw new RelayerCustodyError(RELAYER_CONFIGURATION_MISMATCH);
 }
 
 /**
@@ -221,20 +331,20 @@ export async function withTestnetRelayerSigner<T>(
   callback: (signer: TestnetRelayerSigner) => Promise<T> | T,
 ): Promise<T> {
   const resolved = await resolveRelayer(ctx, projectId);
-  if (resolved.status !== "ready") throw new RelayerCustodyError(resolved.status);
+  return await withResolvedSigner(resolved, callback);
+}
 
-  const keypair = resolved.keypair;
-  const publicKey = resolved.publicKey;
-  if (publicKey === null) throw new RelayerCustodyError(RELAYER_CONFIGURATION_MISMATCH);
-  const signer = Object.freeze({
-    publicKey,
-    sign(payload: Uint8Array): Uint8Array {
-      if (!(payload instanceof Uint8Array)) throw new Error("Invalid relayer signing payload");
-      return keypair.sign(Buffer.from(payload));
-    },
+/** Withdrawal access requires encrypted managed custody even while metadata is paused. */
+export async function withManagedTestnetRelayerSigner<T>(
+  ctx: ActionCtx,
+  projectId: Id<"projects">,
+  callback: (signer: TestnetRelayerSigner) => Promise<T> | T,
+): Promise<T> {
+  const resolved = await resolveRelayer(ctx, projectId, {
+    allowDisabled: true,
+    requireManaged: true,
   });
-
-  return await callback(signer);
+  return await withResolvedSigner(resolved, callback);
 }
 
 /** Return only redacted Testnet custody readiness for internal preflight tooling. */
@@ -242,19 +352,196 @@ export const readiness = internalAction({
   args: { projectId: v.id("projects") },
   returns: relayerReadinessValidator,
   handler: async (ctx, args): Promise<RelayerReadiness> => {
-    const resolved = await resolveRelayer(ctx, args.projectId);
-    if (resolved.status !== "ready") {
+    try {
+      const publicKey = await withTestnetRelayerSigner(
+        ctx,
+        args.projectId,
+        (signer) => signer.publicKey,
+      );
       return {
-        status: resolved.status,
+        status: "ready",
+        network: GAS_NETWORK,
+        publicKey,
+      };
+    } catch (error) {
+      return {
+        status: error instanceof RelayerCustodyError ? error.status : RELAYER_METADATA_UNAVAILABLE,
         network: GAS_NETWORK,
         publicKey: null,
       };
     }
-
-    return {
-      status: "ready",
-      network: GAS_NETWORK,
-      publicKey: resolved.publicKey,
-    };
   },
 });
+
+/** Provision one dedicated Testnet signer and persist only authenticated ciphertext. */
+export const provisionProject = internalAction({
+  args: { projectId: v.id("projects"), attemptToken: v.string() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    let record;
+    try {
+      record = await ctx.runQuery(internal.gas.execution.getCustodyRecord, {
+        projectId: args.projectId,
+      });
+    } catch {
+      return null;
+    }
+    if (
+      !record ||
+      record.status === "ambiguous" ||
+      record.status !== "pending" ||
+      record.attemptToken !== args.attemptToken
+    ) {
+      return null;
+    }
+
+    if (custodyEnv.VELO_GAS_MANAGED_RELAYER_PROVISIONING_ENABLED !== "true") {
+      await markProvisioningFailed(ctx, args, "provisioning_disabled");
+      return null;
+    }
+    const deploymentId = custodyEnv.VELO_GAS_CUSTODY_DEPLOYMENT_ID?.trim();
+    if (!deploymentId) {
+      await markProvisioningFailed(ctx, args, "configuration_unavailable");
+      return null;
+    }
+
+    let keyring: GasCustodyKeyring;
+    try {
+      keyring = parseGasCustodyKeyring(custodyEnv.VELO_GAS_CUSTODY_KEYRING_JSON);
+    } catch (error) {
+      const errorCode =
+        error instanceof GasCustodyCryptoError && error.code === "configuration_unavailable"
+          ? "configuration_unavailable"
+          : "configuration_invalid";
+      await markProvisioningFailed(ctx, args, errorCode);
+      return null;
+    }
+
+    try {
+      const provisioned = await new EncryptedConvexGasRelayerCustodyProvider(keyring).provision({
+        deploymentId,
+        projectId: args.projectId,
+        network: GAS_NETWORK,
+      });
+      const result = await ctx.runMutation(internal.gas.execution.commitProvisionedCustody, {
+        projectId: args.projectId,
+        attemptToken: args.attemptToken,
+        publicKey: provisioned.publicKey,
+        deploymentId,
+        ...provisioned.encrypted,
+      });
+      if (result === "conflict") {
+        await markProvisioningFailed(ctx, args, "relayer_already_configured");
+      }
+    } catch {
+      await markProvisioningFailed(ctx, args, "provisioning_failed");
+    }
+    return null;
+  },
+});
+
+export const rotateCustodyEncryptionKey = internalAction({
+  args: { projectId: v.id("projects") },
+  returns: v.union(
+    v.literal("rotated"),
+    v.literal("already_current"),
+    v.literal("stale"),
+    v.literal("configuration_unavailable"),
+    v.literal("configuration_invalid"),
+    v.literal("custody_unavailable"),
+  ),
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    | "rotated"
+    | "already_current"
+    | "stale"
+    | "configuration_unavailable"
+    | "configuration_invalid"
+    | "custody_unavailable"
+  > => {
+    const deploymentId = custodyEnv.VELO_GAS_CUSTODY_DEPLOYMENT_ID?.trim();
+    if (!deploymentId) return "configuration_unavailable";
+    let keyring: GasCustodyKeyring;
+    try {
+      keyring = parseGasCustodyKeyring(custodyEnv.VELO_GAS_CUSTODY_KEYRING_JSON);
+    } catch (error) {
+      return error instanceof GasCustodyCryptoError && error.code === "configuration_unavailable"
+        ? "configuration_unavailable"
+        : "configuration_invalid";
+    }
+    let custody;
+    try {
+      custody = await ctx.runQuery(internal.gas.execution.getCustodyRecord, {
+        projectId: args.projectId,
+      });
+    } catch {
+      return "custody_unavailable";
+    }
+    if (
+      !custody ||
+      custody.status === "ambiguous" ||
+      custody.status !== "ready" ||
+      !custody.publicKey ||
+      !custody.deploymentId ||
+      !custody.keyVersion ||
+      !custody.nonce ||
+      !custody.ciphertext ||
+      !custody.authTag ||
+      custody.deploymentId !== deploymentId
+    ) {
+      return "custody_unavailable";
+    }
+    if (custody.keyVersion === keyring.activeVersion) return "already_current";
+
+    try {
+      const encrypted = await new EncryptedConvexGasRelayerCustodyProvider(keyring).reencrypt(
+        {
+          deploymentId,
+          projectId: args.projectId,
+          network: GAS_NETWORK,
+          publicKey: custody.publicKey,
+        },
+        {
+          keyVersion: custody.keyVersion,
+          nonce: custody.nonce,
+          ciphertext: custody.ciphertext,
+          authTag: custody.authTag,
+        },
+      );
+      return await ctx.runMutation(internal.gas.execution.rotateProvisionedCustodyKey, {
+        projectId: args.projectId,
+        expectedKeyVersion: custody.keyVersion,
+        deploymentId,
+        keyVersion: encrypted.keyVersion,
+        nonce: encrypted.nonce,
+        ciphertext: encrypted.ciphertext,
+        authTag: encrypted.authTag,
+      });
+    } catch {
+      return "custody_unavailable";
+    }
+  },
+});
+
+async function markProvisioningFailed(
+  ctx: ActionCtx,
+  args: { projectId: Id<"projects">; attemptToken: string },
+  errorCode:
+    | "provisioning_disabled"
+    | "configuration_unavailable"
+    | "configuration_invalid"
+    | "relayer_already_configured"
+    | "provisioning_failed",
+): Promise<void> {
+  try {
+    await ctx.runMutation(internal.gas.execution.markCustodyProvisioningFailed, {
+      projectId: args.projectId,
+      attemptToken: args.attemptToken,
+      errorCode,
+    });
+  } catch {
+    // The pending record remains retryable if its status update is unavailable.
+  }
+}

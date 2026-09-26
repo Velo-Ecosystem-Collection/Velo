@@ -18,6 +18,9 @@ export type GasRelayerSnapshot = Exclude<
   FunctionReturnType<typeof api.gas.queries.getRelayerAccount>,
   null
 >;
+export type GasRelayerProvisioningSnapshot = FunctionReturnType<
+  typeof api.gas.queries.getProvisioningStatus
+>;
 export type GasRelayerStatus = GasRelayerSnapshot["status"];
 export type GasRelayerDraft = {
   publicKey: string;

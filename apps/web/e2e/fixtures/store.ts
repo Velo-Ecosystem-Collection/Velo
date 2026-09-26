@@ -20,6 +20,8 @@ export type GasFixtureSession =
 export type GasFixtureProjectId = "project-gas-owner" | "project-gas-member";
 export type GasFixtureScenario =
   | "default"
+  | "managed-relayer"
+  | "managed-no-contracts"
   | "policy-denial"
   | "policy-read-error"
   | "activity-read-error"
@@ -341,6 +343,8 @@ export class GasFixtureStore {
   private callId = 0;
   private updateVersion = 0;
   private retiredProjectIds = new Set<GasFixtureProjectId>();
+  private managedPolicyEnabled = false;
+  private managedRelayerStatus: GasRelayerSnapshot["status"] = "active";
   private connectionCount = 1;
   private isConnected = this.config.session !== "disconnected";
 
@@ -378,6 +382,8 @@ export class GasFixtureStore {
     this.connectionCount = 1;
     this.updateVersion = 0;
     this.retiredProjectIds.clear();
+    this.managedPolicyEnabled = false;
+    this.managedRelayerStatus = "active";
     this.queries.clear();
     this.pagination.clear();
     for (const call of this.calls) {
@@ -638,6 +644,52 @@ export class GasFixtureStore {
         return projectId && role ? clone(policies[projectId]) : null;
       case "gas/queries:getRelayerAccount":
         return projectId && role ? clone(relayers[projectId]) : null;
+      case "gas/queries:getProvisioningStatus":
+        if (!projectId || !role) return null;
+        return this.config.scenario === "managed-relayer" ||
+          this.config.scenario === "managed-no-contracts"
+          ? {
+              state: "ready",
+              managed: true,
+              publicKey: relayers[projectId].publicKey,
+              relayerStatus: this.managedRelayerStatus,
+              errorCode: null,
+            }
+          : {
+              state: relayers[projectId] ? "ready" : "not_configured",
+              managed: false,
+              publicKey: relayers[projectId]?.publicKey ?? null,
+              relayerStatus: relayers[projectId]?.status ?? null,
+              errorCode: null,
+            };
+      case "gas/queries:getManagedActivationReview":
+        return role === "owner"
+          ? {
+              dailyCapStroops: "100000000",
+              walletHourlyLimit: 100,
+              activeContractIds:
+                this.config.scenario === "managed-no-contracts" ? [] : [VALID_CONTRACT_ID],
+              policyEnabled: this.managedPolicyEnabled,
+            }
+          : null;
+      case "gas/queries:getFundingStatus":
+      case "gas/queries:getFaucetStatus":
+      case "gas/queries:getWithdrawalStatus":
+        return null;
+      case "gas/queries:getRelayerFundsForOwner":
+        return role === "owner"
+          ? {
+              projectName: projects[projectId!].name,
+              retired: this.retiredProjectIds.has(projectId!),
+              managed:
+                this.config.scenario === "managed-relayer" ||
+                this.config.scenario === "managed-no-contracts",
+              publicKey: relayers[projectId!]?.publicKey ?? null,
+              status: relayers[projectId!]?.status ?? null,
+              balanceStroops: relayers[projectId!]?.balanceStroops ?? null,
+              balanceUpdatedAt: relayers[projectId!]?.balanceUpdatedAt ?? null,
+            }
+          : null;
       case "gas/queries:getTelemetry":
         if (config.scenario === "telemetry-read-error") {
           throw new Error("fixture telemetry provider failure");
@@ -745,6 +797,64 @@ export class GasFixtureStore {
       return clone(saved);
     }
 
+    if (call.functionName === "gas/mutations:setManagedRelayerStatus") {
+      const args = call.args as { status: GasRelayerSnapshot["status"] };
+      this.managedRelayerStatus = args.status;
+      this.notify();
+      return args.status;
+    }
+
+    if (call.functionName === "gas/mutations:activateManagedSponsorship") {
+      this.managedPolicyEnabled = true;
+      this.notify();
+      return null;
+    }
+
+    if (call.functionName === "gas/mutations:retryProvisioning") return "queued";
+
+    if (call.functionName === "gas/balance_action:prepareRelayerFunding") {
+      return {
+        status: "prepared",
+        requestId: "funding-request-1",
+        operation: "payment",
+        amountStroops: "100000000",
+        destinationPublicKey: relayers["project-gas-owner"].publicKey,
+        transactionXdr: "prepared-funding-xdr",
+        expiresAt: Date.now() + 300_000,
+      };
+    }
+
+    if (call.functionName === "gas/balance_action:requestTestnetRelayerFunds") {
+      return {
+        status: "funded",
+        requestId: "faucet-request-1",
+        cooldownUntil: Date.now() + 86_400_000,
+      };
+    }
+
+    if (call.functionName === "gas/balance_action:checkTestnetRelayerFunds") {
+      return { status: "funded", requestId: "faucet-request-1" };
+    }
+
+    if (call.functionName === "gas/balance_action:prepareRelayerWithdrawal") {
+      return {
+        status: "prepared",
+        requestId: "withdrawal-request-1",
+        amountStroops: "100000000",
+        relayerPublicKey: relayers["project-gas-owner"].publicKey,
+        ownerWallet: OWNER_ADDRESS,
+        transactionXdr: "prepared-withdrawal-consent-xdr",
+        expiresAt: Date.now() + 300_000,
+      };
+    }
+
+    if (call.functionName === "gas/balance_action:confirmRelayerWithdrawal") {
+      this.managedRelayerStatus = "disabled";
+      this.managedPolicyEnabled = false;
+      this.notify();
+      return { status: "verified", transactionHash: "c".repeat(64), verifiedLedger: 123 };
+    }
+
     if (call.functionName === "gas/balance_action:refreshRelayerBalance") {
       const projectId = this.projectIdFromArgs(call.args) ?? "project-gas-owner";
       if (this.config.scenario === "balance-cooldown")
@@ -794,12 +904,29 @@ export class GasFixtureStore {
       "payment_intents/queries:getProjectStats",
       "gas/queries:getPolicy",
       "gas/queries:getRelayerAccount",
+      "gas/queries:getProvisioningStatus",
+      "gas/queries:getManagedActivationReview",
+      "gas/queries:getFundingStatus",
+      "gas/queries:getFaucetStatus",
+      "gas/queries:getWithdrawalStatus",
+      "gas/queries:getRelayerFundsForOwner",
       "gas/queries:getTelemetry",
       "gas/queries:listLogsPage",
       "gas/queries:getExecutionDetail",
       "gas/mutations:updatePolicy",
       "gas/mutations:updateRelayerAccount",
       "gas/balance_action:refreshRelayerBalance",
+      "gas/mutations:retryProvisioning",
+      "gas/mutations:setManagedRelayerStatus",
+      "gas/mutations:activateManagedSponsorship",
+      "gas/balance_action:prepareRelayerFunding",
+      "gas/balance_action:submitRelayerFunding",
+      "gas/balance_action:requestTestnetRelayerFunds",
+      "gas/balance_action:checkTestnetRelayerFunds",
+      "gas/balance_action:prepareRelayerWithdrawal",
+      "gas/balance_action:confirmRelayerWithdrawal",
+      "gas/balance_action:continueRelayerWithdrawal",
+      "gas/balance_action:cancelRelayerWithdrawal",
       "projects/mutation:retire",
     ]);
     if (!supported.has(functionName)) {

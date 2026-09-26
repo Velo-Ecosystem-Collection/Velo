@@ -103,12 +103,15 @@ async function calls(page: Page): Promise<GasFixtureCall[]> {
   return page.evaluate(() => window.__veloGasE2E?.getCalls() ?? []);
 }
 
-async function resolveNext(page: Page, functionName?: string) {
-  await page.evaluate((name) => {
-    const api = window.__veloGasE2E;
-    if (!api) throw new Error("Gas E2E fixture API was not installed");
-    api.resolveNext(name);
-  }, functionName);
+async function resolveNext(page: Page, functionName?: string, value?: unknown) {
+  await page.evaluate(
+    ({ name, result }) => {
+      const api = window.__veloGasE2E;
+      if (!api) throw new Error("Gas E2E fixture API was not installed");
+      api.resolveNext(name, result);
+    },
+    { name: functionName, result: value },
+  );
 }
 
 async function expectNoHorizontalOverflow(page: Page) {
@@ -389,6 +392,90 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await resolveNext(page, "gas/balance_action:refreshRelayerBalance");
     await expect(page.getByText(/shared refresh cooldown is active/i)).toBeVisible();
     await expect(page.getByRole("button", { name: /Refresh available in \d+s/ })).toBeDisabled();
+  });
+
+  test("lets owners review, fund, activate, pause, and withdraw a managed Testnet relayer", async ({
+    page,
+  }) => {
+    await gotoGas(page, {
+      session: "owner",
+      projectId: "project-gas-owner",
+      scenario: "managed-relayer",
+    });
+
+    await expect(page.getByRole("heading", { name: "Review sponsorship settings" })).toBeVisible();
+    await expect(page.getByText("10.0000000 XLM", { exact: true })).toBeVisible();
+    await expect(page.getByText("100 requests per UTC hour", { exact: true })).toBeVisible();
+    await expect(page.getByText(validContractId, { exact: true }).first()).toBeVisible();
+
+    await page.getByRole("button", { name: "Prepare funding" }).click();
+    await resolveNext(page, "gas/balance_action:prepareRelayerFunding");
+    await expect(page.getByRole("button", { name: "Sign and fund" })).toBeVisible();
+    await page.getByRole("button", { name: "Sign and fund" }).click();
+    await resolveNext(page, "gas/balance_action:submitRelayerFunding", { status: "verified" });
+    await expect(
+      page.getByText("Funding is verified on Stellar Testnet.", { exact: true }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Get Testnet funds" }).click();
+    await resolveNext(page, "gas/balance_action:requestTestnetRelayerFunds");
+    await expect(
+      page.getByText("Testnet funds are visible in the relayer account.", { exact: true }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Enable sponsorship with these settings" }).click();
+    await resolveNext(page, "gas/mutations:activateManagedSponsorship");
+    await expect(
+      page.getByText(
+        "Sponsorship is enabled with the reviewed limits and active linked contracts.",
+        {
+          exact: true,
+        },
+      ),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Pause sponsorship" }).click();
+    await resolveNext(page, "gas/mutations:setManagedRelayerStatus");
+    await expect(page.getByRole("button", { name: "Resume relayer" })).toBeVisible();
+    await page.getByRole("button", { name: "Resume relayer" }).click();
+    await resolveNext(page, "gas/mutations:setManagedRelayerStatus");
+    await expect(page.getByRole("button", { name: "Pause sponsorship" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Prepare withdrawal" }).click();
+    await resolveNext(page, "gas/balance_action:prepareRelayerWithdrawal");
+    await expect(page.getByRole("button", { name: "Review and authorize" })).toBeVisible();
+    await page.getByRole("button", { name: "Review and authorize" }).click();
+    await resolveNext(page, "gas/balance_action:confirmRelayerWithdrawal");
+    await expect(
+      page.getByText(
+        "The withdrawal is verified on Stellar Testnet. Sponsorship remains paused until you resume it.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Resume relayer" })).toBeVisible();
+  });
+
+  test("keeps managed controls owner-only and sponsorship disabled without linked contracts", async ({
+    page,
+  }) => {
+    await gotoGas(page, {
+      session: "editor",
+      projectId: "project-gas-owner",
+      scenario: "managed-relayer",
+    });
+    await expect(page.getByText("Owner funding controls", { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pause sponsorship" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Prepare withdrawal" })).toHaveCount(0);
+
+    await gotoGas(page, {
+      session: "owner",
+      projectId: "project-gas-owner",
+      scenario: "managed-no-contracts",
+    });
+    await expect(page.getByText("No active contracts are linked", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Enable sponsorship with these settings" }),
+    ).toHaveCount(0);
   });
 
   test("protects pending completions when the wallet identity changes", async ({ page }) => {

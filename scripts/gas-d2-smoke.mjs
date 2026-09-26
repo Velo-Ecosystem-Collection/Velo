@@ -30,6 +30,7 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const COMMIT_PATTERN = /^[a-f0-9]{40}$/;
 const DECIMAL_PATTERN = /^(?:0|[1-9][0-9]*)$/;
 const SAFE_LABEL_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+const DEPLOYMENT_ENVIRONMENTS = new Set(["development", "production"]);
 const RESULT_CODE_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const EXECUTION_STATUSES = new Set([
   "claimed",
@@ -76,6 +77,9 @@ Modes:
 The execute/preflight modes read private values from environment variables or the
 documented *_FILE alternatives. They never write those values, XDR, raw responses,
 credentials, or exception messages to the report.
+
+Set VELO_GAS_D2_EXPECTED_ENVIRONMENT to development (the default) or production.
+Production mode also requires an explicit deployment name and expected source SHA.
 `;
 
 export function parseSmokeArgs(values) {
@@ -153,6 +157,19 @@ export async function loadSmokeConfig(
   const snapshotUrl = env.VELO_GAS_D2_OPERATOR_SNAPSHOT_URL?.trim() || null;
   const provenanceUrl = env.VELO_GAS_D2_PROVENANCE_URL?.trim() || null;
   const operatorToken = env.VELO_GAS_D2_OPERATOR_TOKEN?.trim() || null;
+  const expectedEnvironment = env.VELO_GAS_D2_EXPECTED_ENVIRONMENT?.trim() || "development";
+  const deploymentName = env.VELO_GAS_D2_DEPLOYMENT_NAME?.trim() || DEFAULT_DEPLOYMENT_NAME;
+  const expectedSourceCommit = env.VELO_GAS_D2_EXPECTED_SOURCE_COMMIT?.trim() || null;
+  const invalid = DEPLOYMENT_ENVIRONMENTS.has(expectedEnvironment)
+    ? []
+    : ["VELO_GAS_D2_EXPECTED_ENVIRONMENT"];
+  if (!isSafeLabel(deploymentName)) invalid.push("VELO_GAS_D2_DEPLOYMENT_NAME");
+  if (expectedSourceCommit && !COMMIT_PATTERN.test(expectedSourceCommit)) {
+    invalid.push("VELO_GAS_D2_EXPECTED_SOURCE_COMMIT");
+  }
+  if (expectedEnvironment === "production" && !expectedSourceCommit) {
+    invalid.push("VELO_GAS_D2_EXPECTED_SOURCE_COMMIT");
+  }
   const apiKey =
     mode === "preflight"
       ? null
@@ -172,8 +189,9 @@ export async function loadSmokeConfig(
   }
 
   return {
-    ok: missing.length === 0,
+    ok: missing.length === 0 && invalid.length === 0,
     missing: [...new Set(missing)],
+    invalid,
     config: {
       mode,
       apiOrigin,
@@ -185,8 +203,9 @@ export async function loadSmokeConfig(
       operatorToken,
       allowedXdr,
       deniedXdr,
-      deploymentName: env.VELO_GAS_D2_DEPLOYMENT_NAME?.trim() || DEFAULT_DEPLOYMENT_NAME,
-      expectedSourceCommit: env.VELO_GAS_D2_EXPECTED_SOURCE_COMMIT?.trim() || null,
+      deploymentName,
+      expectedEnvironment,
+      expectedSourceCommit,
       timeoutMs: boundedInteger(env.VELO_GAS_D2_TIMEOUT_MS, 30_000, 1_000, MAX_TIMEOUT_MS),
       pollLimit: boundedInteger(env.VELO_GAS_D2_POLL_LIMIT, DEFAULT_POLL_LIMIT, 0, 120),
       pollIntervalMs: boundedInteger(
@@ -265,8 +284,18 @@ export async function runPreflight({ config, dependencies = createSmokeDependenc
     "deployment_identity",
     snapshot?.ok === true &&
       snapshot.value.deployment.deploymentId === config.deploymentName &&
-      snapshot.value.deployment.environment === "development",
+      snapshot.value.deployment.environment === expectedDeploymentEnvironment(config),
     "deployment_identity_mismatch",
+  );
+  addCheck(
+    checks,
+    "deployment_provenance_agreement",
+    snapshot?.ok === true &&
+      provenance?.ok === true &&
+      snapshot.value.deployment.deploymentId === provenance.value.deploymentId &&
+      snapshot.value.deployment.environment === provenance.value.environment &&
+      snapshot.value.deployment.network === provenance.value.network,
+    "deployment_provenance_mismatch",
   );
   addCheck(
     checks,
@@ -292,7 +321,14 @@ export async function runPreflight({ config, dependencies = createSmokeDependenc
   addCheck(
     checks,
     "source_provenance_verified",
-    provenance?.ok === true && provenance.value.verified,
+    provenance?.ok === true &&
+      provenance.value.verified &&
+      provenance.value.deploymentId === config.deploymentName &&
+      provenance.value.environment === expectedDeploymentEnvironment(config) &&
+      provenance.value.network === "testnet" &&
+      (config.expectedSourceCommit
+        ? provenance.value.deployedSourceCommit === config.expectedSourceCommit
+        : expectedDeploymentEnvironment(config) === "development"),
     provenance?.code ?? "source_provenance_unverified",
   );
 
@@ -604,6 +640,8 @@ export function verifySmokeReport(report) {
   if (report?.status !== "passed") failures.push("report_not_passed");
   if (
     !isRecord(report?.deployment) ||
+    !isSafeLabel(report.deployment.deploymentId) ||
+    !DEPLOYMENT_ENVIRONMENTS.has(report.deployment.environment) ||
     report.deployment.network !== "testnet" ||
     !report.deployment.provenanceVerified ||
     !COMMIT_PATTERN.test(report.deployment.deployedSourceCommit)
@@ -1078,7 +1116,7 @@ function normalizeProvenance(value, config) {
     !isRecord(value) ||
     value.schemaVersion !== 1 ||
     value.deploymentId !== config.deploymentName ||
-    value.environment !== "development" ||
+    value.environment !== expectedDeploymentEnvironment(config) ||
     value.network !== "testnet" ||
     value.verified !== true ||
     !COMMIT_PATTERN.test(value.deployedSourceCommit) ||
@@ -1098,6 +1136,10 @@ function normalizeProvenance(value, config) {
       verification: value.verification,
     },
   };
+}
+
+function expectedDeploymentEnvironment(config) {
+  return config?.expectedEnvironment ?? "development";
 }
 
 export function correlateSettledExecution(dto, snapshot) {
@@ -1540,8 +1582,9 @@ async function main(values = process.argv.slice(2)) {
       schemaVersion: SMOKE_REPORT_SCHEMA_VERSION,
       mode: options.mode,
       status: "incomplete",
-      failure: "configuration_missing",
-      missingInputs: loaded.missing,
+      failure: loaded.invalid.length > 0 ? "configuration_invalid" : "configuration_missing",
+      ...(loaded.missing.length > 0 ? { missingInputs: loaded.missing } : {}),
+      ...(loaded.invalid.length > 0 ? { invalidInputs: loaded.invalid } : {}),
       startedAt: new Date().toISOString(),
       completedAt: new Date().toISOString(),
       repository: {

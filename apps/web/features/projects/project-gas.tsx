@@ -229,6 +229,10 @@ function ProjectGasContent({ projectId }: ProjectGasProps) {
     api.gas.queries.getRelayerAccount,
     gasReadsReady ? { projectId: typedProjectId } : "skip",
   );
+  const provisioning = useQuery(
+    api.gas.queries.getProvisioningStatus,
+    gasReadsReady ? { projectId: typedProjectId } : "skip",
+  );
 
   if (accessState === "connect") {
     return <ConnectWalletState onConnect={() => void wallet.connect()} />;
@@ -272,6 +276,11 @@ function ProjectGasContent({ projectId }: ProjectGasProps) {
             Sponsorship policy overview for <span className="font-medium">{project.name}</span>.
           </p>
           <Badge variant="outline">{access.role} access</Badge>
+          {access.role === "owner" ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/projects/${projectId}/gas/funds`}>Owner relayer funds view</Link>
+            </Button>
+          ) : null}
         </div>
       </header>
 
@@ -282,6 +291,7 @@ function ProjectGasContent({ projectId }: ProjectGasProps) {
           walletAddress={wallet.address}
           role={access.role}
           relayer={relayer}
+          provisioning={provisioning}
         />
       </div>
 
@@ -295,10 +305,10 @@ function ProjectGasContent({ projectId }: ProjectGasProps) {
         <CheckCircle2Icon />
         <AlertTitle>Authoritative policy controls</AlertTitle>
         <AlertDescription>
-          Policy changes are validated in the browser, authorized by Convex, and reflected from the
-          stored policy readback. Balance observations are refreshed manually from the funding panel
-          above; funding remains an external Testnet operation and does not establish signer
-          readiness.
+          Policy changes are authorized by Convex and reflected from stored readback. Relayer
+          balance observations are refreshed manually. Owner funding uses a wallet-signed Testnet
+          transaction; Velo-managed signing keys are encrypted in Convex and can be decrypted by
+          Velo&apos;s trusted backend.
         </AlertDescription>
       </Alert>
     </section>

@@ -2,6 +2,7 @@ import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import { internalMutation, mutation } from "../_generated/server";
+import { queueInitialGasRelayerProvisioning } from "../gas/custody_internal";
 import { ensureOrganizationForIdentity } from "../organizations/helpers";
 import {
   draftProjectArgs,
@@ -44,7 +45,7 @@ export const createDraft = mutation({
       args.name,
     );
 
-    return await ctx.db.insert("projects", {
+    const projectId = await ctx.db.insert("projects", {
       organizationId: organization._id,
       name,
       normalizedName: normalizeProjectName(name),
@@ -62,6 +63,8 @@ export const createDraft = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    await queueInitialGasRelayerProvisioning(ctx, projectId, now);
+    return projectId;
   },
 });
 

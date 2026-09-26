@@ -479,9 +479,9 @@ export async function POST() {
           <div className="grid gap-2 text-sm text-zinc-700">
             <p>
               Gas sponsorship and submission belong on your trusted server. Configure{" "}
-              <code>VELO_GAS_API_KEY</code> and an explicit <code>VELO_BASE_URL</code> in the server
-              environment; neither value is selected from this project page or interpolated into
-              client code.
+              <code>VELO_GAS_API_KEY</code> and an explicit <code>VELO_GAS_BASE_URL</code> in the
+              server environment; neither value is selected from this project page or interpolated
+              into client code.
             </p>
             <p>
               The snippets use a caller-owned operation ID, a stable idempotency key, and bounded

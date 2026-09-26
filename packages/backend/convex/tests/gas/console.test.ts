@@ -577,6 +577,9 @@ test("only the owner can retry managed provisioning and legacy relayers are pres
   await expect(editor.mutation(api.gas.mutations.retryProvisioning, { projectId })).rejects.toThrow(
     "Owner access required",
   );
+  await expect(
+    asWallet(t, OTHER_OWNER).mutation(api.gas.mutations.retryProvisioning, { projectId }),
+  ).rejects.toThrow("Unauthorized");
   expect(await owner.mutation(api.gas.mutations.retryProvisioning, { projectId })).toBe("queued");
   expect(await owner.query(api.gas.queries.getProvisioningStatus, { projectId })).toMatchObject({
     state: "pending",
@@ -591,15 +594,26 @@ test("only the owner can retry managed provisioning and legacy relayers are pres
       publicKey: RELAYER_PUBLIC_KEY,
       network: GAS_NETWORK,
       status: "active",
+      balanceStroops: 42_000_000n,
+      balanceUpdatedAt: NOW,
       createdAt: NOW,
       updatedAt: NOW,
     });
   });
+  const otherOwner = asWallet(t, OTHER_OWNER);
   expect(
-    await asWallet(t, OTHER_OWNER).mutation(api.gas.mutations.retryProvisioning, {
+    await otherOwner.mutation(api.gas.mutations.retryProvisioning, {
       projectId: legacyProjectId,
     }),
   ).toBe("legacy_relayer_exists");
+  expect(
+    await otherOwner.query(api.gas.queries.getRelayerAccount, { projectId: legacyProjectId }),
+  ).toMatchObject({
+    publicKey: RELAYER_PUBLIC_KEY,
+    status: "active",
+    balanceStroops: "42000000",
+    balanceUpdatedAt: NOW,
+  });
   expect(
     await t.run(async (ctx) =>
       ctx.db
@@ -608,6 +622,14 @@ test("only the owner can retry managed provisioning and legacy relayers are pres
         .take(2),
     ),
   ).toHaveLength(0);
+
+  const retiredProjectId = await createProject(t);
+  await t.run(async (ctx) => {
+    await ctx.db.patch(retiredProjectId, { retiredAt: NOW + 1 });
+  });
+  await expect(
+    owner.mutation(api.gas.mutations.retryProvisioning, { projectId: retiredProjectId }),
+  ).rejects.toThrow("Project is retired");
 });
 
 test("Gas log pages are project-scoped, newest-first, and cursor-complete", async () => {

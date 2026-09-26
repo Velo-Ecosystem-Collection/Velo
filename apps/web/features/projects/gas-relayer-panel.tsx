@@ -318,12 +318,19 @@ export function GasRelayerPanel({
   const [cooldownUntil, setCooldownUntil] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<GasRelayerRefreshFeedback | null>(null);
   const [provisioningBusy, setProvisioningBusy] = useState(false);
+  const [provisioningQueued, setProvisioningQueued] = useState(false);
+  const [setupFeedback, setSetupFeedback] = useState<{
+    tone: "info" | "error";
+    message: string;
+  } | null>(null);
   const [provisioningMessage, setProvisioningMessage] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const activeRequestRef = useRef<GasRelayerRefreshRequest | null>(null);
   const contextKey = relayerContextKey(projectId, walletAddress, relayer);
   const contextKeyRef = useRef(contextKey);
   const contextVersionRef = useRef(0);
+  const provisioningStateRef = useRef(provisioning?.state);
+  provisioningStateRef.current = provisioning?.state;
 
   if (contextKeyRef.current !== contextKey) {
     contextKeyRef.current = contextKey;
@@ -342,6 +349,18 @@ export function GasRelayerPanel({
     setCooldownUntil(null);
     setIsRefreshing(false);
   }, [contextKey]);
+
+  useEffect(() => {
+    if (provisioning?.state === "pending") {
+      setProvisioningQueued(true);
+    } else if (
+      provisioning?.state === "not_configured" ||
+      provisioning?.state === "failed" ||
+      provisioning?.state === "ready"
+    ) {
+      setProvisioningQueued(false);
+    }
+  }, [projectId, provisioning?.state]);
 
   const cooldownRemaining = getGasRelayerRefreshCooldownRemaining(cooldownUntil, now);
   const canRefresh = role === "owner" || role === "editor" || role === "viewer";
@@ -397,20 +416,37 @@ export function GasRelayerPanel({
   async function handleProvisioningRetry() {
     if (role !== "owner" || provisioningBusy) return;
     setProvisioningBusy(true);
-    setProvisioningMessage(null);
+    setSetupFeedback(null);
     try {
       const result = await retryProvisioning({ projectId });
-      setProvisioningMessage(
-        result === "queued"
-          ? "Provisioning was queued. This page will show the address after encrypted storage is confirmed."
-          : result === "already_pending"
-            ? "Provisioning is already in progress."
-            : result === "already_ready"
-              ? "A managed relayer is already ready."
+      if (result === "queued" || result === "already_pending") {
+        setProvisioningQueued(true);
+        setSetupFeedback({
+          tone: "info",
+          message:
+            result === "queued"
+              ? "Wallet generation is queued. The public address will appear after encrypted custody is committed."
+              : "Wallet generation is already in progress.",
+        });
+      } else {
+        setProvisioningQueued(false);
+        setSetupFeedback({
+          tone: "info",
+          message:
+            result === "already_ready"
+              ? "A managed relayer is already ready. Its current address will be shown after readback."
               : "A manually configured relayer is already present and was left unchanged.",
-      );
+        });
+      }
+      if (provisioningStateRef.current === "ready" || provisioningStateRef.current === "failed") {
+        setProvisioningQueued(false);
+      }
     } catch {
-      setProvisioningMessage("Provisioning could not be queued. Refresh the page and try again.");
+      setProvisioningQueued(false);
+      setSetupFeedback({
+        tone: "error",
+        message: "Wallet generation could not be queued. Your project was not changed; try again.",
+      });
     } finally {
       setProvisioningBusy(false);
     }
@@ -435,87 +471,170 @@ export function GasRelayerPanel({
   }
 
   const managedRelayer = provisioning?.managed === true;
+  const provisioningIsPending = provisioning?.state === "pending" || provisioningQueued;
+  const provisioningErrorDescription =
+    provisioning?.state === "failed"
+      ? provisioning.errorCode === "provisioning_disabled"
+        ? "Managed relayer provisioning is disabled for this deployment. An operator must enable the Testnet feature flag before retrying."
+        : provisioning.errorCode === "configuration_unavailable"
+          ? "The deployment encryption keyring or deployment identity is not configured. No signer or address was stored."
+          : provisioning.errorCode === "configuration_invalid"
+            ? "The deployment encryption keyring is invalid. No signer or address was stored."
+            : provisioning.errorCode === "relayer_already_configured"
+              ? "A relayer appeared while the wallet was being generated. No replacement address was published; contact an owner before retrying."
+              : "Wallet generation did not complete. No replacement address was published; resolve the setup issue and retry."
+      : null;
 
   return (
     <div className="grid min-w-0 gap-4">
-      <Card>
-        <CardHeader>
-          <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-            <div className="grid min-w-0 gap-2">
-              <h2 className="text-lg font-semibold">Relayer funding &amp; balance</h2>
-              <CardDescription>
-                Verified native XLM observation for the configured Testnet fee relayer.
-              </CardDescription>
-            </div>
-            {relayer ? (
-              <Badge variant={relayer.status === "active" ? "success" : "gray"}>
-                {relayer.status === "active" ? "Metadata active" : "Metadata disabled"}
-              </Badge>
+      {relayer === null ? (
+        <Card className="border-primary/30 shadow-sm">
+          <CardHeader>
+            <h2 className="text-xl font-semibold">Generate a Testnet relayer wallet</h2>
+            <CardDescription>
+              Velo generates and stores the signer in encrypted custody. Only the public address is
+              shown, after the encrypted record is committed. Sponsorship starts disabled; fund the
+              wallet and explicitly activate sponsorship when you are ready.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid min-w-0 gap-4">
+            {provisioning === undefined ? (
+              <Alert aria-live="polite">
+                <InfoIcon />
+                <AlertTitle>Checking relayer setup</AlertTitle>
+                <AlertDescription>
+                  The project&apos;s current wallet and provisioning state are loading.
+                </AlertDescription>
+              </Alert>
+            ) : provisioningIsPending ? (
+              <Alert aria-live="polite">
+                <RefreshCwIcon className="animate-spin" />
+                <AlertTitle>Relayer wallet generation in progress</AlertTitle>
+                <AlertDescription>
+                  The address will appear after encrypted custody is committed. No address is
+                  published while generation is pending.
+                </AlertDescription>
+              </Alert>
+            ) : provisioningErrorDescription ? (
+              <Alert variant="destructive" aria-live="polite">
+                <AlertCircleIcon />
+                <AlertTitle>Relayer wallet setup needs attention</AlertTitle>
+                <AlertDescription>{provisioningErrorDescription}</AlertDescription>
+              </Alert>
+            ) : provisioning?.state === "ready" ? (
+              <Alert aria-live="polite">
+                <InfoIcon />
+                <AlertTitle>Relayer wallet is ready</AlertTitle>
+                <AlertDescription>
+                  Waiting for the committed public address to load before showing funding controls.
+                </AlertDescription>
+              </Alert>
+            ) : (
+              <Alert>
+                <InfoIcon />
+                <AlertTitle>No relayer wallet is configured</AlertTitle>
+                <AlertDescription>
+                  Generate one for this project. Velo will not expose its address or enable
+                  sponsorship until encrypted custody is committed.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {setupFeedback ? (
+              <Alert
+                variant={setupFeedback.tone === "error" ? "destructive" : undefined}
+                role={setupFeedback.tone === "error" ? "alert" : "status"}
+                aria-live="polite"
+              >
+                {setupFeedback.tone === "error" ? <AlertCircleIcon /> : <InfoIcon />}
+                <AlertTitle>
+                  {setupFeedback.tone === "error" ? "Request could not be queued" : "Setup status"}
+                </AlertTitle>
+                <AlertDescription>{setupFeedback.message}</AlertDescription>
+              </Alert>
             ) : null}
-          </div>
-        </CardHeader>
-        <CardContent className="grid min-w-0 gap-5">
-          {relayer === undefined ? <GasRelayerLoading /> : null}
 
-          {relayer === null ? (
-            <Alert>
-              {provisioning?.state === "pending" ? <RefreshCwIcon /> : <InfoIcon />}
-              <AlertTitle>
-                {provisioning?.state === "pending"
-                  ? "Relayer provisioning in progress"
-                  : provisioning?.state === "failed"
-                    ? "Relayer provisioning needs attention"
-                    : "No relayer configured"}
-              </AlertTitle>
-              <AlertDescription>
-                {provisioning?.state === "pending"
-                  ? "The Testnet address will appear after its encrypted signer record is committed."
-                  : provisioning?.state === "failed"
-                    ? provisioning.errorCode === "provisioning_disabled"
-                      ? "Managed relayer provisioning is disabled for this deployment. An operator must enable the Testnet feature flag before retrying."
-                      : provisioning.errorCode === "configuration_unavailable"
-                        ? "The deployment encryption key or deployment identity is not configured. No signer or address was stored."
-                        : provisioning.errorCode === "configuration_invalid"
-                          ? "The deployment encryption keyring is invalid. No signer or address was stored."
-                          : "Provisioning did not complete. No replacement address was published; an owner can retry after resolving the setup issue."
-                    : "This project has no configured public Testnet relayer address to fund or verify."}
-              </AlertDescription>
-            </Alert>
-          ) : null}
+            {role === "owner" ? (
+              <Button
+                type="button"
+                onClick={() => void handleProvisioningRetry()}
+                disabled={
+                  provisioningBusy ||
+                  provisioningIsPending ||
+                  provisioning?.state === undefined ||
+                  provisioning?.state === "ready"
+                }
+              >
+                <RefreshCwIcon
+                  className={provisioningBusy || provisioningIsPending ? "animate-spin" : undefined}
+                />
+                {provisioningBusy
+                  ? "Queuing wallet generation…"
+                  : provisioningIsPending
+                    ? "Generating wallet…"
+                    : provisioning?.state === "failed"
+                      ? "Retry wallet generation"
+                      : provisioning?.state === "ready"
+                        ? "Wallet generated"
+                        : provisioning?.state === "not_configured"
+                          ? "Generate Testnet relayer wallet"
+                          : "Checking setup…"}
+              </Button>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Only project owners can generate a relayer wallet. Ask an owner to continue setup.
+              </p>
+            )}
 
-          {role === "owner" &&
-          relayer === null &&
-          (provisioning?.state === "failed" || provisioning?.state === "not_configured") ? (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => void handleProvisioningRetry()}
-              disabled={provisioningBusy}
-            >
-              <RefreshCwIcon className={provisioningBusy ? "animate-spin" : undefined} />
-              {provisioningBusy
-                ? "Provisioning…"
-                : provisioning.state === "failed"
-                  ? "Retry provisioning"
-                  : "Provision managed Testnet relayer"}
-            </Button>
-          ) : null}
+            {role === "owner" &&
+            (provisioning?.state === "not_configured" || provisioning?.state === "failed") ? (
+              <details className="rounded-md border border-border/70 px-4 py-3">
+                <summary className="cursor-pointer text-sm font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none">
+                  Advanced: configure an existing relayer
+                </summary>
+                <div className="pt-4">
+                  <GasRelayerConfigurationForm projectId={projectId} relayer={null} />
+                </div>
+              </details>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+              <div className="grid min-w-0 gap-2">
+                <h2 className="text-lg font-semibold">Relayer funding &amp; balance</h2>
+                <CardDescription>
+                  Verified native XLM observation for the configured Testnet fee relayer.
+                </CardDescription>
+              </div>
+              {relayer ? (
+                <Badge variant={relayer.status === "active" ? "success" : "gray"}>
+                  {relayer.status === "active" ? "Metadata active" : "Metadata disabled"}
+                </Badge>
+              ) : null}
+            </div>
+          </CardHeader>
+          <CardContent className="grid min-w-0 gap-5">
+            {relayer === undefined ? <GasRelayerLoading /> : null}
 
-          {relayer ? (
-            <ConfiguredRelayerDetails
-              projectId={projectId}
-              role={role}
-              relayer={relayer}
-              now={now}
-              canRefresh={canRefresh}
-              cooldownRemaining={cooldownRemaining}
-              isRefreshing={isRefreshing}
-              feedback={feedback}
-              onRefresh={handleRefresh}
-            />
-          ) : null}
-        </CardContent>
-      </Card>
+            {relayer ? (
+              <ConfiguredRelayerDetails
+                projectId={projectId}
+                role={role}
+                relayer={relayer}
+                now={now}
+                canRefresh={canRefresh}
+                cooldownRemaining={cooldownRemaining}
+                isRefreshing={isRefreshing}
+                feedback={feedback}
+                onRefresh={handleRefresh}
+              />
+            ) : null}
+          </CardContent>
+        </Card>
+      )}
 
       {managedRelayer && provisioning?.state === "ready" && role === "owner" ? (
         <Card>
@@ -577,7 +696,7 @@ export function GasRelayerPanel({
         </>
       ) : null}
 
-      {role === "owner" && relayer !== undefined && !managedRelayer ? (
+      {role === "owner" && relayer !== undefined && relayer !== null && !managedRelayer ? (
         <GasRelayerConfigurationForm projectId={projectId} relayer={relayer} />
       ) : null}
     </div>

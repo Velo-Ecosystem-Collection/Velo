@@ -17,6 +17,7 @@ const screenshotPath = (name: string) =>
 const ownerProjectUrl = "/projects/project-gas-owner/gas";
 const memberProjectUrl = "/projects/project-gas-member/gas";
 const validContractId = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM";
+const managedRelayerPublicKey = "GA54SPC34JL3I57ENALTO2V26XOFFG4VGQLFQXDGF6KJ5TJY7ODY56ST";
 const updatedRelayerPublicKey = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 declare global {
@@ -60,7 +61,12 @@ async function gotoGas(page: Page, config: GasFixtureConfig, url = ownerProjectU
   await expect.poll(() => page.evaluate(() => Boolean(window.__veloGasE2E))).toBe(true);
 }
 
-type FixtureCommand = "reactive-update" | "stored-policy-update" | "disconnect" | "connect";
+type FixtureCommand =
+  | "reactive-update"
+  | "stored-policy-update"
+  | "provisioning-commit"
+  | "disconnect"
+  | "connect";
 
 async function fixture(page: Page, command: FixtureCommand) {
   await page.evaluate((action) => {
@@ -72,6 +78,9 @@ async function fixture(page: Page, command: FixtureCommand) {
         return;
       case "stored-policy-update":
         api.simulateStoredPolicyUpdate();
+        return;
+      case "provisioning-commit":
+        api.simulateProvisioningCommit();
         return;
       case "disconnect":
         api.setConnection(false);
@@ -111,6 +120,17 @@ async function resolveNext(page: Page, functionName?: string, value?: unknown) {
       api.resolveNext(name, result);
     },
     { name: functionName, result: value },
+  );
+}
+
+async function rejectNext(page: Page, functionName?: string, message?: string) {
+  await page.evaluate(
+    ({ name, rejection }) => {
+      const api = window.__veloGasE2E;
+      if (!api) throw new Error("Gas E2E fixture API was not installed");
+      api.rejectNext(name, rejection);
+    },
+    { name: functionName, rejection: message },
   );
 }
 
@@ -253,6 +273,111 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await expect(page.getByRole("textbox", { name: "Relayer public address" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Save relayer configuration" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Refresh balance" })).toBeVisible();
+  });
+
+  test("lets owners generate a wallet for an older project and publishes it after custody commits", async ({
+    page,
+  }) => {
+    await gotoGas(page, {
+      session: "owner",
+      projectId: "project-gas-owner",
+      scenario: "existing-project-no-relayer",
+    });
+
+    await expect(
+      page.getByRole("heading", { name: "Generate a Testnet relayer wallet" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/Velo generates and stores the signer in encrypted custody/i),
+    ).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Relayer public address" })).toHaveCount(0);
+
+    const advanced = page.getByText("Advanced: configure an existing relayer", { exact: true });
+    await advanced.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("textbox", { name: "Relayer public address" })).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("textbox", { name: "Relayer public address" })).toHaveCount(0);
+
+    const generate = page.getByRole("button", { name: "Generate Testnet relayer wallet" });
+    await generate.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("button", { name: "Queuing wallet generation…" })).toBeDisabled();
+    await rejectNext(page, "gas/mutations:retryProvisioning", "fixture queue failure");
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Wallet generation could not be queued" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Generate Testnet relayer wallet" }),
+    ).toBeEnabled();
+
+    await page.getByRole("button", { name: "Generate Testnet relayer wallet" }).click();
+    await expect(page.getByRole("button", { name: "Queuing wallet generation…" })).toBeDisabled();
+    await resolveNext(page, "gas/mutations:retryProvisioning");
+    await expect(
+      page.getByText("Relayer wallet generation in progress", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Generating wallet…" })).toBeDisabled();
+    await expect(page.getByText(managedRelayerPublicKey, { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Prepare funding" })).toHaveCount(0);
+
+    const provisioningCalls = (await calls(page)).filter(
+      (call) => call.functionName === "gas/mutations:retryProvisioning",
+    );
+    expect(provisioningCalls).toHaveLength(2);
+    expect(provisioningCalls.map((call) => call.status).sort()).toEqual(["fulfilled", "rejected"]);
+
+    await fixture(page, "provisioning-commit");
+    await expect(page.getByText(managedRelayerPublicKey, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Prepare funding" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Review sponsorship settings" })).toBeVisible();
+
+    await configureFixture(page, {
+      session: "editor",
+      projectId: "project-gas-owner",
+      scenario: "existing-project-no-relayer",
+    });
+    await expect(
+      page.getByRole("heading", { name: "Generate a Testnet relayer wallet" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Generate Testnet relayer wallet" })).toHaveCount(
+      0,
+    );
+
+    await configureFixture(page, {
+      session: "viewer",
+      projectId: "project-gas-member",
+      scenario: "existing-project-no-relayer",
+    });
+    await page.goto(memberProjectUrl);
+    await expect(
+      page.getByRole("heading", { name: "Generate a Testnet relayer wallet" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Generate Testnet relayer wallet" })).toHaveCount(
+      0,
+    );
+  });
+
+  test("shows deployment configuration failures and manual setup inside the no-relayer card", async ({
+    page,
+  }) => {
+    await gotoGas(page, {
+      session: "owner",
+      projectId: "project-gas-owner",
+      scenario: "existing-project-config-error",
+    });
+
+    await expect(
+      page.getByRole("heading", { name: "Generate a Testnet relayer wallet" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/deployment encryption keyring or deployment identity is not configured/i),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry wallet generation" })).toBeEnabled();
+    await expect(
+      page.getByText("Advanced: configure an existing relayer", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Relayer public address" })).toHaveCount(0);
   });
 
   test("saves normalized policy arguments once and applies stored readback", async ({ page }) => {

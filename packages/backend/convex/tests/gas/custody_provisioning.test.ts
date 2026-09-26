@@ -88,6 +88,23 @@ async function createPendingProject(t: TestContext): Promise<Id<"projects">> {
   });
 }
 
+async function createExistingProjectWithoutRelayer(t: TestContext): Promise<Id<"projects">> {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("projects", {
+      name: "Existing project without relayer",
+      slug: `existing-without-relayer-${Math.random().toString(36).slice(2)}`,
+      description: "Legacy project awaiting owner-initiated Testnet wallet setup",
+      metadataJson: "{}",
+      metadataHash: "0".repeat(64),
+      ownerAddress: OWNER,
+      ownerTokenIdentifier: TOKEN_IDENTIFIER,
+      status: "registered",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  });
+}
+
 test("new project queues provisioning atomically and publishes only the committed address", async () => {
   const t = convexTest(schema, modules);
   const owner = asOwner(t);
@@ -145,6 +162,95 @@ test("new project queues provisioning atomically and publishes only the committe
       "state",
     ]);
   });
+});
+
+test("an owner can provision an existing project with no custody or relayer and publish only committed custody", async () => {
+  vi.useFakeTimers();
+  try {
+    const t = convexTest(schema, modules);
+    const owner = asOwner(t);
+    const projectId = await createExistingProjectWithoutRelayer(t);
+
+    expect(await owner.query(api.gas.queries.getProvisioningStatus, { projectId })).toEqual({
+      state: "not_configured",
+      managed: false,
+      publicKey: null,
+      relayerStatus: null,
+      errorCode: null,
+    });
+    expect(await owner.query(api.gas.queries.getRelayerAccount, { projectId })).toBeNull();
+    expect(
+      await t.run(async (ctx) =>
+        ctx.db
+          .query("gasRelayerCustody")
+          .withIndex("by_project_id", (q) => q.eq("projectId", projectId))
+          .take(2),
+      ),
+    ).toHaveLength(0);
+
+    await withProvisioningEnvironment(async () => {
+      expect(await owner.mutation(api.gas.mutations.retryProvisioning, { projectId })).toBe(
+        "queued",
+      );
+      const queuedStatus = await owner.query(api.gas.queries.getProvisioningStatus, {
+        projectId,
+      });
+      if (queuedStatus.state === "pending") {
+        expect(queuedStatus.publicKey).toBeNull();
+        expect(await owner.query(api.gas.queries.getRelayerAccount, { projectId })).toBeNull();
+      }
+
+      const firstAttempt = await t.run(async (ctx) =>
+        ctx.db
+          .query("gasRelayerCustody")
+          .withIndex("by_project_id", (q) => q.eq("projectId", projectId))
+          .unique(),
+      );
+      expect(firstAttempt?.attemptCount).toBe(1);
+      expect(["pending", "ready"]).toContain(firstAttempt?.status);
+
+      const duplicateResult = await owner.mutation(api.gas.mutations.retryProvisioning, {
+        projectId,
+      });
+      expect(["already_pending", "already_ready"]).toContain(duplicateResult);
+
+      await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+
+      const status = await owner.query(api.gas.queries.getProvisioningStatus, { projectId });
+      expect(status).toMatchObject({ state: "ready", managed: true, errorCode: null });
+      expect(status.publicKey).toMatch(/^G[A-Z2-7]{55}$/);
+      const custody = await t.run(async (ctx) =>
+        ctx.db
+          .query("gasRelayerCustody")
+          .withIndex("by_project_id", (q) => q.eq("projectId", projectId))
+          .unique(),
+      );
+      const relayer = await owner.query(api.gas.queries.getRelayerAccount, { projectId });
+      expect(custody?.status).toBe("ready");
+      expect(custody?.ciphertext).toBeTruthy();
+      expect(custody?.nonce).toBeTruthy();
+      expect(custody?.authTag).toBeTruthy();
+      expect(relayer?.publicKey).toBe(status.publicKey);
+      expect(relayer?.status).toBe("active");
+      expect(await owner.query(api.gas.queries.getPolicy, { projectId })).toBeNull();
+      expect(Object.keys(status).sort()).toEqual([
+        "errorCode",
+        "managed",
+        "publicKey",
+        "relayerStatus",
+        "state",
+      ]);
+      expect(JSON.stringify(status)).not.toMatch(
+        /ciphertext|nonce|authTag|deploymentId|keyVersion/,
+      );
+      expect(custody?.attemptCount).toBe(1);
+      expect(await owner.mutation(api.gas.mutations.retryProvisioning, { projectId })).toBe(
+        "already_ready",
+      );
+    });
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("concurrent provisioning workers commit one encrypted candidate and discard the rest", async () => {

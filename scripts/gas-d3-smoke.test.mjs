@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -519,7 +520,7 @@ test("uses preflight as the CLI default and verifies reports offline without cre
   assert.equal(parseD3SmokeArgs(["--help"]).help, true);
   const fixture = makeFixture({ handoffStatuses: ["succeeded"] });
   const report = await runD3SmokeExecution({ config: CONFIG, dependencies: fixture.dependencies });
-  const directory = await mkdtemp(path.join("/private/tmp", "velo-gas-d3-"));
+  const directory = await mkdtemp(path.join(tmpdir(), "velo-gas-d3-"));
   const reportPath = path.join(directory, "report.json");
   await writeD3SmokeReport(report, reportPath, "/");
   const originalFetch = globalThis.fetch;

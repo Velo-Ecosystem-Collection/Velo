@@ -56,11 +56,18 @@ function jsonResponse(payload: unknown, status = 200, headers?: HeadersInit): Re
   });
 }
 
-function jsonResponseWithoutStream(payload: unknown, status = 200): Response {
+function jsonResponseWithoutStream(
+  payload: unknown,
+  status = 200,
+  headers?: HeadersInit,
+): Response {
   return {
     ok: status >= 200 && status < 300,
     status,
-    headers: new Headers({ "Content-Type": "application/json" }),
+    headers: new Headers({
+      "Content-Type": "application/json",
+      ...Object.fromEntries(new Headers(headers)),
+    }),
     text: async () => JSON.stringify(payload),
   } as Response;
 }
@@ -1332,18 +1339,18 @@ test("gas.waitForResult retries network, timeout, 408, 429, and 5xx failures", a
   globalThis.fetch = async () => {
     calls++;
     if (calls === 1) {
-      return jsonResponse({ error: { code: "request_timeout" } }, 408);
+      return jsonResponseWithoutStream({ error: { code: "request_timeout" } }, 408);
     }
     if (calls === 2) {
-      return jsonResponse({ error: { code: "temporary_rate_limit" } }, 429, {
+      return jsonResponseWithoutStream({ error: { code: "temporary_rate_limit" } }, 429, {
         "Retry-After": "0",
       });
     }
     if (calls === 3) {
-      return jsonResponse({ error: { code: "temporary_failure" } }, 500);
+      return jsonResponseWithoutStream({ error: { code: "temporary_failure" } }, 500);
     }
     if (calls === 4) throw new TypeError("fetch failed");
-    return jsonResponse(validSubmitResult({ status: "succeeded" }));
+    return jsonResponseWithoutStream(validSubmitResult({ status: "succeeded" }));
   };
 
   clock.install();

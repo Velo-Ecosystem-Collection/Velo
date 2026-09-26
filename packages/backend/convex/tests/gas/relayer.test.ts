@@ -184,7 +184,97 @@ test("resolves active Testnet custody and verifies an in-memory signature", asyn
   });
 });
 
-test("managed custody decrypts only in the signer action and verifies the stored address", async () => {
+test("internal custody configuration status returns version metadata but never key material", async () => {
+  const t = convexTest(schema, modules);
+  const key = String.fromCharCode(...new Uint8Array(32).fill(11));
+  const keyring = JSON.stringify({ activeVersion: "v1", keys: { v1: btoa(key) } });
+
+  await withManagedCustodyEnvironment(
+    {
+      keyring,
+      deploymentId: " dev:gas-custody-status ",
+      enabled: "true",
+    },
+    async () => {
+      const status = await t.action(internal.gas.relayer.custodyConfigurationStatus, {});
+      expect(status).toEqual({
+        deploymentId: "dev:gas-custody-status",
+        network: GAS_NETWORK,
+        provisioningEnabled: true,
+        keyringStatus: "valid",
+        activeKeyVersion: "v1",
+        keyVersionCount: 1,
+      });
+      expect(JSON.stringify(status)).not.toContain(key);
+      expect(JSON.stringify(status)).not.toContain(btoa(key));
+      expect(status).not.toHaveProperty("keys");
+    },
+  );
+});
+
+test("custody configuration status reads the current environment object", async () => {
+  const t = convexTest(schema, modules);
+  const key = String.fromCharCode(...new Uint8Array(32).fill(13));
+  const previousEnvironment = process.env;
+  process.env = {
+    ...previousEnvironment,
+    VELO_GAS_CUSTODY_KEYRING_JSON: JSON.stringify({ activeVersion: "v1", keys: { v1: btoa(key) } }),
+    VELO_GAS_CUSTODY_DEPLOYMENT_ID: "prod:runtime-environment-check",
+    VELO_GAS_MANAGED_RELAYER_PROVISIONING_ENABLED: "true",
+  };
+
+  try {
+    const status = await t.action(internal.gas.relayer.custodyConfigurationStatus, {});
+    expect(status).toEqual({
+      deploymentId: "prod:runtime-environment-check",
+      network: GAS_NETWORK,
+      provisioningEnabled: true,
+      keyringStatus: "valid",
+      activeKeyVersion: "v1",
+      keyVersionCount: 1,
+    });
+    expect(JSON.stringify(status)).not.toContain(key);
+  } finally {
+    process.env = previousEnvironment;
+  }
+});
+
+test("internal custody configuration status distinguishes absent and invalid keyrings safely", async () => {
+  const t = convexTest(schema, modules);
+
+  await withManagedCustodyEnvironment(
+    { keyring: undefined, deploymentId: undefined, enabled: undefined },
+    async () => {
+      const status = await t.action(internal.gas.relayer.custodyConfigurationStatus, {});
+      expect(status).toEqual({
+        deploymentId: null,
+        network: GAS_NETWORK,
+        provisioningEnabled: false,
+        keyringStatus: "missing",
+        activeKeyVersion: null,
+        keyVersionCount: 0,
+      });
+    },
+  );
+
+  await withManagedCustodyEnvironment(
+    { keyring: "not-a-keyring", deploymentId: "dev:gas-custody-status", enabled: "false" },
+    async () => {
+      const status = await t.action(internal.gas.relayer.custodyConfigurationStatus, {});
+      expect(status).toEqual({
+        deploymentId: "dev:gas-custody-status",
+        network: GAS_NETWORK,
+        provisioningEnabled: false,
+        keyringStatus: "invalid",
+        activeKeyVersion: null,
+        keyVersionCount: 0,
+      });
+      expect(JSON.stringify(status)).not.toContain("not-a-keyring");
+    },
+  );
+});
+
+test("rollback disables provisioning without blocking signing for existing managed custody", async () => {
   const t = convexTest(schema, modules);
   const projectId = await createProject(t, "encrypted-ready");
   const deploymentId = "dev:gas-custody-tests";
@@ -226,13 +316,16 @@ test("managed custody decrypts only in the signer action and verifies the stored
   });
 
   await withManagedCustodyEnvironment(
-    { keyring: keyringJson, deploymentId, enabled: "true" },
+    { keyring: keyringJson, deploymentId, enabled: "false" },
     async () => {
       expect(await t.action(internal.gas.relayer.readiness, { projectId })).toEqual({
         status: "ready",
         network: GAS_NETWORK,
         publicKey: GAS_TEST_RELAYER_KEYPAIR.publicKey(),
       });
+      expect(
+        (await t.action(internal.gas.relayer.custodyConfigurationStatus, {})).provisioningEnabled,
+      ).toBe(false);
       const signature = await withTestnetRelayerSigner(
         actionContext(
           {

@@ -325,7 +325,9 @@ workspace setup and recovery guidance.
 
 The package is published as ESM JavaScript with TypeScript declarations. The
 Gas Station methods are Testnet-only during alpha and require an authorized
-project API key on a trusted server.
+project API key on a trusted server. Use a **Gas Station · Testnet** key
+(`tg_test_...`) for Gas methods; a newly generated general API key is not
+authorized for Gas endpoints.
 
 ### Dual-Anchor Routing (V2)
 

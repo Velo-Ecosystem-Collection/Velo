@@ -108,6 +108,17 @@ export const markRegistrationSynced = mutation({
       throw new Error("Project has no registration transaction to sync");
     }
 
+    const registryProjectId = args.registryProjectId;
+    if (registryProjectId !== undefined) {
+      const registryMatches = await ctx.db
+        .query("projects")
+        .withIndex("by_registry_project_id", (q) => q.eq("registryProjectId", registryProjectId))
+        .take(2);
+      if (registryMatches.some((match) => match._id !== project._id)) {
+        throw new Error("Registry project ID is already assigned to another Velo project");
+      }
+    }
+
     const now = Date.now();
     await ctx.db.patch(args.id, {
       status: "registered",
@@ -355,17 +366,19 @@ export const generateApiKey = mutation({
     id: v.id("projects"),
     label: v.string(),
     paymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
+    purpose: v.optional(v.union(v.literal("general"), v.literal("gas"))),
   },
   handler: async (ctx, args) => {
     await requireProjectOwner(ctx, args.id);
 
-    // Generate secure random API key token: tk_live_<32 hex chars>
+    const purpose = args.purpose ?? "general";
+    const keyPrefix = purpose === "gas" ? "tg_test_" : "tk_live_";
     const randomBytes = new Uint8Array(16);
     crypto.getRandomValues(randomBytes);
     const token = Array.from(randomBytes)
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
-    const rawKey = `tk_live_${token}`;
+    const rawKey = `${keyPrefix}${token}`;
 
     // Hash the rawKey using SHA-256
     const encoder = new TextEncoder();
@@ -378,9 +391,12 @@ export const generateApiKey = mutation({
     await ctx.db.insert("apiKeys", {
       projectId: args.id,
       keyHash: apiKeyHash,
-      prefix: `tk_live_${token.slice(0, 4)}...${token.slice(-4)}`,
+      prefix: `${keyPrefix}${token.slice(0, 4)}...${token.slice(-4)}`,
       label: args.label.trim() || "Default Key",
-      paymentAnchor: args.paymentAnchor,
+      ...(purpose === "general" && args.paymentAnchor !== undefined
+        ? { paymentAnchor: args.paymentAnchor }
+        : {}),
+      purpose,
       createdAt: now,
       requestCount: 0,
       revoked: false,
@@ -399,6 +415,7 @@ export const generateApiKeyInternal = internalMutation({
     id: v.id("projects"),
     label: v.string(),
     paymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
+    purpose: v.optional(v.union(v.literal("general"), v.literal("gas"))),
   },
   handler: async (ctx, args) => {
     const project = await ctx.db.get(args.id);
@@ -406,12 +423,14 @@ export const generateApiKeyInternal = internalMutation({
       throw new Error("Project is retired or unavailable");
     }
 
+    const purpose = args.purpose ?? "general";
+    const keyPrefix = purpose === "gas" ? "tg_test_" : "tk_live_";
     const randomBytes = new Uint8Array(16);
     crypto.getRandomValues(randomBytes);
     const token = Array.from(randomBytes)
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
-    const rawKey = `tk_live_${token}`;
+    const rawKey = `${keyPrefix}${token}`;
 
     const encoder = new TextEncoder();
     const data = encoder.encode(rawKey);
@@ -423,9 +442,12 @@ export const generateApiKeyInternal = internalMutation({
     await ctx.db.insert("apiKeys", {
       projectId: args.id,
       keyHash: apiKeyHash,
-      prefix: `tk_live_${token.slice(0, 4)}...${token.slice(-4)}`,
+      prefix: `${keyPrefix}${token.slice(0, 4)}...${token.slice(-4)}`,
       label: args.label.trim() || "Default Key",
-      paymentAnchor: args.paymentAnchor,
+      ...(purpose === "general" && args.paymentAnchor !== undefined
+        ? { paymentAnchor: args.paymentAnchor }
+        : {}),
+      purpose,
       createdAt: now,
       requestCount: 0,
       revoked: false,

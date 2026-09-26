@@ -74,6 +74,7 @@ async function addApiKey(
   projectId: Id<"projects">,
   keyHash: string,
   revoked = false,
+  purpose?: "general" | "gas",
 ) {
   return await t.run(async (ctx) => {
     return await ctx.db.insert("apiKeys", {
@@ -81,6 +82,7 @@ async function addApiKey(
       keyHash,
       prefix: "tk_live_test...hash",
       label: "Gas authorization test key",
+      ...(purpose !== undefined ? { purpose } : {}),
       createdAt: NOW,
       requestCount: 0,
       revoked,
@@ -187,6 +189,29 @@ test("valid Gas API keys return only their stored project scope regardless of pa
     authorized: true,
     apiKeyId: absentPaymentGateKeyId,
     projectId: absentPaymentGateProjectId,
+  });
+});
+
+test("Gas authorization accepts Gas and legacy keys but rejects newly scoped general keys", async () => {
+  const t = convexTest(schema, modules);
+  const projectId = await createProject(t, OWNER);
+  const gasHash = "1".repeat(64);
+  const generalHash = "2".repeat(64);
+  const legacyHash = "3".repeat(64);
+  await addApiKey(t, projectId, gasHash, false, "gas");
+  await addApiKey(t, projectId, generalHash, false, "general");
+  await addApiKey(t, projectId, legacyHash);
+
+  await expect(t.query(async (ctx) => verifyApiKeyForGas(ctx, gasHash))).resolves.toMatchObject({
+    authorized: true,
+    projectId,
+  });
+  await expect(t.query(async (ctx) => verifyApiKeyForGas(ctx, generalHash))).resolves.toEqual({
+    authorized: false,
+  });
+  await expect(t.query(async (ctx) => verifyApiKeyForGas(ctx, legacyHash))).resolves.toMatchObject({
+    authorized: true,
+    projectId,
   });
 });
 

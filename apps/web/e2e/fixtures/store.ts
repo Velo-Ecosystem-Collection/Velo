@@ -23,6 +23,7 @@ export type GasFixtureScenario =
   | "existing-project-no-relayer"
   | "existing-project-config-error"
   | "managed-relayer"
+  | "managed-relayer-context-mismatch"
   | "managed-no-contracts"
   | "policy-denial"
   | "policy-read-error"
@@ -65,6 +66,19 @@ type FixtureSession = {
   address: string | null;
   roleByProject: Partial<Record<GasFixtureProjectId, "owner" | "editor" | "viewer">>;
   ownerProjects: GasFixtureProjectId[];
+};
+
+type FixtureApiKey = {
+  _id: string;
+  _creationTime: number;
+  label: string;
+  prefix: string;
+  purpose: "general" | "gas";
+  paymentAnchor?: "inhouse" | "pdax";
+  createdAt: number;
+  lastUsedAt?: number;
+  requestCount: number;
+  revoked: boolean;
 };
 
 type PaginationRecord = {
@@ -351,6 +365,10 @@ export class GasFixtureStore {
   private retiredProjectIds = new Set<GasFixtureProjectId>();
   private managedPolicyEnabled = false;
   private managedRelayerStatus: GasRelayerSnapshot["status"] = "active";
+  private apiKeys: Record<GasFixtureProjectId, FixtureApiKey[]> = {
+    "project-gas-owner": [],
+    "project-gas-member": [],
+  };
   private existingProjectProvisioningState: "not_configured" | "pending" | "ready" =
     "not_configured";
   private generatedRelayerReady = false;
@@ -394,6 +412,7 @@ export class GasFixtureStore {
     this.retiredProjectIds.clear();
     this.managedPolicyEnabled = false;
     this.managedRelayerStatus = "active";
+    this.apiKeys = { "project-gas-owner": [], "project-gas-member": [] };
     this.existingProjectProvisioningState = "not_configured";
     this.generatedRelayerReady = false;
     this.existingProjectManualRelayerReady = false;
@@ -669,8 +688,7 @@ export class GasFixtureStore {
             }
           : null;
       case "projects/query:listApiKeys":
-        // Integration guidance must render without exposing or inventing a credential.
-        return [];
+        return clone(projectId ? this.apiKeys[projectId] : []);
       case "gas/queries:getPolicy":
         if (config.scenario === "policy-read-error") {
           throw new Error("fixture policy provider failure");
@@ -700,6 +718,7 @@ export class GasFixtureStore {
             managed: true,
             publicKey: null,
             relayerStatus: null,
+            deploymentContextMatches: null,
             errorCode: "configuration_unavailable",
           };
         }
@@ -710,6 +729,7 @@ export class GasFixtureStore {
               managed: false,
               publicKey: relayers[projectId].publicKey,
               relayerStatus: relayers[projectId].status,
+              deploymentContextMatches: null,
               errorCode: null,
             };
           }
@@ -719,6 +739,7 @@ export class GasFixtureStore {
                 managed: true,
                 publicKey: relayers[projectId].publicKey,
                 relayerStatus: this.managedRelayerStatus,
+                deploymentContextMatches: true,
                 errorCode: null,
               }
             : {
@@ -726,8 +747,19 @@ export class GasFixtureStore {
                 managed: this.existingProjectProvisioningState === "pending",
                 publicKey: null,
                 relayerStatus: null,
+                deploymentContextMatches: null,
                 errorCode: null,
               };
+        }
+        if (config.scenario === "managed-relayer-context-mismatch") {
+          return {
+            state: "ready",
+            managed: true,
+            publicKey: relayers[projectId].publicKey,
+            relayerStatus: this.managedRelayerStatus,
+            deploymentContextMatches: false,
+            errorCode: null,
+          };
         }
         return this.config.scenario === "managed-relayer" ||
           this.config.scenario === "managed-no-contracts"
@@ -736,6 +768,7 @@ export class GasFixtureStore {
               managed: true,
               publicKey: relayers[projectId].publicKey,
               relayerStatus: this.managedRelayerStatus,
+              deploymentContextMatches: true,
               errorCode: null,
             }
           : {
@@ -743,6 +776,7 @@ export class GasFixtureStore {
               managed: false,
               publicKey: relayers[projectId]?.publicKey ?? null,
               relayerStatus: relayers[projectId]?.status ?? null,
+              deploymentContextMatches: null,
               errorCode: null,
             };
       case "gas/queries:getManagedActivationReview":
@@ -832,6 +866,36 @@ export class GasFixtureStore {
   }
 
   private defaultCompletion(call: GasFixtureCall): unknown {
+    if (call.functionName === "projects/mutation:generateApiKey") {
+      const args = call.args as {
+        id: GasFixtureProjectId;
+        label: string;
+        purpose?: "general" | "gas";
+        paymentAnchor?: "inhouse" | "pdax";
+      };
+      const purpose = args.purpose ?? "general";
+      const prefix = purpose === "gas" ? "tg_test_" : "tk_live_";
+      const token = "e".repeat(32);
+      const createdAt = Date.now();
+      this.apiKeys[args.id] = [
+        {
+          _id: `fixture-api-key-${this.apiKeys[args.id].length + 1}`,
+          _creationTime: createdAt,
+          label: args.label.trim() || "Default Key",
+          prefix: `${prefix}${token.slice(0, 4)}...${token.slice(-4)}`,
+          purpose,
+          ...(purpose === "general" && args.paymentAnchor !== undefined
+            ? { paymentAnchor: args.paymentAnchor }
+            : {}),
+          createdAt,
+          requestCount: 0,
+          revoked: false,
+        },
+        ...this.apiKeys[args.id],
+      ];
+      this.notify();
+      return { rawKey: `${prefix}${token}` };
+    }
     if (call.functionName === "projects/mutation:retire") {
       const args = call.args as { id: GasFixtureProjectId };
       this.retiredProjectIds.add(args.id);
@@ -1020,6 +1084,7 @@ export class GasFixtureStore {
       "gas/balance_action:confirmRelayerWithdrawal",
       "gas/balance_action:continueRelayerWithdrawal",
       "gas/balance_action:cancelRelayerWithdrawal",
+      "projects/mutation:generateApiKey",
       "projects/mutation:retire",
     ]);
     if (!supported.has(functionName)) {

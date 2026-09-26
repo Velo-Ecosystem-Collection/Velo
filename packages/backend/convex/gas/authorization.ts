@@ -4,6 +4,7 @@ import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { ProjectRole } from "../playground_projects/helpers";
 
+import { canUseGasApi } from "../api_keys/helpers";
 import { requireProjectRole } from "../playground_projects/helpers";
 import { requireIdentity } from "../projects/helpers";
 
@@ -100,7 +101,7 @@ export async function verifyApiKeyForGas(
   if (matchingApiKeys.length !== 1) return { authorized: false };
   const [apiKey] = matchingApiKeys;
 
-  if (!apiKey || apiKey.revoked) return { authorized: false };
+  if (!apiKey || apiKey.revoked || !canUseGasApi(apiKey)) return { authorized: false };
 
   const project = await ctx.db.get(apiKey.projectId);
   if (!project) return { authorized: false };
@@ -140,6 +141,7 @@ export async function revalidateGasApiKeyScope(
     keyedApiKey._id === apiKey._id &&
     apiKey.keyHash === args.apiKeyHash &&
     apiKey.projectId === args.projectId &&
+    canUseGasApi(apiKey) &&
     !apiKey.revoked,
   );
 }

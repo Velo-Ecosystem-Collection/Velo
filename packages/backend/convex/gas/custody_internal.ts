@@ -1,7 +1,10 @@
+import { v } from "convex/values";
+
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
 import { internal } from "../_generated/api";
+import { internalQuery } from "../_generated/server";
 import { GAS_NETWORK } from "./types";
 
 export type GasRelayerCustodyRecord = {
@@ -27,6 +30,58 @@ export type GasRelayerCustodyRecord = {
 };
 
 export type GasRelayerCustodyLookup = GasRelayerCustodyRecord | { status: "ambiguous" } | null;
+
+const managedCustodyInventorySummaryValidator = v.object({
+  totalRecords: v.number(),
+  byDeploymentId: v.array(
+    v.object({
+      deploymentId: v.union(v.string(), v.null()),
+      totalRecords: v.number(),
+      pending: v.number(),
+      ready: v.number(),
+      failed: v.number(),
+    }),
+  ),
+});
+
+/** Internal deployment audit summary; never returns project or ciphertext fields. */
+export const getManagedCustodyInventorySummary = internalQuery({
+  args: {},
+  returns: managedCustodyInventorySummaryValidator,
+  handler: async (ctx) => {
+    const custodyRecords = await ctx.db.query("gasRelayerCustody").collect();
+    const byDeploymentId = new Map<
+      string | null,
+      {
+        deploymentId: string | null;
+        totalRecords: number;
+        pending: number;
+        ready: number;
+        failed: number;
+      }
+    >();
+
+    for (const record of custodyRecords) {
+      const deploymentId = record.deploymentId ?? null;
+      let summary = byDeploymentId.get(deploymentId);
+      if (!summary) {
+        summary = { deploymentId, totalRecords: 0, pending: 0, ready: 0, failed: 0 };
+        byDeploymentId.set(deploymentId, summary);
+      }
+      summary.totalRecords += 1;
+      summary[record.status] += 1;
+    }
+
+    return {
+      totalRecords: custodyRecords.length,
+      byDeploymentId: [...byDeploymentId.values()].sort((a, b) => {
+        if (a.deploymentId === null) return b.deploymentId === null ? 0 : -1;
+        if (b.deploymentId === null) return 1;
+        return a.deploymentId.localeCompare(b.deploymentId);
+      }),
+    };
+  },
+});
 
 function newAttemptToken(): string {
   return globalThis.crypto.randomUUID();

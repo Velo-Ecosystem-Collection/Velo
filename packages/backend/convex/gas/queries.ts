@@ -22,6 +22,7 @@ import {
   projectRelayerAccount,
   relayerAccountProjectionValidator,
 } from "./projections";
+import { getGasRuntimeEnv } from "./runtime_env";
 import { gasCustodyErrorCodeValidator } from "./schema";
 import { readGasTelemetry, normalizeTelemetryDayKey } from "./telemetry";
 import { GAS_NETWORK } from "./types";
@@ -37,6 +38,7 @@ const gasRelayerProvisioningStatusValidator = v.object({
   managed: v.boolean(),
   publicKey: v.union(v.string(), v.null()),
   relayerStatus: v.union(v.literal("active"), v.literal("disabled"), v.null()),
+  deploymentContextMatches: v.union(v.boolean(), v.null()),
   errorCode: v.union(gasCustodyErrorCodeValidator, v.null()),
 });
 
@@ -254,6 +256,7 @@ export const getProvisioningStatus = query({
         managed: false,
         publicKey: relayer?.publicKey ?? null,
         relayerStatus: relayer?.status ?? null,
+        deploymentContextMatches: null,
         errorCode: null,
       };
     }
@@ -263,6 +266,7 @@ export const getProvisioningStatus = query({
         managed: true,
         publicKey: null,
         relayerStatus: null,
+        deploymentContextMatches: null,
         errorCode: null,
       };
     }
@@ -272,6 +276,7 @@ export const getProvisioningStatus = query({
         managed: true,
         publicKey: null,
         relayerStatus: null,
+        deploymentContextMatches: null,
         errorCode: custody.errorCode ?? "provisioning_failed",
       };
     }
@@ -281,14 +286,19 @@ export const getProvisioningStatus = query({
         managed: true,
         publicKey: null,
         relayerStatus: null,
+        deploymentContextMatches: null,
         errorCode: "provisioning_failed" as const,
       };
     }
+    const configuredDeploymentId = getGasRuntimeEnv().VELO_GAS_CUSTODY_DEPLOYMENT_ID?.trim();
     return {
       state: "ready" as const,
       managed: true,
       publicKey: custody.publicKey,
       relayerStatus: relayer?.status ?? null,
+      deploymentContextMatches: configuredDeploymentId
+        ? custody.deploymentId === configuredDeploymentId
+        : null,
       errorCode: null,
     };
   },

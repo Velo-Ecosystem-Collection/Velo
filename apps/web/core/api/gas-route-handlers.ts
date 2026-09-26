@@ -14,7 +14,9 @@ import { measureTelemetryStage, type RouteTelemetry } from "../observability.ts"
 import { getApiKeyFromRequest, hashApiKey } from "./auth.ts";
 import { veloErrorResponse } from "./payment-intents.ts";
 
-const API_KEY_PATTERN = /^tk_live_[a-f0-9]{32}$/;
+// `tk_live_` remains accepted for pre-purpose legacy keys; newly issued Gas
+// credentials use the explicit Testnet-only prefix.
+const API_KEY_PATTERN = /^(?:tk_live_|tg_test_)[a-f0-9]{32}$/;
 const CANONICAL_DECIMAL_PATTERN = /^(?:0|[1-9][0-9]*)$/;
 const GAS_MAX_STROOPS = 2n ** 63n - 1n;
 const GAS_FEE_OVERHEAD_STROOPS = 100n;

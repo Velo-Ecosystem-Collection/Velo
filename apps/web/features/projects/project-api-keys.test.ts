@@ -31,8 +31,26 @@ test("project api keys page uses existing Convex key APIs", () => {
   assert.match(apiKeysSource, /api\.projects\.query\.listApiKeys/);
   assert.match(apiKeysSource, /api\.projects\.mutation\.generateApiKey/);
   assert.match(apiKeysSource, /api\.projects\.mutation\.revokeApiKey/);
+  assert.match(apiKeysSource, /Gas Station · Testnet/);
+  assert.match(apiKeysSource, /VELO_GAS_API_KEY/);
+  assert.match(apiKeysSource, /purpose: selectedPurpose/);
+  assert.match(apiKeysSource, /\/api\/gas\/sponsor/);
+  assert.match(apiKeysSource, /\/api\/gas\/submit/);
   assert.match(apiKeysSource, /Save your API key/);
   assert.match(apiKeysSource, /Available API endpoints/);
+});
+
+test("legacy API keys without a purpose retain and display both endpoint scopes", () => {
+  assert.match(apiKeysSource, /activeKeys\.filter\(\(key\) => key\.purpose !== "gas"\)/);
+  assert.match(apiKeysSource, /activeKeys\.filter\(\(key\) => key\.purpose !== "general"\)/);
+  assert.match(apiKeysSource, /"Legacy · General \+ Gas"/);
+});
+
+test("legacy API keys remain available to the checkout integration selector", () => {
+  assert.match(
+    integrationSource,
+    /apiKeys\?\.filter\(\(k\) => !k\.revoked && k\.purpose !== "gas"\)/,
+  );
 });
 
 test("project api keys page uses theme-aware color tokens", () => {

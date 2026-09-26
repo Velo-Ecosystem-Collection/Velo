@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as api_keys_helpers from "../api_keys/helpers.js";
 import type * as authConfig from "../authConfig.js";
 import type * as billing_access from "../billing/access.js";
 import type * as billing_admin from "../billing/admin.js";
@@ -64,6 +65,7 @@ import type * as gas_reconciliation from "../gas/reconciliation.js";
 import type * as gas_reconciliation_action from "../gas/reconciliation_action.js";
 import type * as gas_relayer from "../gas/relayer.js";
 import type * as gas_retention from "../gas/retention.js";
+import type * as gas_runtime_env from "../gas/runtime_env.js";
 import type * as gas_settlement from "../gas/settlement.js";
 import type * as gas_submit from "../gas/submit.js";
 import type * as gas_telemetry from "../gas/telemetry.js";
@@ -156,6 +158,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "api_keys/helpers": typeof api_keys_helpers;
   authConfig: typeof authConfig;
   "billing/access": typeof billing_access;
   "billing/admin": typeof billing_admin;
@@ -212,6 +215,7 @@ declare const fullApi: ApiFromModules<{
   "gas/reconciliation_action": typeof gas_reconciliation_action;
   "gas/relayer": typeof gas_relayer;
   "gas/retention": typeof gas_retention;
+  "gas/runtime_env": typeof gas_runtime_env;
   "gas/settlement": typeof gas_settlement;
   "gas/submit": typeof gas_submit;
   "gas/telemetry": typeof gas_telemetry;

@@ -6,9 +6,10 @@ import type { GasExecutionStatus, GasSubmitResult } from "@carts1024/velo-sdk";
 import { isGasTerminalStatus, POST, toGasPublicResult } from "./route.ts";
 
 const ENVIRONMENT = {
-  VELO_GAS_API_KEY: "server-gas-api-key",
-  VELO_BASE_URL: "http://127.0.0.1:3000",
+  VELO_GAS_API_KEY: `tg_test_${"a".repeat(32)}`,
+  VELO_GAS_BASE_URL: "http://127.0.0.1:3000",
   VELO_GAS_DEMO_TOKEN: "terminal-demo-token",
+  VELO_GAS_ENV: "development",
 };
 const TRANSACTION_HASH = "a".repeat(64);
 const OUTER_TRANSACTION_HASH = "b".repeat(64);
@@ -70,8 +71,9 @@ function gasRequest(body: unknown, token = ENVIRONMENT.VELO_GAS_DEMO_TOKEN): Req
 async function withEnvironment<T>(callback: () => Promise<T>): Promise<T> {
   const original = {
     VELO_GAS_API_KEY: process.env.VELO_GAS_API_KEY,
-    VELO_BASE_URL: process.env.VELO_BASE_URL,
+    VELO_GAS_BASE_URL: process.env.VELO_GAS_BASE_URL,
     VELO_GAS_DEMO_TOKEN: process.env.VELO_GAS_DEMO_TOKEN,
+    VELO_GAS_ENV: process.env.VELO_GAS_ENV,
   };
   Object.assign(process.env, ENVIRONMENT);
   try {
@@ -170,6 +172,15 @@ test("unauthorized callers are rejected before their body is read or Velo is cal
         error: { code: "caller_unauthorized", message: "Gas demo authorization failed." },
       });
       assert.equal(pulls, 0);
+      assert.equal(calls, 0);
+
+      const oversizedTokenResponse = await POST(
+        gasRequest({ operationId: "operation-1", transactionXdr: "xdr" }, "x".repeat(257)),
+      );
+      assert.equal(oversizedTokenResponse.status, 401);
+      assert.deepEqual(await parseResponse(oversizedTokenResponse), {
+        error: { code: "caller_unauthorized", message: "Gas demo authorization failed." },
+      });
       assert.equal(calls, 0);
     });
   } finally {

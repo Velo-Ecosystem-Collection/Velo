@@ -168,19 +168,21 @@ test.beforeEach(async ({ page }) => {
 
 test.describe("integrated Gas Station simulated browser regressions", () => {
   test("covers owner/editor/viewer access and sidebar navigation", async ({ page }, testInfo) => {
-    await gotoGas(page, {
+    await seedFixture(page, {
       session: "owner",
       projectId: "project-gas-owner",
     });
+    await page.goto("/projects/project-gas-owner/api-keys");
+    await expect.poll(() => page.evaluate(() => Boolean(window.__veloGasE2E))).toBe(true);
 
-    await expect(page.getByRole("heading", { name: "Gas Station" })).toBeVisible();
-    await expect(page.getByText("owner access", { exact: true })).toBeVisible();
-    await expect(page.getByText("Owner Gas Project", { exact: true }).first()).toBeVisible();
-
+    await page.getByRole("button", { name: "Pay", exact: true }).click();
     const gasLink = page.locator(`a[href="${ownerProjectUrl}"]`).first();
     await expect(gasLink).toBeVisible();
     await gasLink.click();
     await expect(page).toHaveURL(new RegExp(`${ownerProjectUrl}$`));
+    await expect(page.getByRole("heading", { name: "Gas Station" })).toBeVisible();
+    await expect(page.getByText("owner access", { exact: true })).toBeVisible();
+    await expect(page.getByText("Owner Gas Project", { exact: true }).first()).toBeVisible();
 
     if (testInfo.project.name === "chromium") {
       await page.screenshot({
@@ -603,6 +605,25 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     ).toHaveCount(0);
   });
 
+  test("blocks account actions when managed custody belongs to another deployment", async ({
+    page,
+  }) => {
+    await gotoGas(page, {
+      session: "owner",
+      projectId: "project-gas-owner",
+      scenario: "managed-relayer-context-mismatch",
+    });
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Custody deployment context does not match" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Prepare funding" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Review sponsorship settings" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Pause sponsorship" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Resume relayer" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Prepare withdrawal" })).toHaveCount(0);
+  });
+
   test("protects pending completions when the wallet identity changes", async ({ page }) => {
     await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
     await page.getByLabel("Daily cap (XLM)").fill("8");
@@ -673,6 +694,52 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await expect(
       page.locator('section[aria-labelledby="gas-station-integration-title"]'),
     ).toHaveCount(0);
+  });
+
+  test("generates a Gas-only Testnet API key once for the project owner", async ({ page }) => {
+    await gotoGas(
+      page,
+      { session: "owner", projectId: "project-gas-owner" },
+      "/projects/project-gas-owner/api-keys",
+    );
+
+    await expect(page.getByRole("heading", { name: "API keys" })).toBeVisible();
+    await page.getByRole("button", { name: "Generate key" }).first().click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "Generate API key" })).toBeVisible();
+    await dialog.getByLabel("API access").selectOption("gas");
+    await dialog.getByLabel("Key label").fill("Express Gas server");
+    await expect(dialog.getByLabel("Payment routing")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Generate key" }).click();
+    await resolveNext(page, "projects/mutation:generateApiKey");
+
+    await expect(page.getByText("Save your API key")).toBeVisible();
+    await expect(page.getByText("VELO_GAS_API_KEY", { exact: true })).toBeVisible();
+    const rawKey = await page.locator(".select-all").first().textContent();
+    expect(rawKey).toMatch(/^tg_test_[a-f0-9]{32}$/);
+
+    const keyCalls = (await calls(page)).filter(
+      (call) => call.functionName === "projects/mutation:generateApiKey",
+    );
+    expect(keyCalls).toHaveLength(1);
+    expect(keyCalls[0]?.args).toMatchObject({
+      id: "project-gas-owner",
+      label: "Express Gas server",
+      purpose: "gas",
+    });
+    expect(keyCalls[0]?.args).not.toHaveProperty("paymentAnchor");
+
+    const keyRow = page.getByRole("row").filter({ hasText: "Express Gas server" });
+    await expect(keyRow.getByText("Gas Station · Testnet", { exact: true })).toBeVisible();
+    await expect(keyRow.getByText("tg_test_eeee...eeee", { exact: true })).toBeVisible();
+    expect(JSON.stringify(await calls(page))).not.toContain(rawKey);
+    expect(JSON.stringify(await calls(page))).not.toContain("keyHash");
+
+    await page.getByRole("button", { name: "I have copied the key" }).click();
+    await expect(page.getByText("Save your API key")).toHaveCount(0);
+    await expect(page.getByText(rawKey!, { exact: true })).toHaveCount(0);
+    await expect(keyRow.getByText("tg_test_eeee...eeee", { exact: true })).toBeVisible();
   });
 
   test("renders twenty-row pagination, reactive telemetry, and receipt lifecycle distinctions", async ({

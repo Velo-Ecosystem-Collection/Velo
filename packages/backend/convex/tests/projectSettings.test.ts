@@ -65,6 +65,49 @@ test("owner can update project settings without changing registry metadata", asy
   expect(after?.status).toBe("registered");
 });
 
+test("a Registry project ID cannot be assigned to two Velo projects", async () => {
+  const t = convexTest(schema, modules);
+  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const owner = asWallet(t, ownerAddress);
+  const firstProjectId = await createProject(
+    owner,
+    ownerAddress,
+    "registry-id-owner",
+    "Registry ID Owner",
+  );
+  const secondProjectId = await createProject(
+    owner,
+    ownerAddress,
+    "registry-id-contender",
+    "Registry ID Contender",
+  );
+
+  for (const id of [firstProjectId, secondProjectId]) {
+    await owner.mutation(api.projects.mutation.markRegistrationPending, {
+      id,
+      registrationTxHash: id === firstProjectId ? "a".repeat(64) : "b".repeat(64),
+    });
+  }
+  await owner.mutation(api.projects.mutation.markRegistrationSynced, {
+    id: firstProjectId,
+    registryProjectId: 42,
+    createdLedger: 123,
+  });
+
+  await expect(
+    owner.mutation(api.projects.mutation.markRegistrationSynced, {
+      id: secondProjectId,
+      registryProjectId: 42,
+      createdLedger: 124,
+    }),
+  ).rejects.toThrow("Registry project ID is already assigned to another Velo project");
+
+  const secondProject = await t.run(async (ctx) => await ctx.db.get(secondProjectId));
+  expect(secondProject?.status).toBe("pending_registration");
+  expect(secondProject?.registryProjectId).toBeUndefined();
+  expect(secondProject?.createdLedger).toBeUndefined();
+});
+
 test("another wallet cannot update settings or generate logo upload URL", async () => {
   const t = convexTest(schema, modules);
   const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";

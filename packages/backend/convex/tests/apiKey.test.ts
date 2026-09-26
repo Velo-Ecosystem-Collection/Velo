@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 import type { Doc } from "../_generated/dataModel";
 
 import { api } from "../_generated/api";
+import { verifyApiKeyForGas } from "../gas/authorization";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -36,7 +37,7 @@ test("project API key lifecycle", async () => {
   // Project starts with no API keys
   let keys = (await owner.query(api.projects.query.listApiKeys, {
     projectId,
-  })) as Doc<"apiKeys">[];
+  })) as Omit<Doc<"apiKeys">, "keyHash">[];
   expect(keys).toEqual([]);
 
   // Generate API key 1
@@ -55,6 +56,26 @@ test("project API key lifecycle", async () => {
 
   expect(rawKey2).toMatch(/^tk_live_[a-f0-9]{32}$/);
 
+  const { rawKey: gasRawKey } = await owner.mutation(api.projects.mutation.generateApiKey, {
+    id: projectId,
+    label: "Server Gas Key",
+    purpose: "gas",
+  });
+  expect(gasRawKey).toMatch(/^tg_test_[a-f0-9]{32}$/);
+
+  const legacyKeyHash = "f".repeat(64);
+  await t.run(async (ctx) =>
+    ctx.db.insert("apiKeys", {
+      projectId,
+      keyHash: legacyKeyHash,
+      prefix: "tk_live_f...f",
+      label: "Legacy Key",
+      createdAt: Date.now(),
+      requestCount: 0,
+      revoked: false,
+    }),
+  );
+
   // Compute the expected hashes to verify query lookups
   const computeHash = async (rawKey: string) => {
     const encoder = new TextEncoder();
@@ -66,25 +87,36 @@ test("project API key lifecycle", async () => {
 
   const apiKeyHash1 = await computeHash(rawKey1);
   const apiKeyHash2 = await computeHash(rawKey2);
+  const gasApiKeyHash = await computeHash(gasRawKey);
 
   // Retrieve keys and verify prefixes, labels, and hashes are set correctly
   keys = (await owner.query(api.projects.query.listApiKeys, {
     projectId,
-  })) as Doc<"apiKeys">[];
-  expect(keys.length).toBe(2);
+  })) as Omit<Doc<"apiKeys">, "keyHash">[];
+  expect(keys.length).toBe(4);
 
   const devKey = keys.find((k) => k.label === "Dev Key");
   const prodKey = keys.find((k) => k.label === "Prod Key");
 
   expect(devKey).toBeDefined();
-  expect(devKey?.keyHash).toBe(apiKeyHash1);
+  expect(devKey?.purpose).toBe("general");
+  expect("keyHash" in devKey!).toBe(false);
   expect(devKey?.prefix).toMatch(/^tk_live_[a-f0-9]{4}\.\.\.[a-f0-9]{4}$/);
   expect(devKey?.revoked).toBe(false);
 
   expect(prodKey).toBeDefined();
-  expect(prodKey?.keyHash).toBe(apiKeyHash2);
+  expect(prodKey?.purpose).toBe("general");
   expect(prodKey?.prefix).toMatch(/^tk_live_[a-f0-9]{4}\.\.\.[a-f0-9]{4}$/);
   expect(prodKey?.revoked).toBe(false);
+
+  const gasKey = keys.find((key) => key.label === "Server Gas Key");
+  expect(gasKey?.purpose).toBe("gas");
+  expect(gasKey?.prefix).toMatch(/^tg_test_[a-f0-9]{4}\.\.\.[a-f0-9]{4}$/);
+  expect("keyHash" in gasKey!).toBe(false);
+
+  const legacyKey = keys.find((key) => key.label === "Legacy Key");
+  expect(legacyKey?.purpose).toBe("legacy");
+  expect("keyHash" in legacyKey!).toBe(false);
 
   // Verify API Key 1 querying with valid key
   const validQuery1 = await t.query(api.projects.query.verifyApiKeyAndGetEvents, {
@@ -101,6 +133,31 @@ test("project API key lifecycle", async () => {
     limit: 10,
   });
   expect(validQuery2.authorized).toBe(true);
+
+  const generalKeyGasScope = await t.query(async (ctx) => verifyApiKeyForGas(ctx, apiKeyHash1));
+  expect(generalKeyGasScope).toEqual({ authorized: false });
+
+  const gasKeyGasScope = await t.query(async (ctx) => verifyApiKeyForGas(ctx, gasApiKeyHash));
+  expect(gasKeyGasScope).toEqual({
+    authorized: true,
+    apiKeyId: expect.any(String),
+    projectId,
+  });
+
+  const legacyKeyGasScope = await t.query(async (ctx) => verifyApiKeyForGas(ctx, legacyKeyHash));
+  expect(legacyKeyGasScope).toMatchObject({ authorized: true, projectId });
+
+  const gasKeyGeneralRead = await t.query(api.projects.query.verifyApiKeyAndGetEvents, {
+    apiKeyHash: gasApiKeyHash,
+    limit: 10,
+  });
+  expect(gasKeyGeneralRead).toEqual({ authorized: false });
+
+  await t.run(async (ctx) => ctx.db.patch(projectId, { paymentAccessActive: true }));
+  const gasKeyPaymentScope = await t.query(api.projects.query.verifyApiKeyAndGetProject, {
+    apiKeyHash: gasApiKeyHash,
+  });
+  expect(gasKeyPaymentScope).toEqual({ authorized: false });
 
   // Verify API Key querying with invalid key hash
   const invalidQuery = await t.query(api.projects.query.verifyApiKeyAndGetEvents, {
@@ -119,7 +176,7 @@ test("project API key lifecycle", async () => {
   // Verify key 1 is revoked and key 2 is still active
   keys = (await owner.query(api.projects.query.listApiKeys, {
     projectId,
-  })) as Doc<"apiKeys">[];
+  })) as Omit<Doc<"apiKeys">, "keyHash">[];
   const revokedDevKey = keys.find((k) => k.label === "Dev Key");
   const activeProdKey = keys.find((k) => k.label === "Prod Key");
 

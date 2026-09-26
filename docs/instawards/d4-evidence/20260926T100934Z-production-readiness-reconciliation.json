@@ -1,0 +1,59 @@
+{
+  "artifact": "velo_gas_d4_production_readiness_reconciliation",
+  "capturedAtUtc": "2026-09-26T10:09:34Z",
+  "deployment": "agreeable-salmon-748",
+  "runtimeStatus": {
+    "deploymentId": "prod:agreeable-salmon-748",
+    "network": "testnet",
+    "provisioningEnabled": true,
+    "keyringStatus": "valid",
+    "activeKeyVersion": "v1",
+    "keyVersionCount": 1,
+    "source": "read_only_convex_cli_action"
+  },
+  "custodyInventory": {
+    "totalRecords": 1,
+    "byDeploymentId": [
+      {
+        "deploymentId": "dev:capable-kingfisher-697",
+        "totalRecords": 1,
+        "ready": 1,
+        "pending": 0,
+        "failed": 0
+      }
+    ],
+    "source": "read_only_convex_cli_internal_query",
+    "projectIdentifiersReturned": false,
+    "custodyPayloadReturned": false
+  },
+  "ownerPanelObservation": {
+    "projectLabel": "Talmbag",
+    "source": "operator_reported_in_conversation",
+    "relayerStatus": "ready",
+    "addressVisible": true,
+    "balanceStatus": "fresh_verified_balance_reported",
+    "sponsorshipEnabled": true,
+    "addressCaptured": false,
+    "balanceAmountCaptured": false
+  },
+  "interpretation": {
+    "ownerPanelMappedToCustodyRecord": false,
+    "deployedSourceShaVerified": false,
+    "localCandidateSigningPathRejectsCustodyDeploymentIdMismatch": true,
+    "deployedSignerBehaviorProven": false,
+    "campaignDecision": "NO-GO"
+  },
+  "safety": {
+    "environmentValuesOrKeyMaterialRead": false,
+    "provisioningAttempted": false,
+    "fundingAttempted": false,
+    "productionDataMutated": false,
+    "testnetTransactionSubmitted": false
+  },
+  "limitations": [
+    "The aggregate omits project identifiers, so its development-tagged row cannot be conclusively mapped to Talmbag.",
+    "The owner-panel status is operator-reported and does not prove a signed or settled sponsored transaction.",
+    "The local candidate signing path rejects a custody deployment identity that differs from the runtime identity, but the deployed source SHA is unverified.",
+    "No balance amount or campaign spend ceiling was recorded, so funding sufficiency is unknown."
+  ]
+}

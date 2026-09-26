@@ -118,6 +118,7 @@ function isAuthorized(request: Request, expectedToken: string): boolean {
   return (
     providedToken !== undefined &&
     isAsciiToken(providedToken) &&
+    new TextEncoder().encode(providedToken).byteLength <= 256 &&
     tokenMatches(providedToken, expectedToken)
   );
 }
@@ -323,6 +324,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const velo = new Velo({
     apiKey: config.apiKey,
     baseUrl: config.baseUrl,
+    environment: config.environment,
     timeoutMs: WORKFLOW_BUDGET_MS,
   });
 

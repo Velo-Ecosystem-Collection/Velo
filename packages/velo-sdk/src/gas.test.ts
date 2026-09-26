@@ -244,6 +244,11 @@ test("gas.sponsor rejects invalid inputs before fetch and enforces byte bounds",
       () =>
         velo.gas.sponsor("signed-xdr", {
           idempotencyKey: "gas-operation-0001",
+          correlationId: `tg_test_${"a".repeat(32)}`,
+        }),
+      () =>
+        velo.gas.sponsor("signed-xdr", {
+          idempotencyKey: "gas-operation-0001",
           traceparent: "invalid-traceparent",
         }),
       () => velo.gas.sponsor("signed-xdr", null as unknown as GasSponsorOptions),
@@ -283,6 +288,7 @@ test("gas.sponsor rejects malformed success payloads without leaking response da
     "{not-json",
     { ...validReservation(), object: "wrong" },
     { ...validReservation(), requestId: "short" },
+    { ...validReservation(), requestId: `tg_test_${"a".repeat(32)}` },
     { ...validReservation(), replayed: "false" },
     { ...validReservation(), decision: "accepted" },
     { ...validReservation(), transactionHash: "A".repeat(64) },

@@ -8,7 +8,7 @@ import type { ActionCtx } from "../_generated/server";
 import type { RelayerBalanceRefreshResult } from "./balance_internal";
 
 import { internal } from "../_generated/api";
-import { action, env } from "../_generated/server";
+import { action } from "../_generated/server";
 import { readTestnetNativeBalance } from "./balance";
 import { relayerBalanceRefreshResultValidator } from "./balance_internal";
 import {
@@ -26,12 +26,10 @@ import {
   validateOwnerWithdrawalConsent,
 } from "./funding_utils";
 import { RelayerCustodyError, withManagedTestnetRelayerSigner } from "./relayer";
+import { getGasRuntimeEnv } from "./runtime_env";
 
 const GAS_TESTNET_HORIZON_URL = "https://horizon-testnet.stellar.org";
 const GAS_TESTNET_FRIENDBOT_URL = "https://friendbot.stellar.org/";
-const custodyEnv = env as typeof env & {
-  readonly VELO_GAS_CUSTODY_DEPLOYMENT_ID: string | undefined;
-};
 const fundingOperationValidator = v.union(v.literal("create_account"), v.literal("payment"));
 
 function responseStatus(error: unknown): number | null {
@@ -733,7 +731,7 @@ export const prepareRelayerWithdrawal = action({
   returns: withdrawalPreparationResultValidator,
   handler: async (ctx, args): Promise<WithdrawalPreparationResult> => {
     if ((await ctx.auth.getUserIdentity()) === null) return { status: "unauthorized" as const };
-    const deploymentId = custodyEnv.VELO_GAS_CUSTODY_DEPLOYMENT_ID?.trim();
+    const deploymentId = getGasRuntimeEnv().VELO_GAS_CUSTODY_DEPLOYMENT_ID?.trim();
     if (!deploymentId) return { status: "configuration_unavailable" as const };
     const requestId = globalThis.crypto.randomUUID();
     const nonce = globalThis.crypto.randomUUID();
@@ -807,7 +805,7 @@ export const confirmRelayerWithdrawal = action({
     ) {
       return { status: "consent_invalid" };
     }
-    const deploymentId = custodyEnv.VELO_GAS_CUSTODY_DEPLOYMENT_ID?.trim();
+    const deploymentId = getGasRuntimeEnv().VELO_GAS_CUSTODY_DEPLOYMENT_ID?.trim();
     if (!deploymentId) return { status: "dependency_unavailable" };
     let claim;
     try {

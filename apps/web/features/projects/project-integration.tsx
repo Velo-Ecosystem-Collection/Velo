@@ -94,7 +94,7 @@ export function ProjectIntegration({ projectId }: ProjectIntegrationProps) {
       : "skip",
   );
 
-  const activeKeys = apiKeys?.filter((k) => !k.revoked) ?? [];
+  const activeKeys = apiKeys?.filter((k) => !k.revoked && k.purpose !== "gas") ?? [];
 
   useEffect(() => {
     const firstKey = activeKeys[0];
@@ -280,7 +280,7 @@ export async function POST() {
               You need an active API key to populate integration snippets. Go to the{" "}
               <Link
                 href={`/projects/${projectId}/api-keys`}
-                className="underline font-semibold hover:text-amber-950"
+                className="font-semibold underline hover:text-amber-950"
               >
                 API keys page
               </Link>{" "}
@@ -290,9 +290,9 @@ export async function POST() {
         </Alert>
       ) : (
         <div className="flex flex-col gap-2 rounded-lg border border-zinc-200 bg-white p-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
             <div className="space-y-1">
-              <h2 className="text-sm font-semibold tracking-normal flex items-center gap-1.5 text-zinc-800">
+              <h2 className="flex items-center gap-1.5 text-sm font-semibold tracking-normal text-zinc-800">
                 <KeyIcon className="size-4 text-zinc-500" />
                 Select API Key for code generation
               </h2>
@@ -319,14 +319,14 @@ export async function POST() {
       )}
 
       {/* Main Integration Code Snippet section */}
-      <div className="rounded-lg border border-zinc-200 bg-white shadow-sm overflow-hidden">
-        <div className="border-b border-zinc-200 bg-zinc-50 px-4 py-3 flex items-center gap-2">
+      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+        <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-3">
           <CodeIcon className="size-5 text-zinc-500" />
-          <span className="font-semibold text-sm text-zinc-800">Integration Snippets</span>
+          <span className="text-sm font-semibold text-zinc-800">Integration Snippets</span>
         </div>
 
         <Tabs defaultValue="node" className="w-full">
-          <div className="border-b border-zinc-150 px-4">
+          <div className="border-zinc-150 border-b px-4">
             <TabsList variant="line" className="h-10">
               <TabsTrigger value="node" className="text-xs">
                 Node.js (Fetch)
@@ -340,13 +340,13 @@ export async function POST() {
             </TabsList>
           </div>
 
-          <div className="p-4 bg-zinc-950">
-            <TabsContent value="node" className="relative group mt-0">
-              <div className="absolute right-2 top-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="bg-zinc-950 p-4">
+            <TabsContent value="node" className="group relative mt-0">
+              <div className="absolute top-2 right-2 z-10 opacity-0 transition-opacity group-hover:opacity-100">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-8 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800"
+                  className="size-8 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-50"
                   onClick={() => handleCopy(nodeSnippet, "node")}
                 >
                   {copiedText === "node" ? (
@@ -356,17 +356,17 @@ export async function POST() {
                   )}
                 </Button>
               </div>
-              <pre className="font-mono text-xs text-zinc-100 overflow-x-auto whitespace-pre p-2 bg-transparent select-all leading-relaxed">
+              <pre className="overflow-x-auto bg-transparent p-2 font-mono text-xs leading-relaxed whitespace-pre text-zinc-100 select-all">
                 {nodeSnippet}
               </pre>
             </TabsContent>
 
-            <TabsContent value="sdk" className="relative group mt-0">
-              <div className="absolute right-2 top-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+            <TabsContent value="sdk" className="group relative mt-0">
+              <div className="absolute top-2 right-2 z-10 opacity-0 transition-opacity group-hover:opacity-100">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-8 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800"
+                  className="size-8 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-50"
                   onClick={() => handleCopy(sdkSnippet, "sdk")}
                 >
                   {copiedText === "sdk" ? (
@@ -376,17 +376,17 @@ export async function POST() {
                   )}
                 </Button>
               </div>
-              <pre className="font-mono text-xs text-zinc-100 overflow-x-auto whitespace-pre p-2 bg-transparent select-all leading-relaxed">
+              <pre className="overflow-x-auto bg-transparent p-2 font-mono text-xs leading-relaxed whitespace-pre text-zinc-100 select-all">
                 {sdkSnippet}
               </pre>
             </TabsContent>
 
-            <TabsContent value="next" className="relative group mt-0">
-              <div className="absolute right-2 top-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+            <TabsContent value="next" className="group relative mt-0">
+              <div className="absolute top-2 right-2 z-10 opacity-0 transition-opacity group-hover:opacity-100">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="size-8 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800"
+                  className="size-8 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-50"
                   onClick={() => handleCopy(nextSnippet, "next")}
                 >
                   {copiedText === "next" ? (
@@ -396,7 +396,7 @@ export async function POST() {
                   )}
                 </Button>
               </div>
-              <pre className="font-mono text-xs text-zinc-100 overflow-x-auto whitespace-pre p-2 bg-transparent select-all leading-relaxed">
+              <pre className="overflow-x-auto bg-transparent p-2 font-mono text-xs leading-relaxed whitespace-pre text-zinc-100 select-all">
                 {nextSnippet}
               </pre>
             </TabsContent>
@@ -405,20 +405,20 @@ export async function POST() {
       </div>
 
       {/* Local Sandbox / Sandbox Testing section */}
-      <div className="rounded-lg border border-zinc-200 bg-white shadow-sm overflow-hidden">
-        <div className="border-b border-zinc-200 bg-zinc-50 px-4 py-3 flex items-center gap-2">
+      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm">
+        <div className="flex items-center gap-2 border-b border-zinc-200 bg-zinc-50 px-4 py-3">
           <TerminalIcon className="size-5 text-zinc-500" />
-          <span className="font-semibold text-sm text-zinc-800">Local cURL Sandbox Testing</span>
+          <span className="text-sm font-semibold text-zinc-800">Local cURL Sandbox Testing</span>
         </div>
-        <div className="p-5 space-y-4">
-          <div className="text-sm text-zinc-700 space-y-2">
+        <div className="space-y-4 p-5">
+          <div className="space-y-2 text-sm text-zinc-700">
             <p>
               To quickly test checkout creation without writing code, execute this `curl` command in
               your terminal. It will trigger our backend endpoints to create a new checkout session
               on the fly.
             </p>
-            <div className="flex gap-2 bg-amber-50 border border-amber-200 text-amber-900 rounded p-3 text-xs">
-              <InfoIcon className="size-4.5 shrink-0 mt-0.5 text-amber-600" />
+            <div className="flex gap-2 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              <InfoIcon className="mt-0.5 size-4.5 shrink-0 text-amber-600" />
               <p>
                 Ensure your project is **registered** on-chain and **Velo Pay Access** is **active**
                 (which funds the project with checkout credits) prior to running calls.
@@ -426,12 +426,12 @@ export async function POST() {
             </div>
           </div>
 
-          <div className="relative group bg-zinc-950 p-4 rounded-lg">
-            <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="group relative rounded-lg bg-zinc-950 p-4">
+            <div className="absolute top-2 right-2 opacity-0 transition-opacity group-hover:opacity-100">
               <Button
                 variant="ghost"
                 size="icon"
-                className="size-8 text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800"
+                className="size-8 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-50"
                 onClick={() => handleCopy(curlCommand, "curl")}
               >
                 {copiedText === "curl" ? (
@@ -441,20 +441,20 @@ export async function POST() {
                 )}
               </Button>
             </div>
-            <pre className="font-mono text-xs text-zinc-100 overflow-x-auto whitespace-pre-wrap select-all leading-relaxed">
+            <pre className="overflow-x-auto font-mono text-xs leading-relaxed whitespace-pre-wrap text-zinc-100 select-all">
               {curlCommand}
             </pre>
           </div>
 
           <div className="space-y-2 pt-2">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+            <h3 className="text-xs font-semibold tracking-wider text-zinc-400 uppercase">
               Response payload
             </h3>
             <p className="text-xs text-zinc-600">
               The API returns a JSON response containing the `checkoutUrl` to redirect your buyer,
               the `paymentIntentId`, and the lifespan of the payment link in seconds:
             </p>
-            <pre className="bg-zinc-50 border border-zinc-150 p-3 rounded font-mono text-xs text-zinc-800">
+            <pre className="border-zinc-150 rounded border bg-zinc-50 p-3 font-mono text-xs text-zinc-800">
               {`{
   "paymentIntentId": "kh7acnc4nk9v5nwj9xbnhsaj9x89jw2q",
   "checkoutUrl": "${baseUrl}/pay/kh7acnc4nk9v5nwj9xbnhsaj9x89jw2q",
@@ -548,7 +548,7 @@ export async function POST() {
         </div>
       </section>
 
-      <div className="flex gap-2 items-center text-xs text-zinc-500 justify-center py-4 border-t border-zinc-200">
+      <div className="flex items-center justify-center gap-2 border-t border-zinc-200 py-4 text-xs text-zinc-500">
         <BookOpenIcon className="size-4" />
         <span>
           For full specs on parameters and status values, see the{" "}

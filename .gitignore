@@ -178,3 +178,17 @@ docs/obsidian/.obsidian/workspace-mobile.json
 
 # Keep the local Obsidian knowledge vault untracked.
 docs/obsidian/
+
+# Track the scoped D4 delivery plan and its sanitized evidence package.
+# Keep all other Instawards material, including .velo-d3 artifacts, ignored.
+!docs/velo-gas-station.md
+!docs/instawards/
+docs/instawards/*
+!docs/instawards/Velo-Instawards-Deliverable-4-Sprint-Plan.md
+!docs/instawards/d4-evidence/
+docs/instawards/d4-evidence/*
+!docs/instawards/d4-evidence/README.md
+!docs/instawards/d4-evidence/readiness-ledger.md
+!docs/instawards/d4-evidence/campaign-metrics-template.md
+!docs/instawards/d4-evidence/session-validation-template.md
+!docs/instawards/d4-evidence/*.json

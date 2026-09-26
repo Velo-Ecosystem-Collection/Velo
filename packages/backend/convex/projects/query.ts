@@ -4,6 +4,7 @@ import type { Doc } from "../_generated/dataModel";
 import type { QueryCtx } from "../_generated/server";
 
 import { internalQuery, query } from "../_generated/server";
+import { canUseGeneralApi } from "../api_keys/helpers";
 import { requireProjectRole } from "../playground_projects/helpers";
 import { activeContractsForProject } from "../project_contracts/helpers";
 import {
@@ -13,6 +14,20 @@ import {
   requireOwnerProject,
   safeWebsite,
 } from "./helpers";
+
+const apiKeyPurposeValidator = v.union(v.literal("general"), v.literal("gas"), v.literal("legacy"));
+const safeApiKeyValidator = v.object({
+  _id: v.id("apiKeys"),
+  _creationTime: v.number(),
+  label: v.string(),
+  prefix: v.string(),
+  purpose: apiKeyPurposeValidator,
+  paymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
+  createdAt: v.number(),
+  lastUsedAt: v.optional(v.number()),
+  requestCount: v.number(),
+  revoked: v.boolean(),
+});
 
 async function ownerProjects(ctx: QueryCtx, limit = 50) {
   const identity = await requireIdentity(ctx);
@@ -277,7 +292,7 @@ export const verifyApiKeyAndGetEvents = query({
       .withIndex("by_key_hash", (q) => q.eq("keyHash", args.apiKeyHash))
       .unique();
 
-    if (!apiKey || apiKey.revoked) {
+    if (!apiKey || apiKey.revoked || !canUseGeneralApi(apiKey)) {
       return { authorized: false };
     }
 
@@ -316,7 +331,7 @@ export const verifyApiKeyAndGetTransaction = query({
       .withIndex("by_key_hash", (q) => q.eq("keyHash", args.apiKeyHash))
       .unique();
 
-    if (!apiKey || apiKey.revoked) {
+    if (!apiKey || apiKey.revoked || !canUseGeneralApi(apiKey)) {
       return { authorized: false };
     }
 
@@ -349,7 +364,7 @@ export const verifyApiKeyAndGetWebhookDeliveries = query({
       .withIndex("by_key_hash", (q) => q.eq("keyHash", args.apiKeyHash))
       .unique();
 
-    if (!apiKey || apiKey.revoked) {
+    if (!apiKey || apiKey.revoked || !canUseGeneralApi(apiKey)) {
       return { authorized: false };
     }
 
@@ -377,14 +392,28 @@ export const listApiKeys = query({
   args: {
     projectId: v.id("projects"),
   },
+  returns: v.array(safeApiKeyValidator),
   handler: async (ctx, args) => {
     await requireOwnerProject(ctx, args.projectId);
 
-    return await ctx.db
+    const apiKeys = await ctx.db
       .query("apiKeys")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .order("desc")
       .collect();
+
+    return apiKeys.map((apiKey) => ({
+      _id: apiKey._id,
+      _creationTime: apiKey._creationTime,
+      label: apiKey.label,
+      prefix: apiKey.prefix,
+      purpose: apiKey.purpose ?? ("legacy" as const),
+      ...(apiKey.paymentAnchor !== undefined ? { paymentAnchor: apiKey.paymentAnchor } : {}),
+      createdAt: apiKey.createdAt,
+      ...(apiKey.lastUsedAt !== undefined ? { lastUsedAt: apiKey.lastUsedAt } : {}),
+      requestCount: apiKey.requestCount,
+      revoked: apiKey.revoked,
+    }));
   },
 });
 
@@ -402,7 +431,7 @@ export const verifyApiKeyAndGetProject = query({
       .withIndex("by_key_hash", (q) => q.eq("keyHash", args.apiKeyHash))
       .unique();
 
-    if (!apiKey || apiKey.revoked) {
+    if (!apiKey || apiKey.revoked || !canUseGeneralApi(apiKey)) {
       return { authorized: false };
     }
 

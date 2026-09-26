@@ -178,6 +178,7 @@ type ConfiguredRelayerDetailsProps = {
   projectId: Id<"projects">;
   role: GasPolicyRole;
   relayer: GasRelayerSnapshot;
+  managedCustodyContextVerified: boolean;
   now: number;
   canRefresh: boolean;
   cooldownRemaining: number;
@@ -190,6 +191,7 @@ function ConfiguredRelayerDetails({
   projectId,
   role,
   relayer,
+  managedCustodyContextVerified,
   now,
   canRefresh,
   cooldownRemaining,
@@ -267,7 +269,18 @@ function ConfiguredRelayerDetails({
       </Alert>
 
       <RelayerAccountExplorer publicKey={relayer.publicKey} />
-      <GasRelayerFunding projectId={projectId} role={role} />
+      {managedCustodyContextVerified ? (
+        <GasRelayerFunding projectId={projectId} role={role} />
+      ) : (
+        <Alert variant="destructive">
+          <AlertCircleIcon />
+          <AlertTitle>Relayer deployment needs operator attention</AlertTitle>
+          <AlertDescription>
+            Funding is unavailable because this managed account&apos;s deployment context is not
+            verified. Contact a Velo operator before adding funds or enabling sponsorship.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid gap-2 border-t border-border/70 pt-4">
         <div className="flex flex-wrap items-center gap-3">
@@ -471,6 +484,14 @@ export function GasRelayerPanel({
   }
 
   const managedRelayer = provisioning?.managed === true;
+  const managedCustodyContextVerified =
+    managedRelayer &&
+    provisioning?.state === "ready" &&
+    provisioning.deploymentContextMatches === true;
+  const managedCustodyContextNeedsAttention =
+    managedRelayer &&
+    provisioning?.state === "ready" &&
+    provisioning.deploymentContextMatches !== true;
   const provisioningIsPending = provisioning?.state === "pending" || provisioningQueued;
   const provisioningErrorDescription =
     provisioning?.state === "failed"
@@ -520,6 +541,17 @@ export function GasRelayerPanel({
                 <AlertCircleIcon />
                 <AlertTitle>Relayer wallet setup needs attention</AlertTitle>
                 <AlertDescription>{provisioningErrorDescription}</AlertDescription>
+              </Alert>
+            ) : managedRelayer &&
+              provisioning?.state === "ready" &&
+              !managedCustodyContextVerified ? (
+              <Alert variant="destructive" aria-live="polite">
+                <AlertCircleIcon />
+                <AlertTitle>Relayer deployment needs operator attention</AlertTitle>
+                <AlertDescription>
+                  This stored account cannot be verified for the current deployment. Do not fund or
+                  enable sponsorship until a Velo operator resolves its custody context.
+                </AlertDescription>
               </Alert>
             ) : provisioning?.state === "ready" ? (
               <Alert aria-live="polite">
@@ -624,6 +656,7 @@ export function GasRelayerPanel({
                 projectId={projectId}
                 role={role}
                 relayer={relayer}
+                managedCustodyContextVerified={!managedRelayer || managedCustodyContextVerified}
                 now={now}
                 canRefresh={canRefresh}
                 cooldownRemaining={cooldownRemaining}
@@ -641,11 +674,26 @@ export function GasRelayerPanel({
           <CardHeader>
             <h2 className="text-lg font-semibold">Managed relayer controls</h2>
             <CardDescription>
-              Velo stores this Testnet signer as authenticated ciphertext in Convex. Velo&apos;s
-              backend can decrypt it to sign sponsored FeeBump transactions.
+              Velo stores this Testnet signer as authenticated ciphertext in Convex. A stored
+              address or balance does not prove that the current deployment can decrypt and use it.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3">
+            {managedCustodyContextNeedsAttention ? (
+              <Alert variant="destructive">
+                <AlertCircleIcon />
+                <AlertTitle>
+                  {provisioning.deploymentContextMatches === false
+                    ? "Custody deployment context does not match"
+                    : "Custody deployment context cannot be verified"}
+                </AlertTitle>
+                <AlertDescription>
+                  Do not resume sponsorship, fund, or withdraw from this account until a Velo
+                  operator resolves its deployment context. You can pause sponsorship while it is
+                  active.
+                </AlertDescription>
+              </Alert>
+            ) : null}
             <div className="flex flex-wrap gap-2">
               {provisioning.relayerStatus === "active" ? (
                 <Button
@@ -656,7 +704,7 @@ export function GasRelayerPanel({
                 >
                   Pause sponsorship
                 </Button>
-              ) : (
+              ) : managedCustodyContextVerified ? (
                 <Button
                   type="button"
                   variant="outline"
@@ -665,6 +713,10 @@ export function GasRelayerPanel({
                 >
                   Resume relayer
                 </Button>
+              ) : (
+                <p className="text-sm text-muted-foreground" role="status">
+                  Sponsorship cannot be resumed until the custody deployment context is verified.
+                </p>
               )}
             </div>
             {provisioningMessage ? (
@@ -676,7 +728,7 @@ export function GasRelayerPanel({
         </Card>
       ) : null}
 
-      {managedRelayer && provisioning?.state === "ready" && role === "owner" ? (
+      {managedRelayer && managedCustodyContextVerified && role === "owner" ? (
         <>
           {provisioning.relayerStatus === "active" ? (
             <GasManagedActivation projectId={projectId} />

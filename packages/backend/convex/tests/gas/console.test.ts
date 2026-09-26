@@ -162,6 +162,7 @@ test("managed custody status is owner-authorized and never returns encrypted fie
     managed: true,
     publicKey: RELAYER_PUBLIC_KEY,
     relayerStatus: "active",
+    deploymentContextMatches: null,
     errorCode: null,
   };
   const result = await owner.query(api.gas.queries.getProvisioningStatus, { projectId });
@@ -170,6 +171,7 @@ test("managed custody status is owner-authorized and never returns encrypted fie
     expected,
   );
   expect(Object.keys(result).sort()).toEqual([
+    "deploymentContextMatches",
     "errorCode",
     "managed",
     "publicKey",

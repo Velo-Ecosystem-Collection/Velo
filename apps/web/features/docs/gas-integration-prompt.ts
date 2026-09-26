@@ -23,9 +23,11 @@ Before implementing or qualifying the flow, verify and report:
 
 - The project's Testnet Gas policy is enabled, with a positive daily cap and positive hourly wallet quota.
 - Every invoked Soroban contract is allowlisted.
-- The configured relayer is active and funded with Testnet XLM.
-- The active public relayer address matches the private signer configured by the Velo deployment operator. Project owners configure public metadata; Velo operators manage signer custody. Never ask an integrator to paste a relayer secret into the dashboard or application.
-- The integrator has a Gas-scoped project API key and the exact Velo deployment URL paired with that Gas policy.
+- New projects queue a Velo-managed Testnet relayer automatically when managed provisioning is configured for the deployment. The owner sees its public address only after encrypted custody has been committed.
+- The project owner funds the relayer, verifies a fresh balance, resumes it if paused, and explicitly reviews/enables sponsorship. Provisioning a relayer never enables sponsorship automatically; at least one active linked contract is required.
+- If provisioning is disabled or the encryption configuration is unavailable, the Velo deployment operator must repair the deployment configuration. Never ask the integrator to paste a relayer secret into the dashboard or application.
+- Existing manually configured relayers remain supported. Do not replace an existing account or move its funds automatically; managed custody never falls back to a legacy signer configuration after a decryption failure.
+- The integrator has a Gas-scoped project API key and the exact Testnet Gas API origin paired with that policy.
 
 Separate prerequisites the integrator can configure from those requiring the Velo project owner or deployment operator. Never invent credentials, project IDs, contract IDs, or deployment-specific values.
 
@@ -74,7 +76,7 @@ ${gasIntegrationSnippets.statusRecovery}
 
 ## 7. Preserve security and recovery behavior
 
-- Keep \`VELO_GAS_API_KEY\` and \`VELO_BASE_URL\` in server-only environment configuration. Authenticate and authorize the caller and operation before using a project key; do not rely on an untrusted operation ID as authorization.
+- Keep \`VELO_GAS_API_KEY\` and \`VELO_GAS_BASE_URL\` in server-only environment configuration, separate from Checkout configuration. For Testnet, use \`VELO_GAS_ENV=testnet\` and the approved Testnet API origin. Authenticate and authorize the caller and operation before using a project key; do not rely on an untrusted operation ID as authorization.
 - Bound the request body and validate operation IDs and XDR size/shape. Accept only the fields the route needs. Do not log signed XDR, API keys, or other secrets.
 - Derive and reuse a stable idempotency identity for the same logical operation. Never create a replacement operation automatically after a timeout.
 - Persist a durable, user-owned recovery record containing the operation ID and safe Gas identity (request ID plus inner transaction hash) and the state needed by existing application flows. Do not store the API key or put signed XDR in browser-visible or recovery/status responses.

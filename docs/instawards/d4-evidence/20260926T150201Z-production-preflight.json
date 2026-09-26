@@ -1,0 +1,115 @@
+{
+  "reportKind": "velo_gas_d3_smoke",
+  "schemaVersion": 1,
+  "mode": "preflight",
+  "status": "incomplete",
+  "reportIdentity": "d3-preflight-8d004be5-4174-4b6b-9459-80a08426b65e",
+  "startedAt": "2026-09-26T15:02:01.915Z",
+  "completedAt": "2026-09-26T15:02:02.945Z",
+  "sdk": {
+    "version": "0.1.0-alpha.3",
+    "sourceEntryPoint": "packages/velo-sdk/src/index.ts"
+  },
+  "repository": {
+    "before": {
+      "head": "33beb38d5d1b8590accc2ec9d7fecbf9ad357ad7",
+      "workingTree": {
+        "status": "modified",
+        "changedPathCount": 14
+      }
+    },
+    "after": {
+      "head": "33beb38d5d1b8590accc2ec9d7fecbf9ad357ad7",
+      "workingTree": {
+        "status": "modified",
+        "changedPathCount": 14
+      }
+    }
+  },
+  "deployment": null,
+  "preflight": {
+    "status": "blocked",
+    "checks": [
+      {
+        "name": "allowed_invocation_valid",
+        "status": "passed"
+      },
+      {
+        "name": "denied_invocation_valid",
+        "status": "passed"
+      },
+      {
+        "name": "operator_snapshot_available",
+        "status": "passed"
+      },
+      {
+        "name": "deployment_identity",
+        "status": "passed"
+      },
+      {
+        "name": "deployment_provenance_agreement",
+        "status": "blocked",
+        "failure": "deployment_provenance_mismatch"
+      },
+      {
+        "name": "backend_signer_ready",
+        "status": "passed"
+      },
+      {
+        "name": "testnet_custody_and_funding",
+        "status": "passed"
+      },
+      {
+        "name": "testnet_rpc_network",
+        "status": "passed"
+      },
+      {
+        "name": "source_provenance_verified",
+        "status": "blocked",
+        "failure": "source_provenance_unverified"
+      },
+      {
+        "name": "allowed_policy_eligible",
+        "status": "passed"
+      },
+      {
+        "name": "denied_target_not_whitelisted",
+        "status": "passed"
+      },
+      {
+        "name": "user_wallet_matches_invocations",
+        "status": "passed"
+      },
+      {
+        "name": "distinct_test_transactions",
+        "status": "passed"
+      },
+      {
+        "name": "allowed_transaction_fresh",
+        "status": "blocked",
+        "failure": "allowed_invocation_expired"
+      },
+      {
+        "name": "denied_transaction_fresh",
+        "status": "blocked",
+        "failure": "denied_invocation_expired"
+      }
+    ],
+    "allowedTransactionHash": null,
+    "deniedTransactionHash": null,
+    "d3Checks": [
+      {
+        "name": "sdk_source_entry_point",
+        "status": "passed"
+      }
+    ]
+  },
+  "dashboard": {
+    "status": "pending",
+    "reason": "deployed_dashboard_acceptance_pending"
+  },
+  "failure": "preflight_failed",
+  "execution": null,
+  "replay": null,
+  "denial": null
+}

@@ -16,26 +16,54 @@ kickoff recorded in the [D4 sprint plan](../Velo-Instawards-Deliverable-4-Sprint
 
 ## Current production decision: NO-GO
 
-The owner confirms Talambagv2 sponsorship is paused. A 12:02 UTC read-only
-query maps its ready Testnet custody row, but the stored deployment identity
-does not match `prod:agreeable-salmon-748`. The paused readiness check returned
-`metadata_disabled`, so it did not prove that the backend can decrypt and sign
-for this relayer. Retrying provisioning or using the current key-rotation path
-does not repair the mismatch. Keep the account record intact and sponsorship
-paused; do not change its identity, fund, withdraw, or resume it until a
-reviewed recovery path establishes the original encryption context and verifies
-the derived public address. Local source now has an internal verify/migrate
-action that follows this process, but it has not been deployed or exercised on
-production. The production keyring status (`v1`) does not prove that its key
-authenticates this row. The configured production source marker also does not
-independently attest the deployed source revision.
+At 13:53 UTC, the internal recovery action verified Talambagv2's stored key
+under its original authenticated context, migrated the encrypted envelope to
+`prod:agreeable-salmon-748`, and verified it again. A fresh readback confirms
+the same public address, ready custody status, disabled policy, and no
+maintenance lock. Sponsorship remains paused; no Testnet transaction or fund
+movement occurred. See
+[`20260926T135422Z-production-talambagv2-custody-context-recovery.json`](20260926T135422Z-production-talambagv2-custody-context-recovery.json).
+The operator identifies production commit `33beb38d5d1b8590accc2ec9d7fecbf9ad357ad7`,
+but independent source attestation remains open. At 14:00 UTC, redaction
+scanning parsed all 57 evidence JSON files then present, including the recovery
+record; no recognized secret-shaped values or prohibited secret/custody field
+names were found, and the historical D2/D3 report hashes are unchanged. See
+[`20260926T140058Z-evidence-redaction-scan.json`](20260926T140058Z-evidence-redaction-scan.json).
+At 14:35 UTC, the production D3 preflight parsed both replacement XDRs and
+confirmed they are distinct, and confirmed the configured RPC is Testnet. The
+preflight remains incomplete: the operator snapshot returned `Project not
+found`, provenance returned `Invalid provenance scope`, and the configured D2
+project scope does not match Talambagv2. The report also flags signer readiness
+and funding as unverified, the allowed invocation as policy-denied, the denied
+target as allowlisted, the invocation wallet as mismatched, and both XDRs as
+expired. Independent source provenance remains open. No transaction was
+submitted. See
+[`20260926T143530Z-production-preflight.json`](20260926T143530Z-production-preflight.json).
+At 14:40 UTC, the redaction scan parsed 59 prior evidence JSON files with no
+recognized secret-shaped values or prohibited secret/custody field names; the
+historical D2/D3 report hashes are unchanged. See
+[`20260926T144055Z-evidence-redaction-scan.json`](20260926T144055Z-evidence-redaction-scan.json).
+At 15:02 UTC, after the operator updated the production D2 project scope,
+snapshot lookup and deployment identity passed. The preflight passed 12 checks;
+three remain blocked: the provenance endpoint reports an unverified
+operator-configured SHA, and both XDR invocations are expired. The production
+handler returns `verified: false` for this marker, so an independent build or
+deployment attestation is needed before execution. No transaction was
+submitted. See
+[`20260926T150201Z-production-preflight.json`](20260926T150201Z-production-preflight.json).
+At 15:04 UTC, redaction scanning parsed 61 prior evidence JSON files with no
+recognized secret-shaped values or prohibited secret/custody fields; historical
+D2/D3 report hashes remain unchanged. See
+[`20260926T150419Z-evidence-redaction-scan.json`](20260926T150419Z-evidence-redaction-scan.json).
 
 To reach GO for the live campaign, the remaining gates are:
 
-1. Resolve or safely isolate the custody mismatch, then verify production
-   source provenance, freeze the delivery revision, and pass hosted CI.
+1. Production D2 scope now resolves Talambagv2; provide independently
+   verifiable production source provenance, freeze the delivery revision, and
+   pass hosted CI. The custody context recovery gate is satisfied.
 2. Verify the owner lifecycle and role/accessibility states, and have two
-   deployed dApps configured for Testnet with correlated successful receipts.
+   deployed dApps configured for Testnet with fresh, correlated successful
+   receipts. Generate fresh signed XDRs after source attestation is available.
 3. Complete the three-person validation and five policy setup/readback demos.
 4. With explicit authorization for external Testnet transactions, run the
    required campaign of at least 50 unique settled FeeBumps and capture exact

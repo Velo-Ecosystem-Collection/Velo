@@ -673,11 +673,12 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await expect(gasSection).toBeVisible();
     await expect(gasSection.getByRole("heading", { name: "Gas Station" })).toBeVisible();
     await expect(gasSection.getByText("VELO_GAS_API_KEY", { exact: true })).toBeVisible();
-    await expect(gasSection.getByText("VELO_BASE_URL", { exact: true })).toBeVisible();
+    await expect(gasSection.getByText("VELO_GAS_BASE_URL", { exact: true })).toBeVisible();
     await expect(gasSection.locator("pre")).toHaveCount(2);
     const snippets = (await gasSection.locator("pre").allTextContents()).join("\n");
     expect(snippets).toContain("VELO_GAS_API_KEY");
-    expect(snippets).toContain("VELO_BASE_URL");
+    expect(snippets).toContain("VELO_GAS_BASE_URL");
+    expect(snippets).not.toContain("VELO_BASE_URL");
     expect(snippets).not.toContain("sk_live_");
     expect(snippets).not.toContain("tk_live_");
 

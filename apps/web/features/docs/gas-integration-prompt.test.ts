@@ -21,7 +21,7 @@ test("Gas integration prompt keeps server boundaries and caller authorization ex
   assert.match(gasIntegrationPrompt, /Authenticate and authorize the caller and operation/);
   assert.match(
     gasIntegrationPrompt,
-    /Keep `VELO_GAS_API_KEY` and `VELO_BASE_URL` in server-only environment configuration/,
+    /Keep `VELO_GAS_API_KEY` and `VELO_GAS_BASE_URL` in server-only environment configuration/,
   );
   assert.match(gasIntegrationPrompt, /browser code and browser storage/);
 });

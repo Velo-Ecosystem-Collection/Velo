@@ -47,7 +47,10 @@ Open the project console at <code>/projects/&lt;projectId&gt;/gas</code>.
 Newly created projects use a Velo-managed Testnet relayer. Project creation
 queues provisioning; a funding address is shown only after its encrypted
 signing key has been committed to private Convex custody. If setup fails, the
-owner can retry after the deployment's Testnet provisioning feature is enabled.
+owner can retry after the deployment's Testnet provisioning feature and custody
+keyring are correctly configured. A provisioning-disabled or encryption-
+configuration error requires a Velo deployment operator; retrying does not
+create a plaintext key or silently substitute another address.
 
 An owner then:
 
@@ -106,7 +109,8 @@ environment:
 
 ~~~dotenv
 VELO_GAS_API_KEY=tg_test_0123456789abcdef0123456789abcdef
-VELO_BASE_URL=https://api.testnet.velo.pay
+VELO_GAS_ENV=testnet
+VELO_GAS_BASE_URL=https://api.testnet.velo.pay
 ~~~
 
 Generate this credential from the project's **Gas Station · Testnet** API-key
@@ -118,17 +122,17 @@ import { Velo } from "@carts1024/velo-sdk";
 
 const velo = new Velo({
   apiKey: process.env.VELO_GAS_API_KEY!,
-  baseUrl: process.env.VELO_BASE_URL!,
+  baseUrl: process.env.VELO_GAS_BASE_URL!,
   environment: "testnet",
   timeoutMs: 30_000,
   maxRetries: 2,
 });
 ~~~
 
-The example flow is restricted to Testnet. Omit <code>VELO_BASE_URL</code> to
+The example flow is restricted to Testnet. Omit <code>VELO_GAS_BASE_URL</code> to
 use the SDK's canonical Testnet origin, or configure
 <code>https://api.testnet.velo.pay</code>. For local development, use
-<code>environment: "development"</code> and a loopback URL such as
+<code>VELO_GAS_ENV=development</code> and a loopback URL such as
 <code>http://localhost:3000</code>. The API origin and Stellar network must
 still match the deployment's policy configuration.
 

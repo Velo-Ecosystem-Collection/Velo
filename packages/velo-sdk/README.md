@@ -62,9 +62,10 @@ key, caller authorization, signed XDR, and operation key on the server:
 import { Velo } from "@carts1024/velo-sdk";
 
 const velo = new Velo({
-  apiKey: process.env.VELO_API_KEY!,
-  // Set the verified Velo deployment URL for your environment.
-  baseUrl: process.env.VELO_BASE_URL ?? "https://www.velo-build.dev",
+  apiKey: process.env.VELO_GAS_API_KEY!,
+  // Keep Gas configuration separate from Checkout.
+  baseUrl: process.env.VELO_GAS_BASE_URL ?? "https://api.testnet.velo.pay",
+  environment: "testnet",
 });
 
 // Authorize the caller in your own server/session layer before this point.
@@ -298,11 +299,13 @@ one for `sponsorAndSubmit()` and one for identity-only status recovery. The
 snippets are maintained in `apps/web/features/projects/project-integration-guidance.ts`
 and covered by `apps/web/features/projects/project-integration-guidance.test.ts`.
 
-Set both variables explicitly in the consuming server environment:
+Set the Gas-scoped key and Gas Testnet origin separately from Checkout in the
+consuming server environment:
 
 ```bash
 VELO_GAS_API_KEY=replace_with_a_gas_scoped_project_key
-VELO_BASE_URL=https://replace-with-your-velo-deployment.example
+VELO_GAS_ENV=testnet
+VELO_GAS_BASE_URL=https://api.testnet.velo.pay
 ```
 
 The snippets never interpolate project-page API-key data into client code.
@@ -311,6 +314,16 @@ from it. Authorization and durable operation/recovery storage belong to the
 consuming server. On `VeloGasSubmissionUnknownError`, persist and reconcile
 `error.recovery` with `velo.gas.getStatus()`; do not send the signed XDR again.
 `waitForResult()` is an optional bounded identity-only observer.
+
+New projects queue a managed Testnet relayer automatically when the Velo
+deployment has managed custody configured. The project owner funds the
+generated address, checks its verified balance, reviews the suggested
+10-XLM/day and 100-requests-per-wallet/hour limits with active linked
+contracts, and explicitly enables sponsorship. Relayer creation does not
+activate sponsorship. Existing manually configured relayers remain supported;
+Velo never replaces an existing account automatically. Managed keys are
+stored as authenticated ciphertext in Convex, and the trusted backend can
+decrypt them.
 
 Only `succeeded` is success. `claimed`, `submission_unknown`, and
 `submitted` remain unresolved; `failed` and `cancelled` are terminal

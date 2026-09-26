@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 
@@ -155,6 +156,7 @@ function makeFixture({
       environment: deploymentEnvironment,
     }),
   malformed = false,
+  verifyDeploymentAttestation = async () => ({ ok: false }),
 } = {}) {
   const calls = [];
   let handoffCount = 0;
@@ -265,6 +267,7 @@ function makeFixture({
       workingTree: { status: "modified", changedPathCount: 1 },
     }),
     sdkMetadata: { version: "0.1.0-alpha.2", sourceEntryPoint: SDK_SOURCE_ENTRY_POINT },
+    verifyDeploymentAttestation,
   });
   dependencies.deriveFacts = async (xdr) => {
     if (xdr === CONFIG.allowedXdr) return FACTS.allowed;
@@ -316,8 +319,22 @@ test("accepts a production Testnet report and verifies its deployment evidence o
     ...CONFIG,
     deploymentName,
     expectedEnvironment: "production",
+    deploymentAttestationFile: "/tmp/convex-production-deployment.json",
   };
-  const fixture = makeFixture({ deploymentName, deploymentEnvironment: "production" });
+  const fixture = makeFixture({
+    deploymentName,
+    deploymentEnvironment: "production",
+    verifyDeploymentAttestation: async ({ expectedDeploymentId, expectedSourceCommit }) => ({
+      ok: true,
+      value: {
+        deploymentId: expectedDeploymentId,
+        environment: "production",
+        network: "testnet",
+        sourceCommit: expectedSourceCommit,
+      },
+    }),
+  });
+  config.expectedSourceCommit = DEPLOYED_SOURCE_COMMIT;
   const report = await runD3SmokeExecution({ config, dependencies: fixture.dependencies });
   assert.equal(report.status, "passed", JSON.stringify(report));
   assert.equal(report.deployment.deploymentId, deploymentName);
@@ -472,12 +489,15 @@ test("validates D3 config bounds and maps D3 names through the D2 loader", async
     VELO_GAS_D3_DENIED_XDR: CONFIG.deniedXdr,
     VELO_GAS_D3_DEPLOYMENT_NAME: "prod:agreeable-salmon-748",
     VELO_GAS_D3_EXPECTED_ENVIRONMENT: "production",
+    VELO_GAS_D3_EXPECTED_SOURCE_COMMIT: DEPLOYED_SOURCE_COMMIT,
+    VELO_GAS_D3_DEPLOYMENT_ATTESTATION_FILE: "/tmp/convex-production-deployment.json",
     VELO_GAS_D3_POLL_LIMIT: "121",
   });
   assert.equal(loaded.ok, false);
   assert.equal(loaded.invalid.includes("VELO_GAS_D3_POLL_LIMIT"), true);
   assert.equal(loaded.config.deploymentName, "prod:agreeable-salmon-748");
   assert.equal(loaded.config.expectedEnvironment, "production");
+  assert.equal(loaded.config.deploymentAttestationFile, "/tmp/convex-production-deployment.json");
   const unsupportedEnvironment = await loadD3SmokeConfig({
     VELO_GAS_D3_MODE: "preflight",
     VELO_GAS_D3_API_ORIGIN: "https://api.example.test",
@@ -519,7 +539,7 @@ test("uses preflight as the CLI default and verifies reports offline without cre
   assert.equal(parseD3SmokeArgs(["--help"]).help, true);
   const fixture = makeFixture({ handoffStatuses: ["succeeded"] });
   const report = await runD3SmokeExecution({ config: CONFIG, dependencies: fixture.dependencies });
-  const directory = await mkdtemp(path.join("/private/tmp", "velo-gas-d3-"));
+  const directory = await mkdtemp(path.join(tmpdir(), "velo-gas-d3-"));
   const reportPath = path.join(directory, "report.json");
   await writeD3SmokeReport(report, reportPath, "/");
   const originalFetch = globalThis.fetch;

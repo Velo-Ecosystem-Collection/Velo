@@ -8,21 +8,48 @@ deliverable: "4 — Integration & Validation Package"
 
 # D4 readiness ledger
 
-**Decision reaffirmed at 2026-09-26 13:04 UTC: NO-GO for production campaign transactions.**
-The production project is Talambagv2, and the owner confirms sponsorship is
-paused. A 12:02 UTC read-only query mapped its ready Testnet custody record;
-the stored deployment identity does not match `prod:agreeable-salmon-748`.
-The paused readiness check returned `metadata_disabled` and did not establish
-decryption or signing. Production source provenance remains unverified, and
-the current owner retry/rotation paths cannot repair the context mismatch.
-Local source now adds an internal verify/migrate recovery action, with focused
-tests passing, but the action is not production-deployed or production-verified.
-The deployed `v1` keyring status does not prove that the original encryption
-key is present. Preserve the record and keep sponsorship paused. No production
-mutation or Testnet transaction was performed. See
+**Decision reaffirmed at 2026-09-26 15:04 UTC: NO-GO for production campaign transactions.**
+At 13:53 UTC, the production recovery action verified Talambagv2's custody key
+under the row's original context, migrated the encrypted envelope to
+`prod:agreeable-salmon-748`, and verified the migrated envelope. A fresh
+readback confirms the same public address, one ready Testnet record, disabled
+sponsorship, and no maintenance lock. The owner confirms sponsorship remains
+paused. No Testnet transaction or funds movement occurred. Production source
+provenance remains unverified and the live campaign gates remain open. See
+[`20260926T135422Z-production-talambagv2-custody-context-recovery.json`](20260926T135422Z-production-talambagv2-custody-context-recovery.json),
 [`20260926T130430Z-talambagv2-owner-confirmation.json`](20260926T130430Z-talambagv2-owner-confirmation.json),
-[`20260926T120202Z-production-talambagv2-custody-readback.json`](20260926T120202Z-production-talambagv2-custody-readback.json),
-and ADR-0005.
+and ADR-0005. The earlier mismatch and pre-recovery observations remain
+historical; do not use them as current status. No sponsorship resume is
+authorized by this recovery.
+At 14:00 UTC, redaction scanning parsed all 57 evidence JSON files then present,
+including the recovery record; no recognized secret-shaped values or
+prohibited secret/custody field names were found, and historical D2/D3 hashes
+are unchanged. See
+[`20260926T140058Z-evidence-redaction-scan.json`](20260926T140058Z-evidence-redaction-scan.json).
+At 14:35 UTC, the production D3 preflight parsed both replacement XDRs,
+confirmed distinct hashes and Testnet RPC, but remained incomplete. The
+operator snapshot returned `Project not found`; provenance returned `Invalid
+provenance scope`. A private comparison confirmed the configured D2 project
+scope does not match Talambagv2; the deployment name and production environment
+do match. The report also flags signer readiness and funding as unverified,
+the allowed invocation as policy-denied, the denied target as allowlisted, the
+invocation wallet as mismatched, and both XDRs as expired. No transaction was
+submitted. See
+[`20260926T143530Z-production-preflight.json`](20260926T143530Z-production-preflight.json).
+At 14:40 UTC, the redaction scan parsed 59 prior evidence JSON files, found no
+recognized secret-shaped values or prohibited secret/custody field names, and
+confirmed historical D2/D3 report hashes are unchanged. See
+[`20260926T144055Z-evidence-redaction-scan.json`](20260926T144055Z-evidence-redaction-scan.json).
+At 15:02 UTC, after the operator updated the production D2 project scope,
+snapshot availability and deployment identity passed. Twelve preflight checks
+passed. The remaining blocks are deployment/source provenance: the endpoint
+returns an operator-configured commit with `verified: false`, and the allowed
+and denied XDRs were expired at check time. No transaction was submitted. See
+[`20260926T150201Z-production-preflight.json`](20260926T150201Z-production-preflight.json).
+At 15:04 UTC, redaction scanning parsed 61 prior evidence JSON files, found no
+recognized secret-shaped values or prohibited secret/custody field names, and
+confirmed historical D2/D3 report hashes are unchanged. See
+[`20260926T150419Z-evidence-redaction-scan.json`](20260926T150419Z-evidence-redaction-scan.json).
 At 10:44 UTC, the operator reconfirmed that the Talmbag production panel still
 shows a fresh verified balance and enabled sponsorship. The operator was
 advised to pause sponsorship while the custody context is unresolved; pause
@@ -175,15 +202,16 @@ No transaction has been submitted for this D4 campaign.
 | Development custody configuration | Keyring and aggregate provisioning verified; owner lifecycle open | At 05:42 UTC the internal-only status action reconfirmed a valid keyring with active version `v1` and one retained version, deployment ID `dev:capable-kingfisher-697`, Testnet network, and provisioning enabled. The read-only aggregate still shows three rows: two ready under the expected deployment identity, none pending, and one failed row with no deployment identity. It did not return project identifiers or key material; the failed row and operator-reported new project remain unmapped. Funding, fresh balance, and explicit sponsorship activation remain unverified. See [`20260926T054233Z-development-managed-custody-preflight.json`](20260926T054233Z-development-managed-custody-preflight.json). |
 | Production custody configuration | Runtime identity verified; source provenance open | At 10:09 UTC, a fresh read-only deployed status call returned `prod:agreeable-salmon-748`, Testnet, valid keyring version `v1`, and enabled provisioning. Earlier environment reads showed the same identity and production environment; keyring values were never read. The deployed source SHA remains unverified. See [`20260926T100934Z-production-readiness-reconciliation.json`](20260926T100934Z-production-readiness-reconciliation.json), [`20260926T083655Z-production-runtime-status-readback.json`](20260926T083655Z-production-runtime-status-readback.json), and [`20260926T083118Z-production-config-readback.json`](20260926T083118Z-production-config-readback.json). |
 | Deployment provenance endpoint | Configured SHA is explicitly unverified | The local D2 provenance endpoint now returns `verified: false` for its operator-configured commit marker; an environment value does not attest deployed source. The focused backend test passed. No production deployment occurred; a trusted attestation source remains required. |
-| Production custody inventory | One ready Talambagv2 record remains tagged with the development identity | At 12:02 UTC, a read-only query matched exactly one Talambagv2 project to its ready Testnet custody record. The encrypted record uses key version `v1` and is tagged with an identity different from `prod:agreeable-salmon-748`. Keep the record intact; do not relabel, overwrite, delete, or reprovision it. See [`20260926T120202Z-production-talambagv2-custody-readback.json`](20260926T120202Z-production-talambagv2-custody-readback.json). Earlier aggregates omitted project IDs and are historical snapshots. |
-| Production custody identity correction | Project is mapped to its custody row; owner reports sponsorship paused; row identity mismatches production | At 12:02 UTC, a read-only query matched Talambagv2 to its ready Testnet custody record. The record uses key version `v1` and does not match `prod:agreeable-salmon-748`. The internal readiness action returned `metadata_disabled` after pause. Source review confirms deployment ID is AES-GCM AAD; `rotateCustodyEncryptionKey` rejects a row whose stored identity differs from runtime, while provisioning retry reports `already_ready`. The current owner controls cannot repair this mismatch. Preserve the record; do not relabel, overwrite, delete, reprovision, fund, withdraw, or resume. Decryption and source provenance remain unverified. See [`20260926T120202Z-production-talambagv2-custody-readback.json`](20260926T120202Z-production-talambagv2-custody-readback.json) and ADR-0005. |
+| Production custody inventory | Ready; production context and address verified after recovery | At 12:02 UTC, the single ready record was tagged with the development identity. At 13:53 UTC, recovery re-encrypted the same account for `prod:agreeable-salmon-748`; verify-before, migration, and verify-after returned `verified`, `migrated`, and `verified`. A read-only post-check confirms one ready Testnet row, matching production identity, unchanged public address, disabled policy, and no maintenance lock. No ledger transaction or fund movement occurred. See [`20260926T120202Z-production-talambagv2-custody-readback.json`](20260926T120202Z-production-talambagv2-custody-readback.json) and [`20260926T135422Z-production-talambagv2-custody-context-recovery.json`](20260926T135422Z-production-talambagv2-custody-context-recovery.json). |
+| Production custody identity recovery | Complete; sponsorship remains paused | The deployed internal recovery action authenticated the row under its recorded AAD context and verified the derived public address before migration. Its atomic migration updated the private encrypted envelope and deployment binding only; post-migration verification succeeded. The owner-reported production commit is `33beb38d5d1b8590accc2ec9d7fecbf9ad357ad7`; independent source attestation remains open. Do not resume sponsorship as part of this recovery. See [`20260926T135422Z-production-talambagv2-custody-context-recovery.json`](20260926T135422Z-production-talambagv2-custody-context-recovery.json) and ADR-0005. |
+| Production D3 invocation preflight | Incomplete; project scope, snapshot, signer, funding, policy, target, and wallet checks pass; no transaction submitted | At 15:02 UTC, the updated production project scope resolved Talambagv2. Twelve checks passed, including Testnet RPC, signer readiness, funding, policy eligibility, denied-target exclusion, and wallet match. The provenance endpoint still returns `verified: false` for its operator-configured SHA, so source/provenance checks fail. Both replacement XDRs had expired by check time. Provide independent source attestation, then generate fresh XDRs and run preflight immediately before execution. See [`20260926T150201Z-production-preflight.json`](20260926T150201Z-production-preflight.json) and [`packages/backend/convex/http.ts`](../../../packages/backend/convex/http.ts#L237). |
 | PayAccess project mapping | Ambiguous mapping warning reported; deployment and duplicate rows unidentified | At 14:12:11 Asia/Manila, the operator reported `pay_access_event_project_mapping_ambiguous`. The guarded sync path leaves the project rows and global cursor unchanged and retries after repair; the backend regression verifies this behavior. The warning does not identify the deployment or canonical project mapping. No data repair was performed. See [`20260926T063021Z-pay-access-ambiguity-followup.json`](20260926T063021Z-pay-access-ambiguity-followup.json). |
 | Authenticated owner and reviewer access | Unverified | Confirm the production dashboard owner session and reviewer access without sharing credentials. |
-| Managed Testnet project | Owner reports Talambagv2 Ready, fresh balance, and sponsorship paused; custody identity mismatch remains | The internal readiness action returned `metadata_disabled`, consistent with the owner-reported pause, and returned no public key or successful signing proof. The production read-only query maps exactly one ready Testnet custody record to Talambagv2, but its deployment identity differs from production. The current retry and key-rotation actions cannot correct the mismatch. No address, balance amount, key, or project ID was placed in evidence. Decryption readiness, funding receipt, budget sufficiency, and a settled sponsored transaction remain unverified. See [`20260926T120202Z-production-talambagv2-custody-readback.json`](20260926T120202Z-production-talambagv2-custody-readback.json) and ADR-0005. |
+| Managed Testnet project | Custody, signer, funding, and policy preflight passed; live signing and settlement evidence open | The recovery action verified the stored key and derived address before and after migration. The 15:02 UTC preflight confirms signer readiness, funded Testnet accounts, and policy eligibility. Sponsorship remains paused; no sponsored transaction was submitted. Independent source provenance, live execution, owner lifecycle demonstrations, and settled Gas evidence remain open. See [`20260926T135422Z-production-talambagv2-custody-context-recovery.json`](20260926T135422Z-production-talambagv2-custody-context-recovery.json) and [`20260926T150201Z-production-preflight.json`](20260926T150201Z-production-preflight.json). |
 | Participants | Available, not validated | The operator reports two additional participants are available. Schedule the three-person session and record role-separated actions; do not count availability as a completed demonstration. |
 | Two dApp integrations | Local source/configuration only; deployed acceptance open | A 12:16 UTC in-memory check confirmed separate correctly shaped Gas Testnet keys and distinct bounded demo tokens in the Express and Next.js local `.env.local` files. Both set `VELO_GAS_ENV=development`; no deployed Testnet config or receipt was verified. See [`20260926T121626Z-local-two-app-gas-config-check.json`](20260926T121626Z-local-two-app-gas-config-check.json). |
 | Testnet wallets, funding, and contract | Unverified | Confirm distinct participant wallets, sufficient funds, a live eligible contract, and an explicit maximum spend budget before execution. |
-| Owner workflow evidence | Partial; remains open | A user-provided Dev screenshot shows an enabled policy with one allowed contract and the suggested 10 XLM/day, 100 requests/wallet settings. The operator reports Talambagv2 production shows Ready with a fresh verified balance and sponsorship paused. No funding receipt or amount, active-contract detail, pause/resume, role/keyboard states, or consent-bound withdrawal has been evidenced. The custody row is now mapped, but its deployment identity mismatch and signer readiness remain unresolved. |
+| Owner workflow evidence | Partial; remains open | A user-provided Dev screenshot shows an enabled policy with one allowed contract and the suggested 10 XLM/day, 100 requests/wallet settings. The operator reports Talambagv2 production shows Ready with a fresh verified balance and sponsorship paused. Custody now matches the production deployment and decrypts to the same public address. No funding receipt or amount, active-contract detail, pause/resume, role/keyboard states, or consent-bound withdrawal has been evidenced. |
 | Current local verification | Root tests, lint/typecheck, fresh build, and D4 recorder pass; hosted CI and Firefox checks remain open | At 12:33 UTC, root `pnpm test` passed 9/9 Turbo tasks, D4 recorder tests passed 10/10, D2/D3 reports passed offline verification, `pnpm lint:fix` passed 9/9 tasks, and `git diff --check` passed. At 12:41 UTC, a forced no-cache build passed all 5 workspace build tasks. Firefox could not launch before assertions, and hosted CI remains required. See [`20260926T123315Z-current-workspace-validation.json`](20260926T123315Z-current-workspace-validation.json) and [`20260926T124120Z-forced-workspace-build.json`](20260926T124120Z-forced-workspace-build.json). |
 | 50-transaction campaign | Not started | No D4 campaign attempt has been recorded. Start only after provenance and safety gates are green; target 60 settled unique FeeBumps across both apps. |
 | Managed custody context UI guard | Implemented and locally verified | The safe owner provisioning query now reports whether a ready managed record is bound to the active deployment, without returning its deployment ID or custody payload. The panel blocks funding, resume, activation, and withdrawal when the match is false or unknown, but allows sponsorship to be paused. A true match still does not prove key decryption. At 10:26 UTC, backend 342/342, web 251/251, Chromium/WebKit 18/18 each, backend/web typechecks, changed-file lint/format, and the configured Turbopack build passed. The build passed again at 10:33 UTC and the targeted mismatch browser case passed 1/1 at 10:34 UTC after the final panel copy edit. No production deployment occurred. See [`20260926T103422Z-custody-context-ui-guard.json`](20260926T103422Z-custody-context-ui-guard.json). |
@@ -271,9 +299,10 @@ transaction followed. See
 
 ## Go/no-go rule
 
-Keep the campaign at **NO-GO** until source/deployment identity matches, the
-production custody context is correct, the owner and reviewer can access the
-dashboard, both dApps are configured, participants and wallets are ready, the
-eligible contract and spend budget are confirmed, and a fresh preflight passes.
+Keep the campaign at **NO-GO** until deployed source provenance is independently
+verified, the owner and reviewer can access the dashboard, both dApps are
+configured, participants and wallets are ready, the eligible contract and
+spend budget are confirmed, and a fresh preflight passes. The production
+custody context recovery is complete; sponsorship remains paused.
 Stop immediately for unexpected fee source, accounting mismatch, or unresolved
 execution exposure. Never turn an unverified or pending outcome into a success.

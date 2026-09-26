@@ -128,7 +128,7 @@ import {
 
 const velo = new Velo({
   apiKey: process.env.VELO_GAS_API_KEY!,
-  baseUrl: process.env.VELO_BASE_URL!,
+  baseUrl: process.env.VELO_GAS_BASE_URL!,
   environment: "testnet",
   timeoutMs: 30_000,
 });
@@ -177,7 +177,7 @@ export async function POST(request: Request) {
 
 const velo = new Velo({
   apiKey: process.env.VELO_GAS_API_KEY!,
-  baseUrl: process.env.VELO_BASE_URL!,
+  baseUrl: process.env.VELO_GAS_BASE_URL!,
   environment: "testnet",
 });
 
@@ -1364,46 +1364,77 @@ const session = await velo.checkout.sessions.create({
                   Configure the project
                 </h3>
                 <p>
-                  A project owner configures the Gas Station before an integrator can sponsor a
-                  transaction. Open the project&apos;s <strong>Gas Station</strong> page at{" "}
-                  <code>/projects/&lt;projectId&gt;/gas</code>.
+                  Open the project&apos;s <strong>Gas Station</strong> page at{" "}
+                  <code>/projects/&lt;projectId&gt;/gas</code>. Newly created projects automatically
+                  queue a dedicated Testnet relayer when managed provisioning is configured for the
+                  Velo deployment. The address appears only after Velo commits its encrypted signer
+                  record to private Convex custody.
                 </p>
                 <ol className="list-decimal space-y-2 pl-6 text-zinc-600 dark:text-zinc-400">
                   <li>
-                    An editor or owner enables sponsorship, sets a positive daily cap and wallet
-                    hourly quota, and adds the allowed contract IDs one per line.
+                    <strong className="text-foreground">Check provisioning status.</strong> An owner
+                    can retry a failed or unconfigured provisioning request after the deployment
+                    operator fixes its Testnet custody configuration. A disabled provisioning flag
+                    or missing encryption configuration requires operator help; do not enter a
+                    private key or create a replacement account.
                   </li>
                   <li>
-                    Only an owner can add or change the relayer metadata. In the{" "}
-                    <strong>Relayer funding &amp; balance</strong> panel, choose{" "}
-                    <strong>Add a relayer account</strong>, enter the public <code>G...</code>{" "}
-                    Testnet address, select <strong>Active</strong>, and save.
+                    <strong className="text-foreground">Fund the managed address.</strong> The owner
+                    can use <strong>Fund with wallet</strong> or <strong>Get Testnet funds</strong>.
+                    Wallet funding creates an absent account or sends native XLM to an existing
+                    account. Refresh the balance and check its freshness and spendable amount after
+                    reserves, liabilities, Gas commitments, and fees.
                   </li>
                   <li>
-                    Fund that same public address with Testnet XLM, then choose{" "}
-                    <strong>Refresh balance</strong>. Never enter a secret key in Velo.
+                    <strong className="text-foreground">Review sponsorship settings.</strong> The
+                    owner reviews the suggested <strong>10 XLM/day</strong> cap,{" "}
+                    <strong>100 requests per wallet per UTC hour</strong>, and the active contracts
+                    linked to the project. Link at least one active contract before enabling
+                    sponsorship.
                   </li>
                   <li>
-                    The Convex deployment operator must configure the matching private signer in{" "}
-                    <code>VELO_GAS_TESTNET_RELAYER_SIGNERS_JSON</code>. The dashboard stores only
-                    public metadata; it does not create custody.
+                    <strong className="text-foreground">Enable deliberately.</strong> The owner
+                    resumes the relayer if it is paused, reviews the listed contracts and limits,
+                    then chooses <strong>Enable sponsorship with these settings</strong>. Creating a
+                    relayer never enables sponsorship by itself.
+                  </li>
+                  <li>
+                    <strong className="text-foreground">Pause or withdraw when needed.</strong>{" "}
+                    Owners can pause sponsorship at any time. A withdrawal requires fresh wallet
+                    consent, pauses sponsorship, waits for outstanding Gas work, and sends funds
+                    only to the authenticated owner wallet.
                   </li>
                 </ol>
                 <p className="text-sm text-muted-foreground">
-                  Viewers can read policy and relayer status. Editors can change policy. Owners can
-                  change relayer metadata. A balance snapshot older than five minutes is stale, and
-                  metadata status is not proof of signer readiness.
+                  Viewers can read policy and relayer status. Editors can save policy changes.
+                  Provisioning, funding, activation, pause/resume, and withdrawal require the
+                  project owner. Existing manually configured relayers remain supported through the
+                  advanced setup; Velo never replaces an existing relayer automatically. A balance
+                  snapshot older than five minutes is stale, and a displayed balance alone does not
+                  prove signer readiness.
                 </p>
+                <div className="my-6 flex gap-3 rounded-xl border border-border bg-muted/50 p-4">
+                  <InfoIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+                  <div className="text-sm">
+                    <strong className="mb-1 block text-foreground">Velo-managed custody</strong>
+                    Velo&apos;s trusted backend can decrypt managed relayer keys. Convex stores
+                    authenticated ciphertext, while deployment encryption keys stay in private
+                    environment configuration. This is backend-managed custody, not an external
+                    signing service. It never replaces the end user&apos;s wallet signature.
+                  </div>
+                </div>
 
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
                   Server configuration
                 </h3>
                 <p>
                   Use a Gas-scoped project API key and an explicit deployment URL. Keep both values
-                  in your server environment:
+                  in your server environment. Generate the key from the project&apos;s API Keys page
+                  using <strong>Gas Station · Testnet</strong>; the key is shown once and must stay
+                  server-side.
                 </p>
                 {renderCodeBlock(
-                  "VELO_GAS_API_KEY=replace_with_a_server_only_project_key\nVELO_BASE_URL=https://your-velo-deployment.example",
+                  "VELO_GAS_API_KEY=replace_with_a_server_only_gas_testnet_key\nVELO_GAS_ENV=testnet\nVELO_GAS_BASE_URL=https://api.testnet.velo.pay",
                   "gasEnvironment",
                 )}
                 <p>
@@ -1539,17 +1570,18 @@ const session = await velo.checkout.sessions.create({
                   <InfoIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
                   <div className="text-sm">
                     <strong className="mb-1 block text-foreground">Dashboard evidence</strong>
-                    The authenticated Gas Station page is the operational readback for policy,
-                    wallet quota, daily cap, relayer address and freshness, confirmed fees,
-                    outstanding holds, telemetry, paginated activity, and receipt detail with inner
-                    and outer hashes. Fixture screenshots are not live evidence.
+                    The authenticated Gas Station page is the operational readback for provisioning
+                    and custody status, policy, wallet quota, daily cap, relayer address and balance
+                    freshness, confirmed fees, outstanding holds, telemetry, paginated activity, and
+                    receipt detail with inner and outer hashes. Fixture screenshots are not live
+                    evidence.
                   </div>
                 </div>
 
                 <p className="text-sm text-muted-foreground">
-                  The Gas helpers are available from the current workspace SDK source. The published{" "}
-                  <code>0.1.0-alpha.2</code> package has not been republished with these Gas exports
-                  yet. See the{" "}
+                  The current workspace SDK manifest is <code>0.1.0-alpha.3</code>; npm publication
+                  status has not been verified. Before installing, confirm that your selected SDK
+                  artifact exports the Gas methods. See the{" "}
                   <a
                     href="https://github.com/Velo-Ecosystem-Collection/Velo/blob/main/docs/velo-gas-station.md"
                     target="_blank"

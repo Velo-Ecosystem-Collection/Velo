@@ -6,6 +6,11 @@ import {
   GAS_TEST_SOURCE_KEYPAIR,
 } from "../packages/stellar/src/test-fixtures.ts";
 import {
+  CONVEX_PRODUCTION_DEPLOYMENT_ID,
+  CONVEX_PRODUCTION_VERIFICATION,
+} from "./convex-deployment-provenance.mjs";
+import {
+  createSmokeDependencies,
   runPreflight,
   runSmokeExecution,
   loadSmokeConfig,
@@ -284,6 +289,7 @@ test("loads an explicit production environment and accepts a matching Testnet de
     VELO_GAS_D2_DEPLOYMENT_NAME: "prod:agreeable-salmon-748",
     VELO_GAS_D2_EXPECTED_ENVIRONMENT: "production",
     VELO_GAS_D2_EXPECTED_SOURCE_COMMIT: DEPLOYED_SOURCE_COMMIT,
+    VELO_GAS_D2_DEPLOYMENT_ATTESTATION_FILE: "/tmp/convex-production-deployment.json",
   });
   assert.equal(loaded.ok, true);
   assert.equal(loaded.config.expectedEnvironment, "production");
@@ -427,7 +433,88 @@ test("rejects unsupported expected environments and malformed report evidence", 
     productionWithoutSource.invalid.includes("VELO_GAS_D2_EXPECTED_SOURCE_COMMIT"),
     true,
   );
+  assert.equal(
+    productionWithoutSource.missing.includes("VELO_GAS_D2_DEPLOYMENT_ATTESTATION_FILE"),
+    true,
+  );
   assert.equal(verifySmokeReport({ status: "passed" }).ok, false);
+});
+
+test("production smoke provenance accepts only an attestation matching the live marker", async () => {
+  const productionConfig = {
+    ...CONFIG,
+    deploymentName: CONVEX_PRODUCTION_DEPLOYMENT_ID,
+    expectedEnvironment: "production",
+    deploymentAttestationFile: "/tmp/convex-production-deployment.json",
+  };
+  let verificationCount = 0;
+  const dependencies = createSmokeDependencies({
+    fetchImpl: async () =>
+      Response.json({
+        schemaVersion: 1,
+        deploymentId: CONVEX_PRODUCTION_DEPLOYMENT_ID,
+        environment: "production",
+        network: "testnet",
+        verified: false,
+        deployedSourceCommit: DEPLOYED_SOURCE_COMMIT,
+        verification: "operator-configured-deployed-commit",
+      }),
+    verifyDeploymentAttestation: async ({
+      manifestPath,
+      expectedDeploymentId,
+      expectedSourceCommit,
+    }) => {
+      verificationCount += 1;
+      assert.equal(manifestPath, productionConfig.deploymentAttestationFile);
+      assert.equal(expectedDeploymentId, CONVEX_PRODUCTION_DEPLOYMENT_ID);
+      assert.equal(expectedSourceCommit, DEPLOYED_SOURCE_COMMIT);
+      return {
+        ok: true,
+        value: {
+          deploymentId: CONVEX_PRODUCTION_DEPLOYMENT_ID,
+          environment: "production",
+          network: "testnet",
+          sourceCommit: DEPLOYED_SOURCE_COMMIT,
+        },
+      };
+    },
+  });
+
+  const result = await dependencies.readProvenance(productionConfig);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value, {
+    deploymentId: CONVEX_PRODUCTION_DEPLOYMENT_ID,
+    environment: "production",
+    network: "testnet",
+    verified: true,
+    deployedSourceCommit: DEPLOYED_SOURCE_COMMIT,
+    verification: CONVEX_PRODUCTION_VERIFICATION,
+  });
+  assert.equal(verificationCount, 1);
+
+  const mismatchedDependencies = createSmokeDependencies({
+    fetchImpl: async () =>
+      Response.json({
+        schemaVersion: 1,
+        deploymentId: CONVEX_PRODUCTION_DEPLOYMENT_ID,
+        environment: "production",
+        network: "testnet",
+        verified: false,
+        deployedSourceCommit: "f".repeat(40),
+        verification: "operator-configured-deployed-commit",
+      }),
+    verifyDeploymentAttestation: async () => ({
+      ok: true,
+      value: {
+        deploymentId: CONVEX_PRODUCTION_DEPLOYMENT_ID,
+        environment: "production",
+        network: "testnet",
+        sourceCommit: DEPLOYED_SOURCE_COMMIT,
+      },
+    }),
+  });
+  const mismatch = await mismatchedDependencies.readProvenance(productionConfig);
+  assert.deepEqual(mismatch, { ok: false, code: "source_provenance_mismatch" });
 });
 
 test("blocks a previously submitted invocation during preflight", async () => {

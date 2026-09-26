@@ -2,7 +2,7 @@
 type: plan
 area: instawards
 status: in-progress
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 deliverable: "4 — Integration & Validation Package"
 source_of_truth: repository
 ---
@@ -16,6 +16,8 @@ Proceed to D4 as a **validation and delivery sprint**. The managed Testnet custo
 Use ADR-0005's encrypted Convex custody as the primary path for newly provisioned projects. Preserve manually configured relayers for existing projects; never silently replace their account or move its funds. The managed implementation changes custody configuration and owner setup, while public Gas HTTP and SDK contracts stay compatible. Deploy and exercise every D4 path only on Stellar Testnet.
 
 The deadline is **12 elapsed hours from kickoff**. This is a compressed delivery window against the SOW's 32-hour D4 allocation; it does not change that budget or waive any acceptance criterion. It is feasible only if the production keyring/backup, owner and reviewer access, three participants, funded Testnet accounts, and two runnable dApps are ready at kickoff or can be unblocked immediately. If a prerequisite remains blocked, report partial completion rather than lowering the agreed criteria.
+
+- On September 27, the operator reports that CI/CD is passing. That resolves the reported CI failures, but the previously deployed workflow only wrote the source SHA into a job summary; it did not create independently verifiable deployment evidence. The current workspace now adds a signed post-deploy manifest, a deployment-marker readback, and D2/D3 verification against the live production marker. These changes have not run in GitHub or on production yet. Merge them, let the protected main-branch production deploy job complete successfully, download and verify its `convex-production-deployment-provenance` artifact, then run a fresh production preflight with that manifest and its exact SHA. Keep the campaign NO-GO until those steps pass. No production deployment or Testnet transaction was performed by this change.
 
 ### Current delivery position — September 26, 2026
 

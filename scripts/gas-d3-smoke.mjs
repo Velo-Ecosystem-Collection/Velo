@@ -115,7 +115,9 @@ configuration loader. Credentials and signed XDR may be supplied through the
 documented *_FILE alternatives. Reports never contain credentials, XDR, raw
 responses, or exception messages. Set VELO_GAS_D3_EXPECTED_ENVIRONMENT to
 development (the default) or production. Production mode requires the exact
-deployment name and expected source SHA. Dashboard acceptance remains a separate gate.
+deployment name and expected source SHA, and requires the signed deployment
+manifest in VELO_GAS_D3_DEPLOYMENT_ATTESTATION_FILE. Dashboard acceptance remains
+a separate gate.
 `;
 
 const D3_TO_D2_ENV = {
@@ -135,6 +137,7 @@ const D3_TO_D2_ENV = {
   DEPLOYMENT_NAME: "DEPLOYMENT_NAME",
   EXPECTED_ENVIRONMENT: "EXPECTED_ENVIRONMENT",
   EXPECTED_SOURCE_COMMIT: "EXPECTED_SOURCE_COMMIT",
+  DEPLOYMENT_ATTESTATION_FILE: "DEPLOYMENT_ATTESTATION_FILE",
   TIMEOUT_MS: "TIMEOUT_MS",
   POLL_LIMIT: "POLL_LIMIT",
   POLL_INTERVAL_MS: "POLL_INTERVAL_MS",
@@ -284,9 +287,16 @@ export function createD3SmokeDependencies({
   sdkFactory = createD3Client,
   withSdkTransport = (callback) => withTemporaryFetch(fetchImpl, callback),
   sdkMetadata = null,
+  verifyDeploymentAttestation,
 } = {}) {
   return {
-    ...createSmokeDependencies({ fetchImpl, now, wait, repositoryState }),
+    ...createSmokeDependencies({
+      fetchImpl,
+      now,
+      wait,
+      repositoryState,
+      ...(verifyDeploymentAttestation ? { verifyDeploymentAttestation } : {}),
+    }),
     sdkFactory,
     withSdkTransport,
     sdkMetadata,

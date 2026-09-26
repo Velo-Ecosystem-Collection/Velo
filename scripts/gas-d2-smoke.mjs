@@ -11,6 +11,10 @@ import {
   assertValidPublicKey,
   assertValidTransactionHash,
 } from "../packages/stellar/src/validation.ts";
+import {
+  CONVEX_PRODUCTION_VERIFICATION,
+  verifyConvexDeploymentAttestation,
+} from "./convex-deployment-provenance.mjs";
 import { readRepositoryState } from "./gas-d2-qualification.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -80,6 +84,8 @@ credentials, or exception messages to the report.
 
 Set VELO_GAS_D2_EXPECTED_ENVIRONMENT to development (the default) or production.
 Production mode also requires an explicit deployment name and expected source SHA.
+Production preflight also requires VELO_GAS_D2_DEPLOYMENT_ATTESTATION_FILE to point
+to the signed manifest from the latest successful production deploy.
 `;
 
 export function parseSmokeArgs(values) {
@@ -160,6 +166,7 @@ export async function loadSmokeConfig(
   const expectedEnvironment = env.VELO_GAS_D2_EXPECTED_ENVIRONMENT?.trim() || "development";
   const deploymentName = env.VELO_GAS_D2_DEPLOYMENT_NAME?.trim() || DEFAULT_DEPLOYMENT_NAME;
   const expectedSourceCommit = env.VELO_GAS_D2_EXPECTED_SOURCE_COMMIT?.trim() || null;
+  const deploymentAttestationFile = env.VELO_GAS_D2_DEPLOYMENT_ATTESTATION_FILE?.trim() || null;
   const invalid = DEPLOYMENT_ENVIRONMENTS.has(expectedEnvironment)
     ? []
     : ["VELO_GAS_D2_EXPECTED_ENVIRONMENT"];
@@ -169,6 +176,9 @@ export async function loadSmokeConfig(
   }
   if (expectedEnvironment === "production" && !expectedSourceCommit) {
     invalid.push("VELO_GAS_D2_EXPECTED_SOURCE_COMMIT");
+  }
+  if (expectedEnvironment === "production" && !deploymentAttestationFile) {
+    missing.push("VELO_GAS_D2_DEPLOYMENT_ATTESTATION_FILE");
   }
   const apiKey =
     mode === "preflight"
@@ -206,6 +216,7 @@ export async function loadSmokeConfig(
       deploymentName,
       expectedEnvironment,
       expectedSourceCommit,
+      deploymentAttestationFile,
       timeoutMs: boundedInteger(env.VELO_GAS_D2_TIMEOUT_MS, 30_000, 1_000, MAX_TIMEOUT_MS),
       pollLimit: boundedInteger(env.VELO_GAS_D2_POLL_LIMIT, DEFAULT_POLL_LIMIT, 0, 120),
       pollIntervalMs: boundedInteger(
@@ -223,6 +234,7 @@ export function createSmokeDependencies({
   now = () => new Date(),
   wait = defaultWait,
   repositoryState = () => readRepositoryState(repositoryRoot),
+  verifyDeploymentAttestation = verifyConvexDeploymentAttestation,
 } = {}) {
   return {
     fetchImpl,
@@ -230,7 +242,8 @@ export function createSmokeDependencies({
     wait,
     repositoryState,
     readSnapshot: (config, scope) => readOperatorSnapshot(config, scope, { fetchImpl }),
-    readProvenance: (config) => readDeploymentProvenance(config, { fetchImpl }),
+    readProvenance: (config) =>
+      readDeploymentProvenance(config, { fetchImpl, verifyDeploymentAttestation }),
     probeNetwork: (config) => probeTestnetNetwork(config, { fetchImpl }),
     probeTransaction: (config, transactionHash) =>
       probeTestnetTransaction(config, transactionHash, { fetchImpl }),
@@ -827,7 +840,7 @@ async function readOperatorSnapshot(config, scope, { fetchImpl }) {
   return normalizeSnapshot(result.value, { ...scope, projectId: config.projectId });
 }
 
-async function readDeploymentProvenance(config, { fetchImpl }) {
+async function readDeploymentProvenance(config, { fetchImpl, verifyDeploymentAttestation }) {
   const url = scopedUrl(config.provenanceUrl, {
     projectId: config.projectId,
     deploymentId: config.deploymentName,
@@ -847,6 +860,35 @@ async function readDeploymentProvenance(config, { fetchImpl }) {
   );
   if (!result.ok) return result;
   if (result.status !== 200) return { ok: false, code: "source_provenance_unavailable" };
+  if (expectedDeploymentEnvironment(config) === "production") {
+    if (!config.deploymentAttestationFile || !config.expectedSourceCommit) {
+      return { ok: false, code: "source_provenance_unverified" };
+    }
+    const attestation = await verifyDeploymentAttestation({
+      manifestPath: config.deploymentAttestationFile,
+      expectedDeploymentId: config.deploymentName,
+      expectedSourceCommit: config.expectedSourceCommit,
+    });
+    if (attestation?.ok !== true) return { ok: false, code: "source_provenance_unverified" };
+    if (
+      !isRecord(result.value) ||
+      result.value.schemaVersion !== 1 ||
+      result.value.deploymentId !== attestation.value.deploymentId ||
+      result.value.environment !== attestation.value.environment ||
+      result.value.network !== attestation.value.network ||
+      result.value.deployedSourceCommit !== attestation.value.sourceCommit
+    ) {
+      return { ok: false, code: "source_provenance_mismatch" };
+    }
+    return normalizeProvenance(
+      {
+        ...result.value,
+        verified: true,
+        verification: CONVEX_PRODUCTION_VERIFICATION,
+      },
+      config,
+    );
+  }
   return normalizeProvenance(result.value, config);
 }
 

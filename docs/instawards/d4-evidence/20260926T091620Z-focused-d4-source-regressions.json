@@ -1,0 +1,35 @@
+{
+  "artifact": "velo_gas_d4_focused_source_regressions",
+  "recordedAtUtc": "2026-09-26T09:16:20Z",
+  "branch": "instawards/gas-station-deliverable-4",
+  "head": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+  "workingTreeFrozen": false,
+  "checks": [
+    {
+      "command": "./node_modules/.bin/vitest run convex/tests/apiKey.test.ts convex/tests/gas/authorization.test.ts convex/tests/gas/relayer.test.ts convex/tests/gas/custody_inventory.test.ts convex/tests/payAccessSync.test.ts",
+      "workingDirectory": "packages/backend",
+      "testFilesPassed": 5,
+      "testsPassed": 27,
+      "testsFailed": 0
+    },
+    {
+      "command": "node --experimental-strip-types --test features/projects/project-api-keys.test.ts",
+      "workingDirectory": "apps/web",
+      "testsPassed": 6,
+      "testsFailed": 0
+    },
+    {
+      "command": "node --experimental-strip-types --test scripts/gas-d4-campaign.test.mjs",
+      "workingDirectory": ".",
+      "testsPassed": 10,
+      "testsFailed": 0
+    }
+  ],
+  "totalTestsPassed": 43,
+  "totalTestsFailed": 0,
+  "scope": "Focused API-key authorization, managed custody, relayer, custody inventory, PayAccess duplicate-mapping, project API-key UI, and D4 campaign recorder regressions.",
+  "limitations": [
+    "This focused run does not replace the complete package suites or hosted CI.",
+    "The working tree is not frozen and no production deployment or Testnet transaction was performed."
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "capturedAt": "2026-09-26T06:08:21Z",
+  "scope": "local development example configuration",
+  "examples": {
+    "nextjs-app-router": {
+      "gasApiKeyConfiguredWithExpectedTestnetShape": true,
+      "gasEnvironment": "development",
+      "gasBaseUrlCategory": "loopback_http",
+      "gasCallerTokenConfiguredAndDistinct": true,
+      "checkoutKeysConfigured": true
+    },
+    "express": {
+      "gasApiKeyConfiguredWithExpectedTestnetShape": true,
+      "gasEnvironment": "development",
+      "gasBaseUrlCategory": "loopback_http",
+      "gasCallerTokenConfiguredAndDistinct": true,
+      "checkoutKeysConfigured": true
+    }
+  },
+  "localChecks": {
+    "expressTests": "15/15 passed",
+    "nextjsTests": "18/18 passed",
+    "expressTypecheck": "passed",
+    "nextjsTypecheck": "passed"
+  },
+  "credentialValuesPersisted": false,
+  "testnetTransactionSubmitted": false,
+  "deployedIntegrationVerified": false
+}

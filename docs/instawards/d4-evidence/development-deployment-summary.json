@@ -1,0 +1,34 @@
+{
+  "artifact": "velo_gas_d4_development_convex_deployment",
+  "recordedAtUtc": "2026-09-26T04:26:37Z",
+  "deployment": "capable-kingfisher-697",
+  "deploymentIdentity": "dev:capable-kingfisher-697",
+  "branch": "instawards/gas-station-deliverable-4",
+  "head": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+  "workingTreeDirty": true,
+  "command": "convex dev --once --typecheck enable --codegen enable --tail-logs disable",
+  "result": "Convex functions ready after two dev pushes; latest push included the internal-only custody configuration status action",
+  "safeCustodyConfigurationStatus": {
+    "keyringStatus": "valid",
+    "activeKeyVersion": "v1",
+    "keyVersionCount": 1,
+    "deploymentId": "dev:capable-kingfisher-697",
+    "network": "testnet",
+    "provisioningEnabled": true,
+    "keyringValueRead": false
+  },
+  "custodyAfterDeploy": {
+    "totalRecords": 2,
+    "pending": 0,
+    "ready": 1,
+    "failed": 1
+  },
+  "productionDeploymentAttempted": false,
+  "projectProvisioned": false,
+  "testnetTransactionSubmitted": false,
+  "cliNotices": [
+    "Convex CLI update available: 1.42.2 to 1.46.0",
+    "Convex AI files are out of date",
+    "Convex project is above Free plan limits; upgrade or reduce usage to avoid service interruption"
+  ]
+}

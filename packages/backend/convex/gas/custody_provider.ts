@@ -87,16 +87,35 @@ export class EncryptedConvexGasRelayerCustodyProvider implements GasRelayerCusto
     context: Omit<GasCustodyContext, "keyVersion">,
     encrypted: GasEncryptedSecret,
   ): Promise<GasEncryptedSecret> {
+    return await this.reencryptForContext(context, context, encrypted);
+  }
+
+  /** Rebind an existing envelope to a new deployment context without changing its account. */
+  async reencryptForContext(
+    sourceContext: Omit<GasCustodyContext, "keyVersion">,
+    targetContext: Omit<GasCustodyContext, "keyVersion">,
+    encrypted: GasEncryptedSecret,
+  ): Promise<GasEncryptedSecret> {
+    if (
+      sourceContext.projectId !== targetContext.projectId ||
+      sourceContext.network !== targetContext.network ||
+      sourceContext.publicKey !== targetContext.publicKey
+    ) {
+      throw new GasCustodyCryptoError("decryption_failed");
+    }
     let secretKey: string | undefined = await decryptGasRelayerSecret(
       encrypted,
       this.keyring,
-      context,
+      sourceContext,
     );
     try {
-      if (Keypair.fromSecret(secretKey).publicKey() !== context.publicKey) {
+      if (
+        Keypair.fromSecret(secretKey).publicKey() !== sourceContext.publicKey ||
+        sourceContext.publicKey !== targetContext.publicKey
+      ) {
         throw new Error("Relayer address mismatch");
       }
-      return await encryptGasRelayerSecret(secretKey, this.keyring, context);
+      return await encryptGasRelayerSecret(secretKey, this.keyring, targetContext);
     } finally {
       secretKey = undefined;
     }

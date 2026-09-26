@@ -51,6 +51,9 @@ jobs:
       - name: Run D2 and D3 Gas Smoke Tests
         run: node --experimental-strip-types --test scripts/gas-d2-smoke.test.mjs scripts/gas-d3-smoke.test.mjs
 
+      - name: Run D4 Gas Campaign Recorder Tests
+        run: node --experimental-strip-types --test scripts/gas-d4-campaign.test.mjs
+
       - name: Install Playwright Browsers
         run: pnpm --filter web exec playwright install --with-deps chromium firefox webkit
 

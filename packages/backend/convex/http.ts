@@ -7,7 +7,7 @@ import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 
 import { internal } from "./_generated/api";
-import { env, httpAction } from "./_generated/server";
+import { httpAction } from "./_generated/server";
 import { readTestnetNativeBalance, type TestnetNativeBalanceResult } from "./gas/balance";
 
 const http = httpRouter();
@@ -25,6 +25,23 @@ const PHASES = new Set([
   "before-denial",
   "after-denial",
 ]);
+
+type HttpRuntimeEnv = typeof import("./_generated/server").env;
+
+function getHttpRuntimeEnv(): HttpRuntimeEnv {
+  return process.env as unknown as HttpRuntimeEnv;
+}
+
+function getD2DeploymentConfig(runtimeEnv: HttpRuntimeEnv) {
+  const environment = runtimeEnv.VELO_DEPLOYMENT_ENVIRONMENT;
+  const configuredDeploymentId = runtimeEnv.VELO_GAS_D2_DEPLOYMENT_NAME?.trim();
+  const deploymentId =
+    configuredDeploymentId ||
+    (environment === "development" ? DEFAULT_D2_DEPLOYMENT_NAME : undefined);
+
+  if (!environment || !deploymentId) return null;
+  return { deploymentId, environment };
+}
 
 function constantTimeEqual(left: string, right: string) {
   const length = Math.max(left.length, right.length);
@@ -61,7 +78,7 @@ function operatorResponse(status: number, body: Record<string, unknown>) {
 }
 
 function constantTimeTokenMatch(request: Request): boolean {
-  const configured = env.VELO_GAS_D2_OPERATOR_TOKEN?.trim();
+  const configured = getHttpRuntimeEnv().VELO_GAS_D2_OPERATOR_TOKEN?.trim();
   const authorization = request.headers.get("authorization")?.trim() ?? "";
   if (!configured || !authorization.startsWith("Bearer ")) return false;
   const supplied = authorization.slice("Bearer ".length).trim();
@@ -119,7 +136,10 @@ export async function readOperatorSnapshot(request: Request, ctx: ActionCtx) {
   if (!constantTimeTokenMatch(request)) return operatorResponse(401, { error: "Unauthorized" });
   const scope = parseSnapshotScope(request);
   if (!scope) return operatorResponse(400, { error: "Invalid snapshot scope" });
-  const configuredProjectId = env.VELO_GAS_D2_PROJECT_ID?.trim();
+  const runtimeEnv = getHttpRuntimeEnv();
+  const deployment = getD2DeploymentConfig(runtimeEnv);
+  if (!deployment) return operatorResponse(503, { error: "Operator snapshot unavailable" });
+  const configuredProjectId = runtimeEnv.VELO_GAS_D2_PROJECT_ID?.trim();
   if (configuredProjectId && configuredProjectId !== scope.projectId) {
     return operatorResponse(404, { error: "Project not found" });
   }
@@ -155,8 +175,8 @@ export async function readOperatorSnapshot(request: Request, ctx: ActionCtx) {
           : { idempotencyKeyHash: scope.idempotencyKeyHash }),
       },
       deployment: {
-        deploymentId: env.VELO_GAS_D2_DEPLOYMENT_NAME?.trim() || DEFAULT_D2_DEPLOYMENT_NAME,
-        environment: env.VELO_DEPLOYMENT_ENVIRONMENT || "development",
+        deploymentId: deployment.deploymentId,
+        environment: deployment.environment,
         network: "testnet",
       },
       signer: {
@@ -182,20 +202,23 @@ export async function readOperatorSnapshot(request: Request, ctx: ActionCtx) {
   }
 }
 
-async function readDeploymentProvenance(request: Request) {
+export async function readDeploymentProvenance(request: Request) {
   if (!constantTimeTokenMatch(request)) return operatorResponse(401, { error: "Unauthorized" });
+  const runtimeEnv = getHttpRuntimeEnv();
+  const deployment = getD2DeploymentConfig(runtimeEnv);
+  if (!deployment) {
+    return operatorResponse(503, { error: "Deployment provenance is not configured" });
+  }
   const url = new URL(request.url);
   const projectId = requiredQuery(url, "projectId");
   const deploymentId = requiredQuery(url, "deploymentId");
-  const configuredDeploymentId =
-    env.VELO_GAS_D2_DEPLOYMENT_NAME?.trim() || DEFAULT_D2_DEPLOYMENT_NAME;
-  const configuredProjectId = env.VELO_GAS_D2_PROJECT_ID?.trim();
-  const commit = env.VELO_GAS_D2_DEPLOYED_SOURCE_COMMIT?.trim() || "";
+  const configuredProjectId = runtimeEnv.VELO_GAS_D2_PROJECT_ID?.trim();
+  const commit = runtimeEnv.VELO_GAS_D2_DEPLOYED_SOURCE_COMMIT?.trim() || "";
   if (
     !projectId ||
     (configuredProjectId && projectId !== configuredProjectId) ||
     !deploymentId ||
-    deploymentId !== configuredDeploymentId
+    deploymentId !== deployment.deploymentId
   ) {
     return operatorResponse(400, { error: "Invalid provenance scope" });
   }
@@ -205,10 +228,13 @@ async function readDeploymentProvenance(request: Request) {
 
   return operatorResponse(200, {
     schemaVersion: 1,
-    deploymentId: configuredDeploymentId,
-    environment: env.VELO_DEPLOYMENT_ENVIRONMENT || "development",
+    deploymentId: deployment.deploymentId,
+    environment: deployment.environment,
     network: "testnet",
-    verified: true,
+    // This value is an operator-configured marker, not independent build or
+    // deployment attestation. Keep it visible for diagnostics without
+    // allowing callers to treat it as verified source provenance.
+    verified: false,
     deployedSourceCommit: commit,
     verification: "operator-configured-deployed-commit",
   });

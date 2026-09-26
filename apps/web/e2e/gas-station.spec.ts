@@ -17,6 +17,7 @@ const screenshotPath = (name: string) =>
 const ownerProjectUrl = "/projects/project-gas-owner/gas";
 const memberProjectUrl = "/projects/project-gas-member/gas";
 const validContractId = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM";
+const managedRelayerPublicKey = "GA54SPC34JL3I57ENALTO2V26XOFFG4VGQLFQXDGF6KJ5TJY7ODY56ST";
 const updatedRelayerPublicKey = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 declare global {
@@ -60,7 +61,12 @@ async function gotoGas(page: Page, config: GasFixtureConfig, url = ownerProjectU
   await expect.poll(() => page.evaluate(() => Boolean(window.__veloGasE2E))).toBe(true);
 }
 
-type FixtureCommand = "reactive-update" | "stored-policy-update" | "disconnect" | "connect";
+type FixtureCommand =
+  | "reactive-update"
+  | "stored-policy-update"
+  | "provisioning-commit"
+  | "disconnect"
+  | "connect";
 
 async function fixture(page: Page, command: FixtureCommand) {
   await page.evaluate((action) => {
@@ -72,6 +78,9 @@ async function fixture(page: Page, command: FixtureCommand) {
         return;
       case "stored-policy-update":
         api.simulateStoredPolicyUpdate();
+        return;
+      case "provisioning-commit":
+        api.simulateProvisioningCommit();
         return;
       case "disconnect":
         api.setConnection(false);
@@ -114,6 +123,17 @@ async function resolveNext(page: Page, functionName?: string, value?: unknown) {
   );
 }
 
+async function rejectNext(page: Page, functionName?: string, message?: string) {
+  await page.evaluate(
+    ({ name, rejection }) => {
+      const api = window.__veloGasE2E;
+      if (!api) throw new Error("Gas E2E fixture API was not installed");
+      api.rejectNext(name, rejection);
+    },
+    { name: functionName, rejection: message },
+  );
+}
+
 async function expectNoHorizontalOverflow(page: Page) {
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
@@ -148,19 +168,21 @@ test.beforeEach(async ({ page }) => {
 
 test.describe("integrated Gas Station simulated browser regressions", () => {
   test("covers owner/editor/viewer access and sidebar navigation", async ({ page }, testInfo) => {
-    await gotoGas(page, {
+    await seedFixture(page, {
       session: "owner",
       projectId: "project-gas-owner",
     });
+    await page.goto("/projects/project-gas-owner/api-keys");
+    await expect.poll(() => page.evaluate(() => Boolean(window.__veloGasE2E))).toBe(true);
 
-    await expect(page.getByRole("heading", { name: "Gas Station" })).toBeVisible();
-    await expect(page.getByText("owner access", { exact: true })).toBeVisible();
-    await expect(page.getByText("Owner Gas Project", { exact: true }).first()).toBeVisible();
-
+    await page.getByRole("button", { name: "Pay", exact: true }).click();
     const gasLink = page.locator(`a[href="${ownerProjectUrl}"]`).first();
     await expect(gasLink).toBeVisible();
     await gasLink.click();
     await expect(page).toHaveURL(new RegExp(`${ownerProjectUrl}$`));
+    await expect(page.getByRole("heading", { name: "Gas Station" })).toBeVisible();
+    await expect(page.getByText("owner access", { exact: true })).toBeVisible();
+    await expect(page.getByText("Owner Gas Project", { exact: true }).first()).toBeVisible();
 
     if (testInfo.project.name === "chromium") {
       await page.screenshot({
@@ -253,6 +275,111 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await expect(page.getByRole("textbox", { name: "Relayer public address" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Save relayer configuration" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Refresh balance" })).toBeVisible();
+  });
+
+  test("lets owners generate a wallet for an older project and publishes it after custody commits", async ({
+    page,
+  }) => {
+    await gotoGas(page, {
+      session: "owner",
+      projectId: "project-gas-owner",
+      scenario: "existing-project-no-relayer",
+    });
+
+    await expect(
+      page.getByRole("heading", { name: "Generate a Testnet relayer wallet" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/Velo generates and stores the signer in encrypted custody/i),
+    ).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Relayer public address" })).toHaveCount(0);
+
+    const advanced = page.getByText("Advanced: configure an existing relayer", { exact: true });
+    await advanced.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("textbox", { name: "Relayer public address" })).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("textbox", { name: "Relayer public address" })).toHaveCount(0);
+
+    const generate = page.getByRole("button", { name: "Generate Testnet relayer wallet" });
+    await generate.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("button", { name: "Queuing wallet generation…" })).toBeDisabled();
+    await rejectNext(page, "gas/mutations:retryProvisioning", "fixture queue failure");
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Wallet generation could not be queued" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Generate Testnet relayer wallet" }),
+    ).toBeEnabled();
+
+    await page.getByRole("button", { name: "Generate Testnet relayer wallet" }).click();
+    await expect(page.getByRole("button", { name: "Queuing wallet generation…" })).toBeDisabled();
+    await resolveNext(page, "gas/mutations:retryProvisioning");
+    await expect(
+      page.getByText("Relayer wallet generation in progress", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Generating wallet…" })).toBeDisabled();
+    await expect(page.getByText(managedRelayerPublicKey, { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Prepare funding" })).toHaveCount(0);
+
+    const provisioningCalls = (await calls(page)).filter(
+      (call) => call.functionName === "gas/mutations:retryProvisioning",
+    );
+    expect(provisioningCalls).toHaveLength(2);
+    expect(provisioningCalls.map((call) => call.status).sort()).toEqual(["fulfilled", "rejected"]);
+
+    await fixture(page, "provisioning-commit");
+    await expect(page.getByText(managedRelayerPublicKey, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Prepare funding" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Review sponsorship settings" })).toBeVisible();
+
+    await configureFixture(page, {
+      session: "editor",
+      projectId: "project-gas-owner",
+      scenario: "existing-project-no-relayer",
+    });
+    await expect(
+      page.getByRole("heading", { name: "Generate a Testnet relayer wallet" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Generate Testnet relayer wallet" })).toHaveCount(
+      0,
+    );
+
+    await configureFixture(page, {
+      session: "viewer",
+      projectId: "project-gas-member",
+      scenario: "existing-project-no-relayer",
+    });
+    await page.goto(memberProjectUrl);
+    await expect(
+      page.getByRole("heading", { name: "Generate a Testnet relayer wallet" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Generate Testnet relayer wallet" })).toHaveCount(
+      0,
+    );
+  });
+
+  test("shows deployment configuration failures and manual setup inside the no-relayer card", async ({
+    page,
+  }) => {
+    await gotoGas(page, {
+      session: "owner",
+      projectId: "project-gas-owner",
+      scenario: "existing-project-config-error",
+    });
+
+    await expect(
+      page.getByRole("heading", { name: "Generate a Testnet relayer wallet" }),
+    ).toBeVisible();
+    await expect(
+      page.getByText(/deployment encryption keyring or deployment identity is not configured/i),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Retry wallet generation" })).toBeEnabled();
+    await expect(
+      page.getByText("Advanced: configure an existing relayer", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Relayer public address" })).toHaveCount(0);
   });
 
   test("saves normalized policy arguments once and applies stored readback", async ({ page }) => {
@@ -478,6 +605,25 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     ).toHaveCount(0);
   });
 
+  test("blocks account actions when managed custody belongs to another deployment", async ({
+    page,
+  }) => {
+    await gotoGas(page, {
+      session: "owner",
+      projectId: "project-gas-owner",
+      scenario: "managed-relayer-context-mismatch",
+    });
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "Custody deployment context does not match" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Prepare funding" })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Review sponsorship settings" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Pause sponsorship" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Resume relayer" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Prepare withdrawal" })).toHaveCount(0);
+  });
+
   test("protects pending completions when the wallet identity changes", async ({ page }) => {
     await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
     await page.getByLabel("Daily cap (XLM)").fill("8");
@@ -548,6 +694,52 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await expect(
       page.locator('section[aria-labelledby="gas-station-integration-title"]'),
     ).toHaveCount(0);
+  });
+
+  test("generates a Gas-only Testnet API key once for the project owner", async ({ page }) => {
+    await gotoGas(
+      page,
+      { session: "owner", projectId: "project-gas-owner" },
+      "/projects/project-gas-owner/api-keys",
+    );
+
+    await expect(page.getByRole("heading", { name: "API keys" })).toBeVisible();
+    await page.getByRole("button", { name: "Generate key" }).first().click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog.getByRole("heading", { name: "Generate API key" })).toBeVisible();
+    await dialog.getByLabel("API access").selectOption("gas");
+    await dialog.getByLabel("Key label").fill("Express Gas server");
+    await expect(dialog.getByLabel("Payment routing")).toHaveCount(0);
+    await dialog.getByRole("button", { name: "Generate key" }).click();
+    await resolveNext(page, "projects/mutation:generateApiKey");
+
+    await expect(page.getByText("Save your API key")).toBeVisible();
+    await expect(page.getByText("VELO_GAS_API_KEY", { exact: true })).toBeVisible();
+    const rawKey = await page.locator(".select-all").first().textContent();
+    expect(rawKey).toMatch(/^tg_test_[a-f0-9]{32}$/);
+
+    const keyCalls = (await calls(page)).filter(
+      (call) => call.functionName === "projects/mutation:generateApiKey",
+    );
+    expect(keyCalls).toHaveLength(1);
+    expect(keyCalls[0]?.args).toMatchObject({
+      id: "project-gas-owner",
+      label: "Express Gas server",
+      purpose: "gas",
+    });
+    expect(keyCalls[0]?.args).not.toHaveProperty("paymentAnchor");
+
+    const keyRow = page.getByRole("row").filter({ hasText: "Express Gas server" });
+    await expect(keyRow.getByText("Gas Station · Testnet", { exact: true })).toBeVisible();
+    await expect(keyRow.getByText("tg_test_eeee...eeee", { exact: true })).toBeVisible();
+    expect(JSON.stringify(await calls(page))).not.toContain(rawKey);
+    expect(JSON.stringify(await calls(page))).not.toContain("keyHash");
+
+    await page.getByRole("button", { name: "I have copied the key" }).click();
+    await expect(page.getByText("Save your API key")).toHaveCount(0);
+    await expect(page.getByText(rawKey!, { exact: true })).toHaveCount(0);
+    await expect(keyRow.getByText("tg_test_eeee...eeee", { exact: true })).toBeVisible();
   });
 
   test("renders twenty-row pagination, reactive telemetry, and receipt lifecycle distinctions", async ({

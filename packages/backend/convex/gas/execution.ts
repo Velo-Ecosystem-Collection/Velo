@@ -128,6 +128,61 @@ export const getCustodyRecord = internalQuery({
   },
 });
 
+/** Safe preflight for an operator-requested custody deployment-context migration. */
+export const getCustodyContextMigrationPreflight = internalQuery({
+  args: { projectId: v.id("projects"), publicKey: v.string() },
+  returns: v.object({
+    policyState: v.union(
+      v.literal("missing"),
+      v.literal("disabled"),
+      v.literal("enabled"),
+      v.literal("ambiguous"),
+    ),
+    relayerState: v.union(
+      v.literal("matching"),
+      v.literal("missing"),
+      v.literal("mismatch"),
+      v.literal("ambiguous"),
+    ),
+    maintenanceLockActive: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const policies = await ctx.db
+      .query("gasPolicies")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(2);
+    const relayers = await ctx.db
+      .query("relayerAccounts")
+      .withIndex("by_project_id_and_network", (q) =>
+        q.eq("projectId", args.projectId).eq("network", GAS_NETWORK),
+      )
+      .take(2);
+    const locks = await ctx.db
+      .query("gasProjectMaintenance")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(1);
+    return {
+      policyState:
+        policies.length > 1
+          ? ("ambiguous" as const)
+          : policies[0]
+            ? policies[0].enabled
+              ? ("enabled" as const)
+              : ("disabled" as const)
+            : ("missing" as const),
+      relayerState:
+        relayers.length > 1
+          ? ("ambiguous" as const)
+          : relayers.length === 0
+            ? ("missing" as const)
+            : relayers[0]?.publicKey === args.publicKey
+              ? ("matching" as const)
+              : ("mismatch" as const),
+      maintenanceLockActive: locks.length > 0,
+    };
+  },
+});
+
 export const markCustodyProvisioningFailed = internalMutation({
   args: {
     projectId: v.id("projects"),
@@ -260,6 +315,80 @@ export const rotateProvisionedCustodyKey = internalMutation({
       updatedAt: Date.now(),
     });
     return "rotated";
+  },
+});
+
+/** Atomically rebind custody AAD after an operator has verified the old envelope. */
+export const migrateProvisionedCustodyDeploymentContext = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    expectedStoredDeploymentId: v.string(),
+    targetDeploymentId: v.string(),
+    expectedKeyVersion: v.string(),
+    expectedUpdatedAt: v.number(),
+    expectedPublicKey: v.string(),
+    keyVersion: v.string(),
+    nonce: v.string(),
+    ciphertext: v.string(),
+    authTag: v.string(),
+  },
+  returns: v.union(
+    v.literal("migrated"),
+    v.literal("stale"),
+    v.literal("sponsorship_enabled"),
+    v.literal("maintenance_locked"),
+  ),
+  handler: async (ctx, args) => {
+    const custodyMatches = await ctx.db
+      .query("gasRelayerCustody")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(2);
+    const custody = custodyMatches[0];
+    if (
+      custodyMatches.length !== 1 ||
+      !custody ||
+      custody.status !== "ready" ||
+      custody.deploymentId !== args.expectedStoredDeploymentId ||
+      custody.deploymentId === args.targetDeploymentId ||
+      custody.keyVersion !== args.expectedKeyVersion ||
+      custody.updatedAt !== args.expectedUpdatedAt ||
+      custody.publicKey !== args.expectedPublicKey
+    ) {
+      return "stale" as const;
+    }
+
+    const policies = await ctx.db
+      .query("gasPolicies")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(2);
+    if (policies.length > 1) return "stale" as const;
+    if (policies[0]?.enabled) return "sponsorship_enabled" as const;
+
+    const locks = await ctx.db
+      .query("gasProjectMaintenance")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(1);
+    if (locks.length > 0) return "maintenance_locked" as const;
+
+    const relayers = await ctx.db
+      .query("relayerAccounts")
+      .withIndex("by_project_id_and_network", (q) =>
+        q.eq("projectId", args.projectId).eq("network", GAS_NETWORK),
+      )
+      .take(2);
+    if (relayers.length !== 1 || relayers[0]?.publicKey !== args.expectedPublicKey) {
+      return "stale" as const;
+    }
+
+    await ctx.db.patch(custody._id, {
+      deploymentId: args.targetDeploymentId,
+      keyVersion: args.keyVersion,
+      nonce: args.nonce,
+      ciphertext: args.ciphertext,
+      authTag: args.authTag,
+      updatedAt: Date.now(),
+    });
+    return "migrated" as const;
   },
 });
 

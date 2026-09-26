@@ -1,0 +1,41 @@
+{
+  "artifact": "velo_gas_d4_production_identity_readback",
+  "recordedAtUtc": "2026-09-26T07:38:32Z",
+  "deployment": "agreeable-salmon-748",
+  "readOnly": true,
+  "nonSecretConvexEnvironment": {
+    "VELO_GAS_CUSTODY_DEPLOYMENT_ID": "prod:agreeable-salmon-748",
+    "VELO_GAS_D2_DEPLOYMENT_NAME": "prod:agreeable-salmon-748",
+    "VELO_DEPLOYMENT_ENVIRONMENT": "production"
+  },
+  "frontendVercel": {
+    "status": "operator_reported_configured_for_same_production_deployment",
+    "url": "https://velo-build.dev",
+    "independentlyVerified": false
+  },
+  "deployedCustodyStatusAction": {
+    "lastObservedAtUtc": "2026-09-26T07:04:49Z",
+    "reportedDeploymentId": "dev:capable-kingfisher-697",
+    "keyringStatus": "valid",
+    "activeKeyVersion": "v1",
+    "provisioningEnabled": true,
+    "requiresFreshReadAfterCodeDeployment": true
+  },
+  "managedCustodyInventory": {
+    "lastObservedAtUtc": "2026-09-26T07:04:49Z",
+    "totalRecords": 0
+  },
+  "localCandidate": {
+    "head": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+    "workingTreeDirty": true,
+    "sharedInvocationTimeGasEnvironmentReader": "implemented_and_locally_verified",
+    "deployed": false
+  },
+  "safety": {
+    "keyringValueRead": false,
+    "custodyPayloadRead": false,
+    "provisioningAttempted": false,
+    "relayerFunded": false,
+    "testnetTransactionSubmitted": false
+  }
+}

@@ -2,6 +2,7 @@ import { v, ConvexError } from "convex/values";
 
 import { internal } from "../_generated/api";
 import { internalMutation, mutation } from "../_generated/server";
+import { canUseGeneralApi } from "../api_keys/helpers";
 import {
   commercialEnforcementEnabled,
   consumeCommercialReservation,
@@ -46,7 +47,7 @@ export const createPaymentIntent = mutation({
       .withIndex("by_key_hash", (q) => q.eq("keyHash", args.apiKeyHash))
       .unique();
 
-    if (!apiKey || apiKey.revoked) {
+    if (!apiKey || apiKey.revoked || !canUseGeneralApi(apiKey)) {
       throw new ConvexError("Unauthorized: Invalid API key.");
     }
 
@@ -1344,6 +1345,7 @@ export const createAuthorizedPaymentIntentV2 = internalMutation({
     if (
       !apiKey ||
       apiKey.revoked ||
+      !canUseGeneralApi(apiKey) ||
       apiKey.keyHash !== args.apiKeyHash ||
       apiKey.projectId !== args.projectId ||
       !project ||

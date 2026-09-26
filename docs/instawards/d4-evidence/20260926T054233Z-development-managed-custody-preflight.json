@@ -1,0 +1,36 @@
+{
+  "capturedAt": "2026-09-26T05:42:33Z",
+  "convexDeployment": "capable-kingfisher-697",
+  "custodyAggregate": {
+    "totalRecords": 3,
+    "byDeploymentId": [
+      {
+        "deploymentId": null,
+        "totalRecords": 1,
+        "pending": 0,
+        "ready": 0,
+        "failed": 1
+      },
+      {
+        "deploymentId": "dev:capable-kingfisher-697",
+        "totalRecords": 2,
+        "pending": 0,
+        "ready": 2,
+        "failed": 0
+      }
+    ]
+  },
+  "configuration": {
+    "deploymentId": "dev:capable-kingfisher-697",
+    "network": "testnet",
+    "provisioningEnabled": true,
+    "keyringStatus": "valid",
+    "activeKeyVersion": "v1",
+    "keyVersionCount": 1
+  },
+  "projectIdentifiersReturned": false,
+  "keyMaterialReturned": false,
+  "ownerFundingOrActivationVerified": false,
+  "testnetTransactionSubmitted": false,
+  "interpretation": "Two custody rows are ready under the expected development identity. One failed row has no deployment identity and remains unmapped; the safe aggregate does not identify the operator-reported new project."
+}

@@ -1,0 +1,76 @@
+{
+  "artifact": "velo_gas_d4_local_browser_regression",
+  "recordedAtUtc": "2026-09-26T12:58:07Z",
+  "revision": {
+    "branch": "instawards/gas-station-deliverable-4",
+    "head": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+    "workingTreeDirty": true
+  },
+  "environment": {
+    "mode": "local simulated fixtures",
+    "baseUrl": "http://127.0.0.1:3100",
+    "externalRequests": "blocked",
+    "productionAccess": false,
+    "testnetTransactionsSubmitted": false
+  },
+  "command": [
+    "./node_modules/.bin/playwright test --config=playwright.gas.config.ts",
+    "./node_modules/.bin/playwright test --config=playwright.gas.config.ts --project=webkit"
+  ],
+  "postNavigationTestFix": true,
+  "chromium": {
+    "passed": 18,
+    "failed": 0,
+    "status": "passed",
+    "observedInLatestAllBrowserRun": true
+  },
+  "webkit": {
+    "passed": 18,
+    "failed": 0,
+    "status": "passed",
+    "observedInLatestWebkitOnlyRun": true
+  },
+  "combined": {
+    "passed": 36,
+    "failed": 0,
+    "status": "passed_on_chromium_and_webkit"
+  },
+  "firefox": {
+    "attempted": 5,
+    "passed": 0,
+    "failed": 4,
+    "interrupted": 1,
+    "notRun": 13,
+    "status": "blocked_by_local_browser_launch",
+    "diagnostic": "Four launches timed out after 180000 ms; macOS denied the plugin-container sandbox extension and the headless compositor failed to map the default framebuffer. The fifth test was interrupted before assertions; 13 Firefox cases were not run.",
+    "applicationAssertionsRan": false,
+    "diagnosticArtifact": "apps/web/playwright-report/gas-test-results/gas-station-integrated-Gas-ed1a3-cess-and-sidebar-navigation-firefox/error-context.md"
+  },
+  "firefoxEscalatedRetry": {
+    "recordedAtUtc": "2026-09-26T04:55:22Z",
+    "sandboxPermissions": "require_escalated",
+    "result": "same_host_browser_launch_failure",
+    "firstTestLaunchTimedOut": true,
+    "timedOutAfterMilliseconds": 180000,
+    "secondTestInterruptedAfterFirstLaunchFailure": true,
+    "remainingTestsNotRun": 15,
+    "diagnostic": "macOS denied the Firefox plugin-container sandbox extension and the headless compositor could not map the default framebuffer",
+    "applicationAssertionsRan": false
+  },
+  "firefoxRetryAfterNavigationFix": {
+    "command": "MOZ_DISABLE_CONTENT_SANDBOX=1 ./node_modules/.bin/playwright test --config=playwright.gas.config.ts --project=firefox --grep 'covers owner/editor/viewer access' --timeout=15000",
+    "result": "interrupted_before_browser_result",
+    "applicationAssertionsRan": false,
+    "countedAsPassOrFailure": false
+  },
+  "simulatedScreenshots": {
+    "preexistingArtifactsRestored": true
+  },
+  "latestRuns": {
+    "capturedAtUtc": "2026-09-26T12:58:07Z",
+    "allBrowserSuiteStoppedAfterRepeatedFirefoxStartupTimeouts": true,
+    "firefoxAttemptTerminatedByOperatorAfterFourStartupFailures": true,
+    "webkitProjectRerun": "passed_18_of_18",
+    "externalTestnetCalls": false
+  }
+}

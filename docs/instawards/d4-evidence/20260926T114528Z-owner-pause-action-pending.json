@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "recordedAtUtc": "2026-09-26T11:45:28Z",
+  "projectAlias": "talmbag",
+  "ownerResponse": "will_pause_sponsorship",
+  "pauseConfirmedInPanel": false,
+  "productionMutationByAssistant": false,
+  "testnetTransactionByAssistant": false,
+  "decision": "NO_GO until pause and custody context are verified."
+}

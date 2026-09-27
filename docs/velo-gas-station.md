@@ -14,10 +14,11 @@ package publication, production deployment, or live Testnet acceptance.
 
 This guide is for integrators using the server-side
 <code>@carts1024/velo-sdk</code>. It describes the current workspace source
-(manifest version <code>0.1.0-alpha.3</code>). The public <code>alpha</code>
-dist-tag resolves to alpha.3; that published version predates the corrected API
-origin default below, so set <code>VELO_GAS_BASE_URL</code> explicitly until a
-new SDK release is published.
+(manifest version <code>0.1.0-alpha.4</code>). The public <code>alpha</code>
+dist-tag currently resolves to alpha.3; that published version predates the
+corrected API origin default below, so set
+<code>VELO_GAS_BASE_URL=https://www.velo-build.dev</code> explicitly until
+alpha.4 is published.
 
 ## Architecture
 

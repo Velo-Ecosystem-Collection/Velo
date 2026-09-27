@@ -3,7 +3,7 @@
 The official Velo SDK for Node.js and modern JavaScript environments.
 
 > [!NOTE]
-> This package is currently in **Alpha** (`0.1.0-alpha.3`) and is meant for server-side environments only.
+> This package is currently in **Alpha** (`0.1.0-alpha.4`) and is meant for server-side environments only.
 
 ## Installation
 
@@ -15,12 +15,9 @@ pnpm add @carts1024/velo-sdk@alpha
 yarn add @carts1024/velo-sdk@alpha
 ```
 
-The `alpha` dist-tag currently resolves to `0.1.0-alpha.3`, which includes
-Gas Station support. The `latest` tag still resolves to `0.1.0-alpha.2`; use
-`@alpha` or pin `@0.1.0-alpha.3` when installing the Gas APIs. The published
-alpha.3 SDK predates the corrected Velo API host default in the current
-workspace; until a new SDK release is published, pass
-`baseUrl: "https://www.velo-build.dev"` explicitly when using alpha.3.
+Version `0.1.0-alpha.4` includes Gas Station support and the corrected Velo
+API host default. Install it with `@alpha` or pin `@0.1.0-alpha.4`; the
+`latest` dist-tag remains on `0.1.0-alpha.2`.
 
 ## Getting Started
 
@@ -61,7 +58,7 @@ console.log(`Payment status: ${paymentIntent.status}`);
 ### Reserving Gas sponsorship
 
 `velo.gas.sponsor()` reserves fee exposure for a user-signed Testnet Soroban
-transaction. It is included in `0.1.0-alpha.3`. Gas Station is an alpha
+transaction. It is included in `0.1.0-alpha.4`. Gas Station is an alpha
 Testnet feature; configure the deployed Velo URL explicitly and keep the API
 key, caller authorization, signed XDR, and operation key on the server:
 
@@ -529,10 +526,10 @@ app.post("/webhooks", express.raw({ type: "application/json" }), async (req, res
 
 Configure the following environment variables in your server environments:
 
-| Variable              | Required          | Description                                                                                                                                                                               |
-| --------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VELO_API_KEY`        | **Yes**           | Your Velo project API key (e.g. `tk_live_...` or `tk_test_...`).                                                                                                                          |
-| `VELO_WEBHOOK_SECRET` | Only for Webhooks | Used to verify signature of incoming webhook events.                                                                                                                                      |
+| Variable              | Required          | Description                                                                                                                                                                                                                                        |
+| --------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VELO_API_KEY`        | **Yes**           | Your Velo project API key (e.g. `tk_live_...` or `tk_test_...`).                                                                                                                                                                                   |
+| `VELO_WEBHOOK_SECRET` | Only for Webhooks | Used to verify signature of incoming webhook events.                                                                                                                                                                                               |
 | `VELO_BASE_URL`       | No                | Overrides the default Velo API endpoint. Production and Testnet currently use `https://www.velo-build.dev`; development uses `http://localhost:3000`. Environment selection chooses the API origin and does not itself verify the Stellar network. |
 
 ---
@@ -603,7 +600,7 @@ production availability evidence.
 ## Testnet vs Mainnet & Alpha Limitations
 
 > [!WARNING]
-> This SDK is currently in **Alpha** (`0.1.0-alpha.3`) and subject to changes.
+> This SDK is currently in **Alpha** (`0.1.0-alpha.4`) and subject to changes.
 >
 > - **Stellar Testnet Only**: During the alpha phase, all transactions and checkout sessions are routed through the Stellar Testnet. Mainnet is currently unsupported.
 > - **ESM-Only**: The package uses ESM exports and requires `"type": "module"` or an ESM-compatible bundler/environment. CommonJS `require()` is not supported directly.

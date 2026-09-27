@@ -34,7 +34,7 @@ Separate prerequisites the integrator can configure from those requiring the Vel
 ## 4. Verify and install a compatible SDK
 
 - Use the repository's package manager and Node.js 18 or newer. The SDK is ESM-only and server-side.
-- Before changing dependencies, inspect the selected published package version's package exports and actual entry point. Verify it exports \`Velo\`, \`VeloGasSubmissionUnknownError\`, and all five Gas methods: \`sponsor\`, \`submit\`, \`sponsorAndSubmit\`, \`getStatus\`, and \`waitForResult\`. Check the selected version, not merely the mutable \`latest\` or \`alpha\` label. Do not assume the default published version supports Gas.
+- Before changing dependencies, inspect the selected published package version's package exports and actual entry point. Verify it exports \`Velo\`, \`VeloGasSubmissionUnknownError\`, and all five Gas methods: \`sponsor\`, \`submit\`, \`sponsorAndSubmit\`, \`getStatus\`, and \`waitForResult\`. Check the selected version, not merely the mutable \`latest\` or \`alpha\` label. Do not assume the default published version supports Gas or uses the current API origin; explicitly configure the Testnet origin below.
 - If the available published package does not expose the required API, stop before installation and report the version/export blocker. Offer an explicitly selected local package artifact from the Velo workspace, and wait for the user to choose that artifact before adding it. Do not silently switch to a source import, file dependency, or unpublished package.
 - Use placeholders for API keys and deployment URLs in code, documentation, and test fixtures. Never include actual credentials.
 
@@ -76,7 +76,7 @@ ${gasIntegrationSnippets.statusRecovery}
 
 ## 7. Preserve security and recovery behavior
 
-- Keep \`VELO_GAS_API_KEY\` and \`VELO_GAS_BASE_URL\` in server-only environment configuration, separate from Checkout configuration. For Testnet, use \`VELO_GAS_ENV=testnet\` and the approved Testnet API origin. Authenticate and authorize the caller and operation before using a project key; do not rely on an untrusted operation ID as authorization.
+- Keep \`VELO_GAS_API_KEY\` and \`VELO_GAS_BASE_URL\` in server-only environment configuration, separate from Checkout configuration. For Testnet, use \`VELO_GAS_ENV=testnet\` and \`VELO_GAS_BASE_URL=https://www.velo-build.dev\`. This Velo API origin serves Testnet Gas; the hostname does not select the Stellar network. Do not use the old \`api.testnet.velo.pay\` or \`api.velo.pay\` hosts. Authenticate and authorize the caller and operation before using a project key; do not rely on an untrusted operation ID as authorization.
 - Bound the request body and validate operation IDs and XDR size/shape. Accept only the fields the route needs. Do not log signed XDR, API keys, or other secrets.
 - Derive and reuse a stable idempotency identity for the same logical operation. Never create a replacement operation automatically after a timeout.
 - Persist a durable, user-owned recovery record containing the operation ID and safe Gas identity (request ID plus inner transaction hash) and the state needed by existing application flows. Do not store the API key or put signed XDR in browser-visible or recovery/status responses.

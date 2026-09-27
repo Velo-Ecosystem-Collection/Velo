@@ -1579,9 +1579,11 @@ const session = await velo.checkout.sessions.create({
                 </div>
 
                 <p className="text-sm text-muted-foreground">
-                  The current workspace SDK manifest is <code>0.1.0-alpha.3</code>; npm publication
-                  status has not been verified. Before installing, confirm that your selected SDK
-                  artifact exports the Gas methods. See the{" "}
+                  The workspace SDK source manifest is <code>0.1.0-alpha.4</code>. Check the
+                  selected npm package version and exports before installing; public releases can
+                  lag the workspace source. Set <code>VELO_GAS_BASE_URL</code> explicitly to{" "}
+                  <code>https://www.velo-build.dev</code> for Testnet, especially when using an
+                  older SDK artifact. See the{" "}
                   <a
                     href="https://github.com/Velo-Ecosystem-Collection/Velo/blob/main/docs/velo-gas-station.md"
                     target="_blank"

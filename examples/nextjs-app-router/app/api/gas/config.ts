@@ -83,7 +83,7 @@ export function getGasExampleConfig(
     }
   } else if (
     parsedBaseUrl.protocol !== "https:" ||
-    parsedBaseUrl.origin !== "https://api.testnet.velo.pay" ||
+    parsedBaseUrl.origin !== "https://www.velo-build.dev" ||
     parsedBaseUrl.pathname !== "/" ||
     parsedBaseUrl.search !== "" ||
     parsedBaseUrl.hash !== ""

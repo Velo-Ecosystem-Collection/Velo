@@ -15,6 +15,13 @@ pnpm add @carts1024/velo-sdk@alpha
 yarn add @carts1024/velo-sdk@alpha
 ```
 
+The `alpha` dist-tag currently resolves to `0.1.0-alpha.3`, which includes
+Gas Station support. The `latest` tag still resolves to `0.1.0-alpha.2`; use
+`@alpha` or pin `@0.1.0-alpha.3` when installing the Gas APIs. The published
+alpha.3 SDK predates the corrected Velo API host default in the current
+workspace; until a new SDK release is published, pass
+`baseUrl: "https://www.velo-build.dev"` explicitly when using alpha.3.
+
 ## Getting Started
 
 Initialize the client with your Velo API key:
@@ -64,7 +71,7 @@ import { Velo } from "@carts1024/velo-sdk";
 const velo = new Velo({
   apiKey: process.env.VELO_GAS_API_KEY!,
   // Keep Gas configuration separate from Checkout.
-  baseUrl: process.env.VELO_GAS_BASE_URL ?? "https://api.testnet.velo.pay",
+  baseUrl: process.env.VELO_GAS_BASE_URL ?? "https://www.velo-build.dev",
   environment: "testnet",
 });
 
@@ -129,9 +136,9 @@ validated submission DTO and does not wait for ledger settlement. Use
 
 ### Submitting a sponsored transaction
 
-The current source checkout also exposes `velo.gas.submit()` for the trusted
-server handoff. Keep the request ID and inner transaction hash from the
-reservation before sending the original user-signed Testnet XDR:
+`velo.gas.submit()` exposes the trusted server handoff. Keep the request ID and
+inner transaction hash from the reservation before sending the original
+user-signed Testnet XDR:
 
 ```ts
 const identity = {
@@ -305,7 +312,7 @@ consuming server environment:
 ```bash
 VELO_GAS_API_KEY=replace_with_a_gas_scoped_project_key
 VELO_GAS_ENV=testnet
-VELO_GAS_BASE_URL=https://api.testnet.velo.pay
+VELO_GAS_BASE_URL=https://www.velo-build.dev
 ```
 
 The snippets never interpolate project-page API-key data into client code.
@@ -325,6 +332,11 @@ Velo never replaces an existing account automatically. Managed keys are
 stored as authenticated ciphertext in Convex, and the trusted backend can
 decrypt them.
 
+Relayer provisioning, funding, activation, pause, and withdrawal are Velo
+dashboard/backend operations. They do not add SDK methods or change the Gas
+HTTP routes consumed by this package. The SDK continues to accept a Gas-scoped
+Testnet key and call the same sponsor and submit/status endpoints.
+
 Only `succeeded` is success. `claimed`, `submission_unknown`, and
 `submitted` remain unresolved; `failed` and `cancelled` are terminal
 non-success results. `actualFeeStroops: null` remains unknown.
@@ -336,9 +348,10 @@ the example has no durable operation store or later status endpoint. The
 `docs/instawards/Velo-Instawards-Deliverable-3-Integration-Guide.md` has
 workspace setup and recovery guidance.
 
-The package is published as ESM JavaScript with TypeScript declarations. The
-Gas Station methods are Testnet-only during alpha and require an authorized
-project API key on a trusted server. Use a **Gas Station · Testnet** key
+The package is published as ESM JavaScript with TypeScript declarations and a
+public `alpha` dist-tag. The Gas Station methods are Testnet-only during alpha
+and require an authorized project API key on a trusted server. Use a
+**Gas Station · Testnet** key
 (`tg_test_...`) for Gas methods; a newly generated general API key is not
 authorized for Gas endpoints.
 
@@ -520,7 +533,7 @@ Configure the following environment variables in your server environments:
 | --------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `VELO_API_KEY`        | **Yes**           | Your Velo project API key (e.g. `tk_live_...` or `tk_test_...`).                                                                                                                          |
 | `VELO_WEBHOOK_SECRET` | Only for Webhooks | Used to verify signature of incoming webhook events.                                                                                                                                      |
-| `VELO_BASE_URL`       | No                | Overrides the default Velo API endpoint. SDK defaults are `https://api.velo.pay` for production, `https://api.testnet.velo.pay` for testnet, and `http://localhost:3000` for development. |
+| `VELO_BASE_URL`       | No                | Overrides the default Velo API endpoint. Production and Testnet currently use `https://www.velo-build.dev`; development uses `http://localhost:3000`. Environment selection chooses the API origin and does not itself verify the Stellar network. |
 
 ---
 

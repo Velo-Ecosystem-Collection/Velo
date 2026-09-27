@@ -1434,7 +1434,7 @@ const session = await velo.checkout.sessions.create({
                   server-side.
                 </p>
                 {renderCodeBlock(
-                  "VELO_GAS_API_KEY=replace_with_a_server_only_gas_testnet_key\nVELO_GAS_ENV=testnet\nVELO_GAS_BASE_URL=https://api.testnet.velo.pay",
+                  "VELO_GAS_API_KEY=replace_with_a_server_only_gas_testnet_key\nVELO_GAS_ENV=testnet\nVELO_GAS_BASE_URL=https://www.velo-build.dev",
                   "gasEnvironment",
                 )}
                 <p>

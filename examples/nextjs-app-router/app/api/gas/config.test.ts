@@ -5,7 +5,7 @@ import { GasExampleConfigurationError, getGasExampleConfig } from "./config.ts";
 
 const validEnvironment = {
   VELO_GAS_API_KEY: `tg_test_${"a".repeat(32)}`,
-  VELO_GAS_BASE_URL: "https://api.testnet.velo.pay/",
+  VELO_GAS_BASE_URL: "https://www.velo-build.dev/",
   VELO_GAS_ENV: "testnet",
   VELO_BASE_URL: "http://localhost:3000/",
   VELO_GAS_DEMO_TOKEN: "terminal-demo-token",
@@ -22,7 +22,7 @@ test("gas configuration requires all three server-only values", () => {
 test("gas configuration accepts HTTPS and loopback HTTP without URL credentials", () => {
   assert.deepEqual(getGasExampleConfig(validEnvironment), {
     apiKey: `tg_test_${"a".repeat(32)}`,
-    baseUrl: "https://api.testnet.velo.pay",
+    baseUrl: "https://www.velo-build.dev",
     demoToken: "terminal-demo-token",
     environment: "testnet",
   });
@@ -42,19 +42,20 @@ test("gas configuration accepts HTTPS and loopback HTTP without URL credentials"
     }).baseUrl,
     "http://127.0.0.1:3000",
   );
-  assert.equal(getGasExampleConfig(validEnvironment).baseUrl, "https://api.testnet.velo.pay");
+  assert.equal(getGasExampleConfig(validEnvironment).baseUrl, "https://www.velo-build.dev");
 });
 
 test("gas configuration rejects non-Testnet endpoints outside loopback development", () => {
   for (const VELO_GAS_BASE_URL of [
     "http://api.example.test",
-    "https://user:password@api.testnet.velo.pay",
+    "https://user:password@www.velo-build.dev",
     "https://api.example.test",
     "https://api.velo.pay",
-    "https://api.testnet.velo.pay:8443",
-    "https://api.testnet.velo.pay/proxy",
-    "https://api.testnet.velo.pay?target=other",
-    "https://api.testnet.velo.pay#fragment",
+    "https://api.testnet.velo.pay",
+    "https://www.velo-build.dev:8443",
+    "https://www.velo-build.dev/proxy",
+    "https://www.velo-build.dev?target=other",
+    "https://www.velo-build.dev#fragment",
   ]) {
     assert.throws(
       () => getGasExampleConfig({ ...validEnvironment, VELO_GAS_BASE_URL }),
@@ -70,7 +71,7 @@ test("gas configuration rejects non-Testnet endpoints outside loopback developme
       getGasExampleConfig({
         ...validEnvironment,
         VELO_GAS_ENV: "development",
-        VELO_GAS_BASE_URL: "https://api.testnet.velo.pay",
+        VELO_GAS_BASE_URL: "https://www.velo-build.dev",
       }),
     GasExampleConfigurationError,
   );

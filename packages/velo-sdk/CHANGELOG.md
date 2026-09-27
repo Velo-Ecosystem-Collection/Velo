@@ -2,6 +2,14 @@
 
 All notable changes to the Velo SDK will be documented in this file.
 
+## [Unreleased]
+
+### Changed
+
+- Route production and Testnet defaults through the verified Vercel API origin
+  `https://www.velo-build.dev`. The previously configured `velo.pay` hostnames
+  return DNS `NXDOMAIN`.
+
 ## [0.1.0-alpha.3] - 2026-09-23
 
 ### Added

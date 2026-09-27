@@ -525,6 +525,46 @@ export class GasFixtureStore {
     return this.queryValue(functionName, args);
   }
 
+  query(functionName: string, args: unknown): Promise<unknown> {
+    if (functionName !== "gas/queries:listLogsPage") {
+      throw new Error(`Unexpected Gas E2E fixture query: ${functionName}`);
+    }
+
+    this.record("query", functionName, args);
+    if (this.config.scenario === "activity-read-error") {
+      throw new Error("fixture activity provider failure");
+    }
+
+    const projectId = this.projectIdFromArgs(args);
+    const role = projectId ? sessions[this.config.session].roleByProject[projectId] : undefined;
+    if (!projectId || !role) {
+      throw new Error("Gas E2E fixture query requires project access");
+    }
+
+    const paginationOpts = (args as {
+      paginationOpts?: { numItems?: number; cursor?: string | null };
+    }).paginationOpts;
+    const numItems = paginationOpts?.numItems;
+    if (!Number.isSafeInteger(numItems) || (numItems as number) < 1) {
+      throw new Error("Gas E2E fixture query requires a positive page size");
+    }
+
+    const cursor = paginationOpts?.cursor ?? null;
+    const offset = cursor === null ? 0 : Number(/^cursor:(\d+)$/.exec(cursor)?.[1]);
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new Error("Gas E2E fixture query received an invalid page cursor");
+    }
+
+    const logs = this.logsFor(projectId);
+    const page = logs.slice(offset, offset + (numItems as number));
+    const nextOffset = offset + page.length;
+    return Promise.resolve({
+      page,
+      isDone: nextOffset >= logs.length,
+      continueCursor: `cursor:${nextOffset}`,
+    });
+  }
+
   usePaginatedQuery(
     functionName: string,
     args: { projectId: GasFixtureProjectId },

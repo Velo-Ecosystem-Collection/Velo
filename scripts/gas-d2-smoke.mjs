@@ -29,7 +29,7 @@ export const DEFAULT_POLL_INTERVAL_MS = 10_000;
 const MAX_OPERATOR_RESPONSE_BYTES = 256 * 1_024;
 const MAX_REPORT_BYTES = 256 * 1_024;
 const MAX_TIMEOUT_MS = 120_000;
-const API_KEY_PATTERN = /^tk_live_[a-f0-9]{32}$/;
+const API_KEY_PATTERN = /^tg_test_[a-f0-9]{32}$/;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const COMMIT_PATTERN = /^[a-f0-9]{40}$/;
 const DECIMAL_PATTERN = /^(?:0|[1-9][0-9]*)$/;
@@ -1569,7 +1569,7 @@ function normalizeUrl(value, name) {
 }
 
 function containsSensitiveData(value) {
-  return /tk_live_[a-f0-9]{32}|secretKey|authorization|transactionXdr|SG[A-Z2-7]{20,}|provider body|raw response/i.test(
+  return /(?:tk_live_|tg_test_)[a-f0-9]{32}|secretKey|authorization|transactionXdr|SG[A-Z2-7]{20,}|provider body|raw response/i.test(
     value,
   );
 }

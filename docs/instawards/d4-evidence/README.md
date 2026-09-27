@@ -2,7 +2,7 @@
 type: evidence-index
 area: instawards
 status: in-progress
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 deliverable: "4 — Integration & Validation Package"
 source_of_truth: repository
 ---
@@ -10,11 +10,59 @@ source_of_truth: repository
 # D4 Gas Station Integration & Validation Evidence
 
 **Status: in progress.** This folder is the reviewer entry point for D4. Local
-integration work and deterministic checks are underway; no current production
-Testnet campaign or D4 acceptance is claimed. The 12-hour window runs from the
+integration work and deterministic checks are underway; one production D2
+smoke transaction is recorded, but no full D4 campaign or acceptance is
+claimed. The 12-hour window runs from the
 kickoff recorded in the [D4 sprint plan](../Velo-Instawards-Deliverable-4-Sprint-Plan.md).
 
 ## Current production decision: NO-GO
+
+At 01:53 UTC, the production D2 smoke runner passed a fresh 15/15 preflight,
+submitted one allowed Testnet invocation, verified settlement, passed
+same-request replay with attempt identity/send count/fee/accounting unchanged,
+and confirmed the denied invocation returned `contract_not_whitelisted` with no
+execution attempt or reserved exposure. The runner report is
+[`20260927T015201Z-production-execution.json`](20260927T015201Z-production-execution.json).
+A later exact-identity snapshot recovery/replay also confirmed the same settled
+attempt and no additional send; see
+[`20260927T015700Z-production-execution-recovery.json`](20260927T015700Z-production-execution-recovery.json).
+The 01:56 UTC preflight was post-run and correctly blocks reuse because the
+allowed invocation is already submitted and both XDRs have expired. Do not
+reuse these XDRs. D4 remains NO-GO until the remaining campaign, owner lifecycle,
+deployed apps, participant, and handoff gates are complete. See
+[`20260927T015643Z-production-preflight.json`](20260927T015643Z-production-preflight.json).
+
+At 01:45 UTC, the protected production API-key file passed permissions and
+format checks without exposing its value. A fresh read-only preflight passed 13
+of 15 checks, but both XDR invocations had expired again. No transaction was
+submitted. Replace both XDRs immediately before the next run; the preflight
+must be followed promptly by execution. See
+[`20260927T014525Z-production-preflight.json`](20260927T014525Z-production-preflight.json).
+
+At 01:26 UTC, a new read-only production preflight parsed the replacement XDRs
+and passed all 15 checks, including signature validity, freshness, policy
+eligibility, Testnet custody/funding, and deployment provenance. It submitted no
+transaction. The snapshot reported the configured Talambagv2 policy enabled;
+the owner subsequently confirmed sponsorship had been resumed, reconciling the
+prior paused readback. At that point execution was pending because the local
+key was development/localhost scoped; the protected production Gas Testnet key
+was configured later. See
+[`20260927T012447Z-production-preflight.json`](20260927T012447Z-production-preflight.json).
+
+At 01:15 UTC on 2026-09-27, the `convex-production-deployment-provenance`
+artifact from GitHub Actions run `36280618093`, attempt `2`, passed the
+repository's attestation verifier. It binds production Convex deployment
+`prod:agreeable-salmon-748` on Stellar Testnet to source commit
+`8b66da057e04fe25bef33ea999911513d80c101f`. The signed manifest digest matches
+the downloaded artifact. See
+[`20260927T011549Z-production-attestation-verification.json`](20260927T011549Z-production-attestation-verification.json).
+At 01:12 UTC, a fresh read-only production preflight passed 13 of 15 checks,
+including the live deployment marker, provenance, signer, funding, policy,
+and Testnet checks. Both replacement XDRs were expired. The configured D2
+scope reported an enabled policy, which conflicts with the earlier owner
+confirmation that Talambagv2 sponsorship was paused; reconcile the dashboard
+state before any transaction. No transaction was submitted. See
+[`20260927T011156Z-production-preflight.json`](20260927T011156Z-production-preflight.json).
 
 At 13:53 UTC, the internal recovery action verified Talambagv2's stored key
 under its original authenticated context, migrated the encrypted envelope to
@@ -58,12 +106,13 @@ D2/D3 report hashes remain unchanged. See
 
 To reach GO for the live campaign, the remaining gates are:
 
-1. Production D2 scope now resolves Talambagv2; provide independently
-   verifiable production source provenance, freeze the delivery revision, and
-   pass hosted CI. The custody context recovery gate is satisfied.
-2. Verify the owner lifecycle and role/accessibility states, and have two
-   deployed dApps configured for Testnet with fresh, correlated successful
-   receipts. Generate fresh signed XDRs after source attestation is available.
+1. Production source provenance and live marker agreement are verified.
+   Freeze the delivery revision and retain the successful deployment run. The
+   custody context recovery gate is satisfied.
+2. The owner confirmed sponsorship was resumed, matching the enabled production
+   policy snapshot. Verify the owner lifecycle and role/accessibility states,
+   and get two deployed dApps configured for Testnet with fresh, correlated
+   successful receipts.
 3. Complete the three-person validation and five policy setup/readback demos.
 4. With explicit authorization for external Testnet transactions, run the
    required campaign of at least 50 unique settled FeeBumps and capture exact

@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "mode": "preflight",
+  "status": "incomplete",
+  "startedAt": "2026-09-27T01:11:56.162Z",
+  "completedAt": "2026-09-27T01:12:02.453Z",
+  "repository": {
+    "before": {
+      "head": "36591f6ee4ee944de4465039ec54df7f81042510",
+      "workingTree": {
+        "status": "clean",
+        "changedPathCount": 0
+      }
+    },
+    "after": {
+      "head": "36591f6ee4ee944de4465039ec54df7f81042510",
+      "workingTree": {
+        "status": "clean",
+        "changedPathCount": 0
+      }
+    }
+  },
+  "deployment": null,
+  "preflight": {
+    "status": "blocked",
+    "checks": [
+      {
+        "name": "allowed_invocation_valid",
+        "status": "passed"
+      },
+      {
+        "name": "denied_invocation_valid",
+        "status": "passed"
+      },
+      {
+        "name": "operator_snapshot_available",
+        "status": "passed"
+      },
+      {
+        "name": "deployment_identity",
+        "status": "passed"
+      },
+      {
+        "name": "deployment_provenance_agreement",
+        "status": "passed"
+      },
+      {
+        "name": "backend_signer_ready",
+        "status": "passed"
+      },
+      {
+        "name": "testnet_custody_and_funding",
+        "status": "passed"
+      },
+      {
+        "name": "testnet_rpc_network",
+        "status": "passed"
+      },
+      {
+        "name": "source_provenance_verified",
+        "status": "passed"
+      },
+      {
+        "name": "allowed_policy_eligible",
+        "status": "passed"
+      },
+      {
+        "name": "denied_target_not_whitelisted",
+        "status": "passed"
+      },
+      {
+        "name": "user_wallet_matches_invocations",
+        "status": "passed"
+      },
+      {
+        "name": "distinct_test_transactions",
+        "status": "passed"
+      },
+      {
+        "name": "allowed_transaction_fresh",
+        "status": "blocked",
+        "failure": "allowed_invocation_expired"
+      },
+      {
+        "name": "denied_transaction_fresh",
+        "status": "blocked",
+        "failure": "denied_invocation_expired"
+      }
+    ],
+    "allowedTransactionHash": null,
+    "deniedTransactionHash": null
+  },
+  "failure": "preflight_failed"
+}

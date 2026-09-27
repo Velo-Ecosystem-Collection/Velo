@@ -18,7 +18,7 @@ import {
   writeSmokeReport,
 } from "./gas-d2-smoke.mjs";
 
-const API_KEY = `tk_live_${"a".repeat(32)}`;
+const API_KEY = `tg_test_${"a".repeat(32)}`;
 const PROJECT_ID = "project-d2-smoke";
 const USER_PUBLIC_KEY = GAS_TEST_SOURCE_KEYPAIR.publicKey();
 const RELAYER_PUBLIC_KEY = GAS_TEST_SOURCE_KEYPAIR.publicKey();
@@ -685,11 +685,35 @@ test("reports polling exhaustion as incomplete and never invents a receipt", asy
   assert.equal(report.execution.actualFeeStroops, null);
 });
 
+test("requires Gas Testnet API keys and rejects payment API keys before sponsorship", async () => {
+  let sponsorCalls = 0;
+  const report = await runSmokeExecution({
+    config: { ...CONFIG, apiKey: `tk_live_${"b".repeat(32)}` },
+    dependencies: makeDependencies({
+      fetchImpl: async (url, init) => {
+        if (new URL(url).pathname.endsWith("/sponsor")) sponsorCalls += 1;
+        return fakeFetch(url, init);
+      },
+    }),
+  });
+  assert.equal(report.status, "incomplete");
+  assert.equal(report.failure, "api_credentials_unavailable");
+  assert.equal(sponsorCalls, 0);
+});
+
 test("refuses sensitive smoke report content", async () => {
   await assert.rejects(
     writeSmokeReport(
       { status: "incomplete", leaked: "transactionXdr=secret" },
       "gas-d2-smoke-secret-test.json",
+      "/private/tmp",
+    ),
+    /unsafe smoke report/,
+  );
+  await assert.rejects(
+    writeSmokeReport(
+      { status: "incomplete", leaked: `tg_test_${"c".repeat(32)}` },
+      "gas-d2-smoke-gas-key-test.json",
       "/private/tmp",
     ),
     /unsafe smoke report/,

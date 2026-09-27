@@ -63,6 +63,7 @@ const gasManagedActivationReviewValidator = v.object({
   dailyCapStroops: v.string(),
   walletHourlyLimit: v.number(),
   activeContractIds: v.array(v.string()),
+  allowedContractIds: v.array(v.string()),
   policyEnabled: v.boolean(),
 });
 
@@ -222,6 +223,7 @@ export const getManagedActivationReview = query({
       dailyCapStroops: (policy?.dailyCapStroops ?? 100_000_000n).toString(),
       walletHourlyLimit: policy?.walletHourlyLimit ?? 100,
       activeContractIds,
+      allowedContractIds: policy?.allowedContractIds ?? [],
       policyEnabled: policy?.enabled ?? false,
     };
   },

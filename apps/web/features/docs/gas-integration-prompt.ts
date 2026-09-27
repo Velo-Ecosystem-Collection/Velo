@@ -22,7 +22,7 @@ Sponsorship only reserves fee exposure. It does not build or prepare the transac
 Before implementing or qualifying the flow, verify and report:
 
 - The project's Testnet Gas policy is enabled, with a positive daily cap and positive hourly wallet quota.
-- Every invoked Soroban contract is allowlisted.
+- Every invoked Soroban contract is present in the effective, saved Gas policy allowlist. A contract linked on the project's Contracts page or shown as a suggested contract in Review sponsorship settings is not, by itself, proof that the allowlist currently enforced by Gas contains it. Confirm the saved policy in Gas Station → Policy controls (or the authenticated policy readback); if a request returns \`contract_not_whitelisted\`, add the contract to that policy and verify the saved result before trying again.
 - New projects queue a Velo-managed Testnet relayer automatically when managed provisioning is configured for the deployment. The owner sees its public address only after encrypted custody has been committed.
 - The project owner funds the relayer, verifies a fresh balance, resumes it if paused, and explicitly reviews/enables sponsorship. Provisioning a relayer never enables sponsorship automatically; at least one active linked contract is required.
 - If provisioning is disabled or the encryption configuration is unavailable, the Velo deployment operator must repair the deployment configuration. Never ask the integrator to paste a relayer secret into the dashboard or application.
@@ -31,10 +31,12 @@ Before implementing or qualifying the flow, verify and report:
 
 Separate prerequisites the integrator can configure from those requiring the Velo project owner or deployment operator. Never invent credentials, project IDs, contract IDs, or deployment-specific values.
 
-## 4. Verify and install a compatible SDK
+## 4. Check the current SDK release, then install a compatible version
 
 - Use the repository's package manager and Node.js 18 or newer. The SDK is ESM-only and server-side.
-- Before changing dependencies, inspect the selected published package version's package exports and actual entry point. Verify it exports \`Velo\`, \`VeloGasSubmissionUnknownError\`, and all five Gas methods: \`sponsor\`, \`submit\`, \`sponsorAndSubmit\`, \`getStatus\`, and \`waitForResult\`. Check the selected version, not merely the mutable \`latest\` or \`alpha\` label. Do not assume the default published version supports Gas.
+- Before integrating or changing dependencies, query the authoritative npm registry for the current published versions, publication times, and dist-tags of \`@carts1024/velo-sdk\`. Inspect the newest Gas-capable release's changelog/release notes and published package contents. Compare it with the version already used by the host project, and report any newer Gas-related methods, options, errors, retry/recovery behavior, compatibility requirements, or base-URL/network changes that apply to this integration. Do not infer the published release from this Velo workspace's manifest or this prompt, and do not assume \`latest\` and \`alpha\` point to the newest published version.
+- Choose the newest published version compatible with the host project and required Gas flow; pin the exact version or intentionally select a verified dist-tag. Before changing dependencies, inspect the selected published package version's package exports, declarations, and actual entry point. Verify it exports \`Velo\`, \`VeloGasSubmissionUnknownError\`, and the Gas methods used here: \`sponsor\`, \`submit\`, \`sponsorAndSubmit\`, \`getStatus\`, and \`waitForResult\`. Use any newly released Gas feature only after confirming its exported API and behavior in that exact version. Check the selected version, not merely the mutable \`latest\` or \`alpha\` label. Do not assume the default published version supports Gas or uses the current API origin; explicitly configure the Testnet origin below.
+- If registry metadata or release notes cannot be reached, say that the latest release check is unverified and stop before SDK-dependent implementation or dependency selection. Report the host project's currently installed version, but do not claim it is current based only on cached docs or local source; ask the user whether to proceed with that unverified version.
 - If the available published package does not expose the required API, stop before installation and report the version/export blocker. Offer an explicitly selected local package artifact from the Velo workspace, and wait for the user to choose that artifact before adding it. Do not silently switch to a source import, file dependency, or unpublished package.
 - Use placeholders for API keys and deployment URLs in code, documentation, and test fixtures. Never include actual credentials.
 
@@ -76,7 +78,7 @@ ${gasIntegrationSnippets.statusRecovery}
 
 ## 7. Preserve security and recovery behavior
 
-- Keep \`VELO_GAS_API_KEY\` and \`VELO_GAS_BASE_URL\` in server-only environment configuration, separate from Checkout configuration. For Testnet, use \`VELO_GAS_ENV=testnet\` and the approved Testnet API origin. Authenticate and authorize the caller and operation before using a project key; do not rely on an untrusted operation ID as authorization.
+- Keep \`VELO_GAS_API_KEY\` and \`VELO_GAS_BASE_URL\` in server-only environment configuration, separate from Checkout configuration. For Testnet, use \`VELO_GAS_ENV=testnet\` and \`VELO_GAS_BASE_URL=https://www.velo-build.dev\`. This Velo API origin serves Testnet Gas; the hostname does not select the Stellar network. Do not use the old \`api.testnet.velo.pay\` or \`api.velo.pay\` hosts. Authenticate and authorize the caller and operation before using a project key; do not rely on an untrusted operation ID as authorization.
 - Bound the request body and validate operation IDs and XDR size/shape. Accept only the fields the route needs. Do not log signed XDR, API keys, or other secrets.
 - Derive and reuse a stable idempotency identity for the same logical operation. Never create a replacement operation automatically after a timeout.
 - Persist a durable, user-owned recovery record containing the operation ID and safe Gas identity (request ID plus inner transaction hash) and the state needed by existing application flows. Do not store the API key or put signed XDR in browser-visible or recovery/status responses.
@@ -97,10 +99,31 @@ ${gasIntegrationSnippets.statusRecovery}
 - Document placeholder environment variables, the explicit Velo deployment URL, prerequisites, and which actions require the Velo project owner or deployment operator.
 - Run the relevant project checks and report what passed, what was mocked, any unmet prerequisites, and any remaining decisions. Clearly distinguish deterministic/mock verification from live Testnet evidence; do not claim a live transaction unless one was explicitly authorized and actually observed.
 
-## Authoritative Velo references
+## 10. Give the user the setup steps to run Gas Station
+
+After implementation, finish with a short, project-specific setup checklist so the user can configure and run the integration:
+
+- State the exact SDK version selected, the newest release and release notes checked, and which newer Gas-relevant features you used or deliberately left out (with a brief reason).
+- Show these server-only Testnet variables with placeholders, never real credentials:
+
+\`\`\`dotenv
+VELO_GAS_API_KEY=replace_with_your_gas_station_testnet_key
+VELO_GAS_ENV=testnet
+VELO_GAS_BASE_URL=https://www.velo-build.dev
+\`\`\`
+
+- Explain where to get the key: in the Velo dashboard, open the same project used by this integration, go to **API Keys**, and create a **Gas Station · Testnet** key. It is shown once; save it directly into the application's server-side secret configuration. A general API key is not a substitute.
+- Give the exact steps for this host to set the values locally (for example, in its ignored \`.env.local\`) and in its deployment platform's server environment/secret settings. Keep the key out of source control, browser code, \`NEXT_PUBLIC_*\` variables, logs, and client responses; restart the local server or redeploy after changing environment values.
+- Explain that \`VELO_GAS_ENV=testnet\` selects the Testnet SDK configuration and \`VELO_GAS_BASE_URL=https://www.velo-build.dev\` is the explicit Velo API origin for Testnet Gas. For a local Velo server only, describe the verified development pair \`VELO_GAS_ENV=development\` and a loopback base URL such as \`http://localhost:3000\`; do not present it as a production setting.
+- Before the user's first transaction, list any remaining Velo dashboard actions: confirm the project policy is enabled, the invoked contract is in the saved **Policy controls** allowlist, and the relayer is ready and funded. State which action requires the project owner or Velo deployment operator. Do not imply a linked contract or a local/mock test proves live Testnet readiness.
+- End with the command or page/flow the user should run to exercise the integration and the expected safe success/pending result. Clearly mark external setup still required from actions already completed in code.
+
+## 11. Authoritative Velo references
 
 - Repository Gas Station integration guide: https://github.com/Velo-Ecosystem-Collection/Velo/blob/main/docs/velo-gas-station.md
 - SDK README: https://github.com/Velo-Ecosystem-Collection/Velo/blob/main/packages/velo-sdk/README.md
+- Published SDK versions and dist-tags: https://www.npmjs.com/package/@carts1024/velo-sdk?activeTab=versions
+- SDK changelog: https://github.com/Velo-Ecosystem-Collection/Velo/blob/main/packages/velo-sdk/CHANGELOG.md
 - Next.js App Router example: https://github.com/Velo-Ecosystem-Collection/Velo/tree/main/examples/nextjs-app-router
 - Tested snippet source and deterministic coverage: https://github.com/Velo-Ecosystem-Collection/Velo/blob/main/apps/web/features/projects/project-integration-guidance.ts
 `;

@@ -66,9 +66,9 @@ test("Gas config accepts HTTPS or loopback HTTP and rejects unsafe endpoints", (
   assert.equal(
     getGasExampleConfig({
       ...validEnvironment,
-      VELO_GAS_BASE_URL: "https://api.testnet.velo.pay/",
+      VELO_GAS_BASE_URL: "https://www.velo-build.dev/",
     }).baseUrl,
-    "https://api.testnet.velo.pay",
+    "https://www.velo-build.dev",
   );
   assert.equal(
     getGasExampleConfig({
@@ -83,11 +83,12 @@ test("Gas config accepts HTTPS or loopback HTTP and rejects unsafe endpoints", (
     "https://user:password@api.example.test",
     "file:///tmp/velo",
     "https://api.velo.pay",
+    "https://api.testnet.velo.pay",
     "https://api.example.test",
-    "https://api.testnet.velo.pay:8443",
-    "https://api.testnet.velo.pay/proxy",
-    "https://api.testnet.velo.pay?target=other",
-    "https://api.testnet.velo.pay#fragment",
+    "https://www.velo-build.dev:8443",
+    "https://www.velo-build.dev/proxy",
+    "https://www.velo-build.dev?target=other",
+    "https://www.velo-build.dev#fragment",
   ]) {
     assert.throws(
       () => getGasExampleConfig({ ...validEnvironment, VELO_GAS_BASE_URL }),
@@ -99,7 +100,7 @@ test("Gas config accepts HTTPS or loopback HTTP and rejects unsafe endpoints", (
       getGasExampleConfig({
         ...validEnvironment,
         VELO_GAS_ENV: "development",
-        VELO_GAS_BASE_URL: "https://api.testnet.velo.pay",
+        VELO_GAS_BASE_URL: "https://www.velo-build.dev",
       }),
     GasExampleConfigurationError,
   );

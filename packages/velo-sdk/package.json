@@ -1,6 +1,6 @@
 {
   "name": "@carts1024/velo-sdk",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "private": false,
   "description": "Server-side Node.js SDK for Velo payments, webhooks, and Stellar Testnet Gas Station sponsorship.",
   "keywords": [

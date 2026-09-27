@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "mode": "production-execution-recovery",
+  "deployment": {
+    "deploymentId": "prod:agreeable-salmon-748",
+    "environment": "production",
+    "network": "testnet"
+  },
+  "allowed": {
+    "innerTransactionHash": "578bb4a6f1653d82ea943b08cdd2c83b4b42100adbf3e3c3b9be12c400f922ac",
+    "outerTransactionHash": "88137891bf5ef2ea2519e83c19c591957f1d6e677e2d7474685751450449ba57",
+    "status": "succeeded",
+    "sendCount": 1,
+    "actualFeeStroops": "4796",
+    "ledger": 4890082,
+    "ledgerResult": "txFeeBumpInnerSuccess",
+    "innerResult": "txSuccess",
+    "replay": "passed"
+  },
+  "failure": null,
+  "replayHttpStatus": 200
+}

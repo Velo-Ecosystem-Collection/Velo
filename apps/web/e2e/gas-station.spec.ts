@@ -17,6 +17,7 @@ const screenshotPath = (name: string) =>
 const ownerProjectUrl = "/projects/project-gas-owner/gas";
 const memberProjectUrl = "/projects/project-gas-member/gas";
 const validContractId = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM";
+const secondValidContractId = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA2ZMN";
 const managedRelayerPublicKey = "GA54SPC34JL3I57ENALTO2V26XOFFG4VGQLFQXDGF6KJ5TJY7ODY56ST";
 const updatedRelayerPublicKey = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
@@ -603,6 +604,37 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await expect(
       page.getByRole("button", { name: "Enable sponsorship with these settings" }),
     ).toHaveCount(0);
+  });
+
+  test("lets an owner update an active sponsorship allowlist for newly linked contracts", async ({
+    page,
+  }) => {
+    await gotoGas(page, {
+      session: "owner",
+      projectId: "project-gas-owner",
+      scenario: "managed-allowlist-drift",
+    });
+
+    await expect(page.getByText(secondValidContractId, { exact: true })).toBeVisible();
+    await expect(
+      page.getByText(/1 active linked contract\(s\) are missing from the saved allowlist\./),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Update sponsorship allowlist" }).click();
+    await resolveNext(page, "gas/mutations:activateManagedSponsorship");
+
+    await expect(
+      page.getByText(
+        "The active linked contracts were added to the sponsorship allowlist. Existing allowed contracts were preserved.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Update sponsorship allowlist" })).toHaveCount(0);
+    const recordedCalls = await calls(page);
+    expect(
+      recordedCalls.filter(
+        (call) => call.functionName === "gas/mutations:activateManagedSponsorship",
+      ),
+    ).toHaveLength(1);
   });
 
   test("blocks account actions when managed custody belongs to another deployment", async ({

@@ -28,6 +28,14 @@ export function useConvexConnectionState() {
   return store.getConnectionState();
 }
 
+export function useConvex() {
+  const [store] = useFixtureRevision();
+  return {
+    query: (query: unknown, args: unknown) =>
+      store.query(getFunctionName(query as Parameters<typeof getFunctionName>[0]), args),
+  };
+}
+
 export function useQuery(query: unknown, args: unknown = {}) {
   const [store] = useFixtureRevision();
   if (args === "skip") return undefined;

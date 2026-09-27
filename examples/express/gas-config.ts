@@ -66,7 +66,7 @@ function environmentBaseUrl(
 
   if (
     parsed.protocol !== "https:" ||
-    parsed.origin !== "https://api.testnet.velo.pay" ||
+    parsed.origin !== "https://www.velo-build.dev" ||
     parsed.pathname !== "/" ||
     parsed.search !== "" ||
     parsed.hash !== ""

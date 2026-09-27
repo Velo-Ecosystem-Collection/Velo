@@ -17,7 +17,7 @@ import { createGasRouter } from "./gas-route.ts";
 const CONFIG: GasExampleConfig = {
   apiKey: `tg_test_${"a".repeat(32)}`,
   demoToken: "terminal-demo-token",
-  baseUrl: "https://api.testnet.velo.pay",
+  baseUrl: "https://www.velo-build.dev",
   environment: "testnet",
 };
 const IDENTITY: GasExecutionIdentity = {

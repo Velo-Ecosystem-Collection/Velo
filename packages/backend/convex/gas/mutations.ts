@@ -346,10 +346,10 @@ export const activateManagedSponsorship = mutation({
       .query("projectContracts")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .take(100);
-    const allowedContractIds = projectContracts
+    const activeContractIds = projectContracts
       .filter((contract) => contract.status === "active")
       .map((contract) => contract.contractId);
-    if (allowedContractIds.length > 20) {
+    if (activeContractIds.length > 20) {
       throw new Error("Managed sponsorship supports at most 20 active linked contracts");
     }
 
@@ -359,6 +359,12 @@ export const activateManagedSponsorship = mutation({
       .take(2);
     if (policyMatches.length > 1) throw new Error("Multiple Gas policies exist for project");
     const existing = policyMatches[0] ?? null;
+    const allowedContractIds = Array.from(
+      new Set([...(existing?.allowedContractIds ?? []), ...activeContractIds]),
+    );
+    if (allowedContractIds.length > 20) {
+      throw new Error("Managed sponsorship supports at most 20 allowed contracts");
+    }
     const now = Date.now();
     const dailyCapStroops = existing?.dailyCapStroops ?? 100_000_000n;
     const walletHourlyLimit = existing?.walletHourlyLimit ?? 100;
@@ -397,7 +403,7 @@ export const activateManagedSponsorship = mutation({
           updatedAt: now,
         });
     await ctx.db.patch(policyId, {
-      enabled: allowedContractIds.length > 0,
+      enabled: activeContractIds.length > 0,
       network: GAS_NETWORK,
       dailyCapStroops,
       dailyReservedStroops: usage,

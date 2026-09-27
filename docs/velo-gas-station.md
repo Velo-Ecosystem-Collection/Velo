@@ -14,8 +14,11 @@ package publication, production deployment, or live Testnet acceptance.
 
 This guide is for integrators using the server-side
 <code>@carts1024/velo-sdk</code>. It describes the current workspace source
-(manifest version <code>0.1.0-alpha.3</code>); publication status has not been
-verified. Use a build that includes the Gas methods shown below.
+(manifest version <code>0.1.0-alpha.4</code>). The public <code>alpha</code>
+dist-tag currently resolves to alpha.3; that published version predates the
+corrected API origin default below, so set
+<code>VELO_GAS_BASE_URL=https://www.velo-build.dev</code> explicitly until
+alpha.4 is published.
 
 ## Architecture
 
@@ -110,7 +113,7 @@ environment:
 ~~~dotenv
 VELO_GAS_API_KEY=tg_test_0123456789abcdef0123456789abcdef
 VELO_GAS_ENV=testnet
-VELO_GAS_BASE_URL=https://api.testnet.velo.pay
+VELO_GAS_BASE_URL=https://www.velo-build.dev
 ~~~
 
 Generate this credential from the project's **Gas Station · Testnet** API-key
@@ -129,9 +132,10 @@ const velo = new Velo({
 });
 ~~~
 
-The example flow is restricted to Testnet. Omit <code>VELO_GAS_BASE_URL</code> to
-use the SDK's canonical Testnet origin, or configure
-<code>https://api.testnet.velo.pay</code>. For local development, use
+The example flow is restricted to Testnet. The verified Velo API origin is
+<code>https://www.velo-build.dev</code>; a GET request to a Gas POST route may
+return <code>405</code> while confirming that the route exists. For local
+development, use
 <code>VELO_GAS_ENV=development</code> and a loopback URL such as
 <code>http://localhost:3000</code>. The API origin and Stellar network must
 still match the deployment's policy configuration.
@@ -367,9 +371,8 @@ Set <code>VELO_GAS_API_KEY</code> and a separate random
 <code>VELO_GAS_DEMO_TOKEN</code>. In the Express example, Gas uses the separate
 <code>VELO_GAS_ENV=testnet</code> and optional
 <code>VELO_GAS_BASE_URL</code> settings, so it does not change the Checkout
-environment. With no Gas base URL, the SDK uses the canonical Testnet API
-origin; an explicit origin may only be
-<code>https://api.testnet.velo.pay</code>. Local development accepts only a
+environment. The canonical Testnet API origin is
+<code>https://www.velo-build.dev</code>. Local development accepts only a
 loopback origin when <code>VELO_GAS_ENV=development</code>, and rejects
 production/Mainnet selection. The bearer token is for trusted terminal or
 server-to-server use. Replace the example guard with your authenticated user
@@ -384,7 +387,7 @@ from Checkout: set <code>VELO_GAS_API_KEY</code>,
 <code>VELO_GAS_DEMO_TOKEN</code>, <code>VELO_GAS_ENV</code>, and
 <code>VELO_GAS_BASE_URL</code>. The example accepts only the issued
 <code>tg_test_[a-f0-9]{32}</code> key format and the canonical Testnet origin
-<code>https://api.testnet.velo.pay</code>; local development must explicitly
+<code>https://www.velo-build.dev</code>; local development must explicitly
 select <code>VELO_GAS_ENV=development</code> and use a loopback origin. It
 rejects other API origins rather than reusing Checkout's <code>VELO_BASE_URL</code>.
 

@@ -12,8 +12,9 @@ import { abortReason, sleep } from "./sleep.ts";
 
 export function resolveBaseUrl(config: VeloConfig): string {
   if (config.baseUrl) return config.baseUrl;
-  if (config.environment === "production") return "https://api.velo.pay";
-  if (config.environment === "testnet") return "https://api.testnet.velo.pay";
+  if (config.environment === "production" || config.environment === "testnet") {
+    return "https://www.velo-build.dev";
+  }
   return "http://localhost:3000";
 }
 

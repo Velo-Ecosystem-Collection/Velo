@@ -24,6 +24,7 @@ export type GasFixtureScenario =
   | "existing-project-config-error"
   | "managed-relayer"
   | "managed-relayer-context-mismatch"
+  | "managed-allowlist-drift"
   | "managed-no-contracts"
   | "policy-denial"
   | "policy-read-error"
@@ -154,6 +155,7 @@ const sessions: Record<GasFixtureSession, FixtureSession> = {
 };
 
 const VALID_CONTRACT_ID = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM";
+const SECOND_VALID_CONTRACT_ID = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA2ZMN";
 const OBSERVED_AT = Date.parse("2026-09-16T12:00:00.000Z");
 const RELAYER_PUBLIC_KEY = "GA54SPC34JL3I57ENALTO2V26XOFFG4VGQLFQXDGF6KJ5TJY7ODY56ST";
 const INNER_HASH = "a".repeat(64);
@@ -363,7 +365,10 @@ export class GasFixtureStore {
   private callId = 0;
   private updateVersion = 0;
   private retiredProjectIds = new Set<GasFixtureProjectId>();
-  private managedPolicyEnabled = false;
+  private managedPolicyEnabled = this.config.scenario === "managed-allowlist-drift";
+  private managedPolicyAllowedContractIds: string[] = this.managedPolicyEnabled
+    ? [VALID_CONTRACT_ID]
+    : [];
   private managedRelayerStatus: GasRelayerSnapshot["status"] = "active";
   private apiKeys: Record<GasFixtureProjectId, FixtureApiKey[]> = {
     "project-gas-owner": [],
@@ -410,7 +415,8 @@ export class GasFixtureStore {
     this.connectionCount = 1;
     this.updateVersion = 0;
     this.retiredProjectIds.clear();
-    this.managedPolicyEnabled = false;
+    this.managedPolicyEnabled = this.config.scenario === "managed-allowlist-drift";
+    this.managedPolicyAllowedContractIds = this.managedPolicyEnabled ? [VALID_CONTRACT_ID] : [];
     this.managedRelayerStatus = "active";
     this.apiKeys = { "project-gas-owner": [], "project-gas-member": [] };
     this.existingProjectProvisioningState = "not_configured";
@@ -804,6 +810,7 @@ export class GasFixtureStore {
           };
         }
         return this.config.scenario === "managed-relayer" ||
+          this.config.scenario === "managed-allowlist-drift" ||
           this.config.scenario === "managed-no-contracts"
           ? {
               state: "ready",
@@ -827,7 +834,12 @@ export class GasFixtureStore {
               dailyCapStroops: "100000000",
               walletHourlyLimit: 100,
               activeContractIds:
-                this.config.scenario === "managed-no-contracts" ? [] : [VALID_CONTRACT_ID],
+                this.config.scenario === "managed-no-contracts"
+                  ? []
+                  : this.config.scenario === "managed-allowlist-drift"
+                    ? [VALID_CONTRACT_ID, SECOND_VALID_CONTRACT_ID]
+                    : [VALID_CONTRACT_ID],
+              allowedContractIds: [...this.managedPolicyAllowedContractIds],
               policyEnabled: this.managedPolicyEnabled,
             }
           : null;
@@ -842,6 +854,7 @@ export class GasFixtureStore {
               retired: this.retiredProjectIds.has(projectId!),
               managed:
                 this.config.scenario === "managed-relayer" ||
+                this.config.scenario === "managed-allowlist-drift" ||
                 this.config.scenario === "managed-no-contracts",
               publicKey: relayers[projectId!]?.publicKey ?? null,
               status: relayers[projectId!]?.status ?? null,
@@ -999,6 +1012,15 @@ export class GasFixtureStore {
 
     if (call.functionName === "gas/mutations:activateManagedSponsorship") {
       this.managedPolicyEnabled = true;
+      const linkedContractIds =
+        this.config.scenario === "managed-no-contracts"
+          ? []
+          : this.config.scenario === "managed-allowlist-drift"
+            ? [VALID_CONTRACT_ID, SECOND_VALID_CONTRACT_ID]
+            : [VALID_CONTRACT_ID];
+      this.managedPolicyAllowedContractIds = Array.from(
+        new Set([...this.managedPolicyAllowedContractIds, ...linkedContractIds]),
+      );
       this.notify();
       return null;
     }

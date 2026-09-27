@@ -24,6 +24,8 @@ const EDITOR = "GBNHK3TLWWXBCEGNFHB45Z66R4AI5YUALKUFBP4WF7YK5JLZIAAG2DLI";
 const VIEWER = "GDFWQCS3C72IWT5QV6CJYCMCQZ4WQ2QELSE6ABWI5Q3XRZ6BPGRS6LZV";
 const OTHER_OWNER = "GCZCSOTTJVGJNVXKUUEPGZRWWEB4HOFCQLMZJX6VIP4C4ZURI4HVOIMA";
 const CONTRACT_ID = "CC7RENKPGXGF6MMEMGJ4YWUBOBGQYOCGG33PNSONQF56UMMAQ22TWH6R";
+const MANUAL_CONTRACT_ID = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA2ZMN";
+const SECOND_LINKED_CONTRACT_ID = "CC3QCZSWY3VBSCFCZOYBBHLMO5OXPWQPNFQHUBNIPOWFTYTBS5Y4AT5N";
 const RELAYER_PUBLIC_KEY = "GAI7NKM2MASZ4OJH2LQNMXL4VEUVOWPVDNRVTB6XQRWYYRX3JD4KX4ZI";
 const NOW = 1_757_000_000_000;
 
@@ -229,7 +231,7 @@ test("managed sponsorship activation requires the owner and uses only active lin
       projectId,
       ownerAddress: OWNER,
       registryProjectId: 7,
-      contractId: "CC3QCZSWY3VBSCFCZOYBBHLMO5OXPWQPNFQHUBNIPOWFTYTBS5Y4AT5N",
+      contractId: SECOND_LINKED_CONTRACT_ID,
       status: "pending_add",
       createdAt: NOW,
       updatedAt: NOW,
@@ -240,6 +242,7 @@ test("managed sponsorship activation requires the owner and uses only active lin
     dailyCapStroops: "100000000",
     walletHourlyLimit: 100,
     activeContractIds: [CONTRACT_ID],
+    allowedContractIds: [],
     policyEnabled: false,
   });
   await expect(
@@ -250,7 +253,7 @@ test("managed sponsorship activation requires the owner and uses only active lin
     enabled: false,
     dailyCapStroops: "100000000",
     walletHourlyLimit: 100,
-    allowedContractIds: [],
+    allowedContractIds: [MANUAL_CONTRACT_ID],
   });
   await expect(
     editor.mutation(api.gas.mutations.updatePolicy, {
@@ -269,7 +272,32 @@ test("managed sponsorship activation requires the owner and uses only active lin
     enabled: true,
     dailyCapStroops: "100000000",
     walletHourlyLimit: 100,
-    allowedContractIds: [CONTRACT_ID],
+    allowedContractIds: [MANUAL_CONTRACT_ID, CONTRACT_ID],
+  });
+
+  await t.run(async (ctx) => {
+    const newlyLinkedContract = await ctx.db
+      .query("projectContracts")
+      .withIndex("by_project", (q) => q.eq("projectId", projectId))
+      .filter((q) => q.eq(q.field("contractId"), SECOND_LINKED_CONTRACT_ID))
+      .unique();
+    if (!newlyLinkedContract) throw new Error("Expected the pending linked contract");
+    await ctx.db.patch(newlyLinkedContract._id, { status: "active" });
+  });
+
+  expect(await owner.query(api.gas.queries.getManagedActivationReview, { projectId })).toEqual({
+    dailyCapStroops: "100000000",
+    walletHourlyLimit: 100,
+    activeContractIds: [CONTRACT_ID, SECOND_LINKED_CONTRACT_ID],
+    allowedContractIds: [MANUAL_CONTRACT_ID, CONTRACT_ID],
+    policyEnabled: true,
+  });
+  const updated = await owner.mutation(api.gas.mutations.activateManagedSponsorship, {
+    projectId,
+  });
+  expect(updated).toMatchObject({
+    enabled: true,
+    allowedContractIds: [MANUAL_CONTRACT_ID, CONTRACT_ID, SECOND_LINKED_CONTRACT_ID],
   });
 });
 
@@ -313,14 +341,22 @@ test("managed activation stays disabled without active contracts and maintenance
     return relayerId;
   });
 
+  await owner.mutation(api.gas.mutations.updatePolicy, {
+    projectId,
+    enabled: false,
+    dailyCapStroops: "100000000",
+    walletHourlyLimit: 100,
+    allowedContractIds: [MANUAL_CONTRACT_ID],
+  });
   const activated = await owner.mutation(api.gas.mutations.activateManagedSponsorship, {
     projectId,
   });
-  expect(activated).toMatchObject({ enabled: false, allowedContractIds: [] });
+  expect(activated).toMatchObject({ enabled: false, allowedContractIds: [MANUAL_CONTRACT_ID] });
   expect(
     await owner.query(api.gas.queries.getManagedActivationReview, { projectId }),
   ).toMatchObject({
     activeContractIds: [],
+    allowedContractIds: [MANUAL_CONTRACT_ID],
     policyEnabled: false,
   });
 

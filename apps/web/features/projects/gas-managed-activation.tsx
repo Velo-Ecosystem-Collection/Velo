@@ -10,7 +10,7 @@ import { useState } from "react";
 
 import type { Id } from "@repo/backend/convex/_generated/dataModel";
 
-import { formatStroopsAsXlm } from "./gas-ui";
+import { formatStroopsAsXlm, MAX_ALLOWED_CONTRACT_IDS } from "./gas-ui";
 
 export function GasManagedActivation({ projectId }: { projectId: Id<"projects"> }) {
   const review = useQuery(api.gas.queries.getManagedActivationReview, { projectId });
@@ -18,18 +18,39 @@ export function GasManagedActivation({ projectId }: { projectId: Id<"projects"> 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  const unallowlistedContractIds = review
+    ? review.activeContractIds.filter(
+        (contractId) => !review.allowedContractIds.includes(contractId),
+      )
+    : [];
+  const allowlistWouldExceedLimit = review
+    ? new Set([...review.allowedContractIds, ...review.activeContractIds]).size >
+      MAX_ALLOWED_CONTRACT_IDS
+    : false;
 
   async function handleActivate() {
-    if (!review || review.activeContractIds.length === 0 || busy) return;
+    if (
+      !review ||
+      review.activeContractIds.length === 0 ||
+      busy ||
+      (review.policyEnabled && unallowlistedContractIds.length === 0)
+    ) {
+      return;
+    }
+    const updatingExistingPolicy = review.policyEnabled;
     setBusy(true);
     setMessage(null);
     setFailed(false);
     try {
       await activate({ projectId });
-      setMessage("Sponsorship is enabled with the reviewed limits and active linked contracts.");
+      setMessage(
+        updatingExistingPolicy
+          ? "The active linked contracts were added to the sponsorship allowlist. Existing allowed contracts were preserved."
+          : "Sponsorship is enabled with the reviewed limits and active linked contracts.",
+      );
     } catch {
       setFailed(true);
-      setMessage("Activation was not applied. Refresh the review and try again.");
+      setMessage("The sponsorship settings were not applied. Refresh the review and try again.");
     } finally {
       setBusy(false);
     }
@@ -40,8 +61,8 @@ export function GasManagedActivation({ projectId }: { projectId: Id<"projects"> 
       <CardHeader>
         <h3 className="text-base font-semibold">Review sponsorship settings</h3>
         <CardDescription>
-          Confirm the suggested Testnet limits and the contracts linked to this project before
-          enabling Velo managed sponsorship.
+          Review the Testnet limits and linked contracts. Enabling or syncing adds linked contracts
+          to the saved allowlist; remove addresses in Policy controls to revoke them.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -88,11 +109,37 @@ export function GasManagedActivation({ projectId }: { projectId: Id<"projects"> 
                 <CheckCircle2Icon />
                 <AlertTitle>Sponsorship is enabled</AlertTitle>
                 <AlertDescription>
-                  The stored policy is active. You can pause it from the managed relayer controls.
+                  {unallowlistedContractIds.length > 0
+                    ? `${unallowlistedContractIds.length} active linked contract(s) are missing from the saved allowlist.`
+                    : "All active linked contracts are in the saved allowlist."}{" "}
+                  You can pause sponsorship from the managed relayer controls.
                 </AlertDescription>
               </Alert>
-            ) : review.activeContractIds.length > 0 ? (
-              <Button type="button" onClick={() => void handleActivate()} disabled={busy}>
+            ) : null}
+            {allowlistWouldExceedLimit ? (
+              <Alert variant="destructive">
+                <AlertCircleIcon />
+                <AlertTitle>Allowlist limit reached</AlertTitle>
+                <AlertDescription>
+                  The policy supports up to {MAX_ALLOWED_CONTRACT_IDS} contracts. Remove manually
+                  allowed IDs in Policy controls before syncing the linked contracts.
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            {review.policyEnabled && unallowlistedContractIds.length > 0 ? (
+              <Button
+                type="button"
+                onClick={() => void handleActivate()}
+                disabled={busy || allowlistWouldExceedLimit}
+              >
+                {busy ? "Updating allowlist…" : "Update sponsorship allowlist"}
+              </Button>
+            ) : !review.policyEnabled && review.activeContractIds.length > 0 ? (
+              <Button
+                type="button"
+                onClick={() => void handleActivate()}
+                disabled={busy || allowlistWouldExceedLimit}
+              >
                 {busy ? "Enabling sponsorship…" : "Enable sponsorship with these settings"}
               </Button>
             ) : null}

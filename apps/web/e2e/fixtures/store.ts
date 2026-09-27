@@ -541,9 +541,11 @@ export class GasFixtureStore {
       throw new Error("Gas E2E fixture query requires project access");
     }
 
-    const paginationOpts = (args as {
-      paginationOpts?: { numItems?: number; cursor?: string | null };
-    }).paginationOpts;
+    const paginationOpts = (
+      args as {
+        paginationOpts?: { numItems?: number; cursor?: string | null };
+      }
+    ).paginationOpts;
     const numItems = paginationOpts?.numItems;
     if (!Number.isSafeInteger(numItems) || (numItems as number) < 1) {
       throw new Error("Gas E2E fixture query requires a positive page size");

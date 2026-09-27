@@ -2,6 +2,7 @@ import { ConvexClientProvider } from "@/core/providers/convex-provider";
 import { PwaProvider } from "@/core/providers/pwa-provider";
 import { WalletProvider } from "@/core/wallet/wallet-provider";
 import UiProviders from "@repo/ui/ui-providers";
+import { Analytics } from "@vercel/analytics/next";
 import localFont from "next/font/local";
 
 import type { Metadata, Viewport } from "next";
@@ -61,6 +62,7 @@ export default function RootLayout({
             </UiProviders>
           </ConvexClientProvider>
         </WalletProvider>
+        <Analytics />
       </body>
     </html>
   );

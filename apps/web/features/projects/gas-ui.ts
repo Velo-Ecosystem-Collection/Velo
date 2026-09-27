@@ -45,6 +45,7 @@ export type GasRelayerValidationResult =
 export type GasLogSnapshot = FunctionReturnType<
   typeof api.gas.queries.listLogsPage
 >["page"][number];
+export type GasLogPage = FunctionReturnType<typeof api.gas.queries.listLogsPage>;
 export type GasExecutionDetailSnapshot = Exclude<
   FunctionReturnType<typeof api.gas.queries.getExecutionDetail>,
   null
@@ -131,6 +132,54 @@ export function getGasExplorerLink(
 /** Keep an absent fee visibly unknown while preserving exact zero and seven-decimal formatting. */
 export function formatGasActivityFee(stroops: string | null | undefined): string {
   return stroops === null || stroops === undefined ? "Unknown" : formatStroopsAsXlm(stroops);
+}
+
+/** Serialize the safe 30-day Gas audit projection as spreadsheet-safe CSV. */
+export function createGasActivityCsv(logs: readonly GasLogSnapshot[]): string {
+  const header = [
+    "network",
+    "createdAtUtc",
+    "updatedAtUtc",
+    "requestId",
+    "innerTransactionHash",
+    "sourceWallet",
+    "targetContractIds",
+    "decisionCode",
+    "rejectionCode",
+    "lifecycle",
+    "expiresAtUtc",
+    "innerMaxFeeStroops",
+    "reservedStroops",
+    "actualFeeStroops",
+    "actualFeeXlm",
+  ];
+  const rows = logs.map((log) => [
+    "testnet",
+    formatGasActivityTimestamp(log.createdAt),
+    formatGasActivityTimestamp(log.updatedAt),
+    log.requestId,
+    log.transactionHash,
+    log.sourceWallet,
+    log.targetContractIds === null ? null : JSON.stringify(log.targetContractIds),
+    log.decisionCode,
+    log.rejectionCode,
+    log.lifecycle,
+    formatGasActivityTimestamp(log.expiresAt),
+    log.innerMaxFeeStroops,
+    log.reservedStroops,
+    log.actualFeeStroops,
+    formatGasActivityFee(log.actualFeeStroops),
+  ]);
+
+  return `\uFEFF${[header, ...rows]
+    .map((row) => row.map(escapeGasCsvCell).join(","))
+    .join("\r\n")}\r\n`;
+}
+
+function escapeGasCsvCell(value: string | null): string {
+  const cell = value ?? "";
+  const spreadsheetSafeCell = /^\s*[=+\-@]/.test(cell) ? `'${cell}` : cell;
+  return `"${spreadsheetSafeCell.replaceAll('"', '""')}"`;
 }
 
 /** Format activity and receipt dates as readable, unambiguous UTC timestamps. */

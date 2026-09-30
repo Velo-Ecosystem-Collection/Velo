@@ -1,0 +1,25 @@
+{
+  "capturedAt": "2026-09-26T05:34:19Z",
+  "convexDeployment": "agreeable-salmon-748",
+  "deploymentEnvironment": "production",
+  "configuredDeploymentName": "prod:agreeable-salmon-748",
+  "configuredSourceCommit": "8e8ab152179032c332eaae883bca979624f920d6",
+  "candidateHead": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+  "configuredSourceMatchesCandidate": false,
+  "configuredSourceIsAncestorOfCandidate": true,
+  "sourceCommitPresentInLocalGit": true,
+  "sourceMarkerIsIndependentAttestation": false,
+  "localGitComparison": {
+    "checkedAt": "2026-09-26T05:36:34Z",
+    "commitsFromConfiguredMarkerToCandidateHead": 9,
+    "managedRelayerImplementationCommit": "c6db9830be7baa84d916d793f5de8fb02afeee23",
+    "configuredMarkerPredatesManagedRelayerImplementation": true,
+    "candidateWorktreeIsDirty": true
+  },
+  "deployedFunctionRosterContainsManagedRelayerFunctions": true,
+  "deployedFunctionRosterContainsCustodyInventorySummary": false,
+  "currentCustodyInventory": "unknown; safe summary query is not deployed",
+  "productionMutationPerformed": false,
+  "testnetTransactionSubmitted": false,
+  "decision": "Production source provenance is not established. Freeze and verify the intended source revision before any production deployment or campaign transaction."
+}

@@ -9,10 +9,23 @@ import type {
 
 export const GAS_E2E_STORAGE_KEY = "velo:e2e:gas-fixture";
 
-export type GasFixtureSession = "owner" | "editor" | "viewer" | "nonmember" | "disconnected";
+export type GasFixtureSession =
+  | "owner"
+  | "editor"
+  | "viewer"
+  | "nonmember"
+  | "disconnected"
+  | "settings-owner"
+  | "settings-last-project";
 export type GasFixtureProjectId = "project-gas-owner" | "project-gas-member";
 export type GasFixtureScenario =
   | "default"
+  | "existing-project-no-relayer"
+  | "existing-project-config-error"
+  | "managed-relayer"
+  | "managed-relayer-context-mismatch"
+  | "managed-allowlist-drift"
+  | "managed-no-contracts"
   | "policy-denial"
   | "policy-read-error"
   | "activity-read-error"
@@ -47,12 +60,26 @@ type FixtureProject = {
   status: "registered";
   ownerAddress: string;
   paymentAccessActive: boolean;
+  description: string;
 };
 
 type FixtureSession = {
   address: string | null;
   roleByProject: Partial<Record<GasFixtureProjectId, "owner" | "editor" | "viewer">>;
   ownerProjects: GasFixtureProjectId[];
+};
+
+type FixtureApiKey = {
+  _id: string;
+  _creationTime: number;
+  label: string;
+  prefix: string;
+  purpose: "general" | "gas";
+  paymentAnchor?: "inhouse" | "pdax";
+  createdAt: number;
+  lastUsedAt?: number;
+  requestCount: number;
+  revoked: boolean;
 };
 
 type PaginationRecord = {
@@ -76,6 +103,7 @@ const projects: Record<GasFixtureProjectId, FixtureProject> = {
     status: "registered",
     ownerAddress: OWNER_ADDRESS,
     paymentAccessActive: false,
+    description: "Owner Gas fixture project description.",
   },
   "project-gas-member": {
     _id: "project-gas-member",
@@ -84,6 +112,7 @@ const projects: Record<GasFixtureProjectId, FixtureProject> = {
     status: "registered",
     ownerAddress: OWNER_ADDRESS,
     paymentAccessActive: false,
+    description: "Member Gas fixture project description.",
   },
 };
 
@@ -113,9 +142,20 @@ const sessions: Record<GasFixtureSession, FixtureSession> = {
     roleByProject: {},
     ownerProjects: [],
   },
+  "settings-owner": {
+    address: OWNER_ADDRESS,
+    roleByProject: { "project-gas-owner": "owner", "project-gas-member": "owner" },
+    ownerProjects: ["project-gas-owner", "project-gas-member"],
+  },
+  "settings-last-project": {
+    address: OWNER_ADDRESS,
+    roleByProject: { "project-gas-owner": "owner" },
+    ownerProjects: ["project-gas-owner"],
+  },
 };
 
 const VALID_CONTRACT_ID = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM";
+const SECOND_VALID_CONTRACT_ID = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA2ZMN";
 const OBSERVED_AT = Date.parse("2026-09-16T12:00:00.000Z");
 const RELAYER_PUBLIC_KEY = "GA54SPC34JL3I57ENALTO2V26XOFFG4VGQLFQXDGF6KJ5TJY7ODY56ST";
 const INNER_HASH = "a".repeat(64);
@@ -287,7 +327,9 @@ function readInitialConfig(): GasFixtureConfig {
         stored.session === "editor" ||
         stored.session === "viewer" ||
         stored.session === "nonmember" ||
-        stored.session === "disconnected") &&
+        stored.session === "disconnected" ||
+        stored.session === "settings-owner" ||
+        stored.session === "settings-last-project") &&
       (stored.projectId === "project-gas-owner" || stored.projectId === "project-gas-member")
     ) {
       return {
@@ -307,6 +349,10 @@ function clone<T>(value: T): T {
   return structuredClone(value);
 }
 
+function isExistingProjectWithoutRelayerScenario(scenario: GasFixtureScenario | undefined) {
+  return scenario === "existing-project-no-relayer" || scenario === "existing-project-config-error";
+}
+
 export class GasFixtureStore {
   private config: GasFixtureConfig = readInitialConfig();
   private readonly listeners = new Set<Listener>();
@@ -318,6 +364,20 @@ export class GasFixtureStore {
   private revision = 0;
   private callId = 0;
   private updateVersion = 0;
+  private retiredProjectIds = new Set<GasFixtureProjectId>();
+  private managedPolicyEnabled = this.config.scenario === "managed-allowlist-drift";
+  private managedPolicyAllowedContractIds: string[] = this.managedPolicyEnabled
+    ? [VALID_CONTRACT_ID]
+    : [];
+  private managedRelayerStatus: GasRelayerSnapshot["status"] = "active";
+  private apiKeys: Record<GasFixtureProjectId, FixtureApiKey[]> = {
+    "project-gas-owner": [],
+    "project-gas-member": [],
+  };
+  private existingProjectProvisioningState: "not_configured" | "pending" | "ready" =
+    "not_configured";
+  private generatedRelayerReady = false;
+  private existingProjectManualRelayerReady = false;
   private connectionCount = 1;
   private isConnected = this.config.session !== "disconnected";
 
@@ -354,6 +414,14 @@ export class GasFixtureStore {
     this.isConnected = this.config.session !== "disconnected";
     this.connectionCount = 1;
     this.updateVersion = 0;
+    this.retiredProjectIds.clear();
+    this.managedPolicyEnabled = this.config.scenario === "managed-allowlist-drift";
+    this.managedPolicyAllowedContractIds = this.managedPolicyEnabled ? [VALID_CONTRACT_ID] : [];
+    this.managedRelayerStatus = "active";
+    this.apiKeys = { "project-gas-owner": [], "project-gas-member": [] };
+    this.existingProjectProvisioningState = "not_configured";
+    this.generatedRelayerReady = false;
+    this.existingProjectManualRelayerReady = false;
     this.queries.clear();
     this.pagination.clear();
     for (const call of this.calls) {
@@ -370,6 +438,9 @@ export class GasFixtureStore {
 
   setScenario(scenario: GasFixtureScenario) {
     this.config = { ...this.config, scenario };
+    this.existingProjectProvisioningState = "not_configured";
+    this.generatedRelayerReady = false;
+    this.existingProjectManualRelayerReady = false;
     this.queries.clear();
     this.pagination.clear();
     if (typeof window !== "undefined") {
@@ -394,6 +465,24 @@ export class GasFixtureStore {
     policies[projectId] = {
       ...policies[projectId],
       dailyCapStroops: (BigInt(policies[projectId].dailyCapStroops) + 10_000_000n).toString(),
+      updatedAt: Date.now(),
+    };
+    this.notify();
+  }
+
+  simulateProvisioningCommit() {
+    if (this.config.scenario !== "existing-project-no-relayer") {
+      throw new Error("Provisioning commit is only available in the no-relayer fixture");
+    }
+    this.existingProjectProvisioningState = "ready";
+    this.generatedRelayerReady = true;
+    this.existingProjectManualRelayerReady = false;
+    relayers[this.config.projectId] = {
+      ...relayers[this.config.projectId],
+      status: "active",
+      balanceStroops: null,
+      balanceUpdatedAt: null,
+      createdAt: Date.now(),
       updatedAt: Date.now(),
     };
     this.notify();
@@ -440,6 +529,48 @@ export class GasFixtureStore {
       this.queries.set(key, this.callId);
     }
     return this.queryValue(functionName, args);
+  }
+
+  query(functionName: string, args: unknown): Promise<unknown> {
+    if (functionName !== "gas/queries:listLogsPage") {
+      throw new Error(`Unexpected Gas E2E fixture query: ${functionName}`);
+    }
+
+    this.record("query", functionName, args);
+    if (this.config.scenario === "activity-read-error") {
+      throw new Error("fixture activity provider failure");
+    }
+
+    const projectId = this.projectIdFromArgs(args);
+    const role = projectId ? sessions[this.config.session].roleByProject[projectId] : undefined;
+    if (!projectId || !role) {
+      throw new Error("Gas E2E fixture query requires project access");
+    }
+
+    const paginationOpts = (
+      args as {
+        paginationOpts?: { numItems?: number; cursor?: string | null };
+      }
+    ).paginationOpts;
+    const numItems = paginationOpts?.numItems;
+    if (!Number.isSafeInteger(numItems) || (numItems as number) < 1) {
+      throw new Error("Gas E2E fixture query requires a positive page size");
+    }
+
+    const cursor = paginationOpts?.cursor ?? null;
+    const offset = cursor === null ? 0 : Number(/^cursor:(\d+)$/.exec(cursor)?.[1]);
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new Error("Gas E2E fixture query received an invalid page cursor");
+    }
+
+    const logs = this.logsFor(projectId);
+    const page = logs.slice(offset, offset + (numItems as number));
+    const nextOffset = offset + page.length;
+    return Promise.resolve({
+      page,
+      isDone: nextOffset >= logs.length,
+      continueCursor: `cursor:${nextOffset}`,
+    });
   }
 
   usePaginatedQuery(
@@ -582,7 +713,9 @@ export class GasFixtureStore {
 
     switch (functionName) {
       case "projects/query:listByOwner":
-        return session.ownerProjects.map((id) => clone(projects[id]));
+        return this.ownerProjectsFor(config.session).map((id) =>
+          this.projectForSettingsFixture(id, config.session),
+        );
       case "users/query:getByWallet":
         return session.address
           ? {
@@ -596,17 +729,139 @@ export class GasFixtureStore {
       case "playground_projects/queries:getMyAccess":
         return role ? { role } : null;
       case "projects/query:getById":
-        return projectId && role ? clone(projects[projectId]) : null;
+        return projectId && role && !this.retiredProjectIds.has(projectId)
+          ? {
+              ...this.projectForSettingsFixture(projectId, config.session),
+              isOwner: role === "owner",
+            }
+          : null;
       case "projects/query:listApiKeys":
-        // Integration guidance must render without exposing or inventing a credential.
-        return [];
+        return clone(projectId ? this.apiKeys[projectId] : []);
       case "gas/queries:getPolicy":
         if (config.scenario === "policy-read-error") {
           throw new Error("fixture policy provider failure");
         }
+        if (
+          isExistingProjectWithoutRelayerScenario(config.scenario) &&
+          !this.managedPolicyEnabled
+        ) {
+          return null;
+        }
         return projectId && role ? clone(policies[projectId]) : null;
       case "gas/queries:getRelayerAccount":
-        return projectId && role ? clone(relayers[projectId]) : null;
+        if (!projectId || !role) return null;
+        if (
+          isExistingProjectWithoutRelayerScenario(config.scenario) &&
+          !this.generatedRelayerReady &&
+          !this.existingProjectManualRelayerReady
+        ) {
+          return null;
+        }
+        return clone(relayers[projectId]);
+      case "gas/queries:getProvisioningStatus":
+        if (!projectId || !role) return null;
+        if (config.scenario === "existing-project-config-error") {
+          return {
+            state: "failed",
+            managed: true,
+            publicKey: null,
+            relayerStatus: null,
+            deploymentContextMatches: null,
+            errorCode: "configuration_unavailable",
+          };
+        }
+        if (config.scenario === "existing-project-no-relayer") {
+          if (this.existingProjectManualRelayerReady) {
+            return {
+              state: "ready",
+              managed: false,
+              publicKey: relayers[projectId].publicKey,
+              relayerStatus: relayers[projectId].status,
+              deploymentContextMatches: null,
+              errorCode: null,
+            };
+          }
+          return this.existingProjectProvisioningState === "ready"
+            ? {
+                state: "ready",
+                managed: true,
+                publicKey: relayers[projectId].publicKey,
+                relayerStatus: this.managedRelayerStatus,
+                deploymentContextMatches: true,
+                errorCode: null,
+              }
+            : {
+                state: this.existingProjectProvisioningState,
+                managed: this.existingProjectProvisioningState === "pending",
+                publicKey: null,
+                relayerStatus: null,
+                deploymentContextMatches: null,
+                errorCode: null,
+              };
+        }
+        if (config.scenario === "managed-relayer-context-mismatch") {
+          return {
+            state: "ready",
+            managed: true,
+            publicKey: relayers[projectId].publicKey,
+            relayerStatus: this.managedRelayerStatus,
+            deploymentContextMatches: false,
+            errorCode: null,
+          };
+        }
+        return this.config.scenario === "managed-relayer" ||
+          this.config.scenario === "managed-allowlist-drift" ||
+          this.config.scenario === "managed-no-contracts"
+          ? {
+              state: "ready",
+              managed: true,
+              publicKey: relayers[projectId].publicKey,
+              relayerStatus: this.managedRelayerStatus,
+              deploymentContextMatches: true,
+              errorCode: null,
+            }
+          : {
+              state: relayers[projectId] ? "ready" : "not_configured",
+              managed: false,
+              publicKey: relayers[projectId]?.publicKey ?? null,
+              relayerStatus: relayers[projectId]?.status ?? null,
+              deploymentContextMatches: null,
+              errorCode: null,
+            };
+      case "gas/queries:getManagedActivationReview":
+        return role === "owner"
+          ? {
+              dailyCapStroops: "100000000",
+              walletHourlyLimit: 100,
+              activeContractIds:
+                this.config.scenario === "managed-no-contracts"
+                  ? []
+                  : this.config.scenario === "managed-allowlist-drift"
+                    ? [VALID_CONTRACT_ID, SECOND_VALID_CONTRACT_ID]
+                    : [VALID_CONTRACT_ID],
+              allowedContractIds: [...this.managedPolicyAllowedContractIds],
+              policyEnabled: this.managedPolicyEnabled,
+            }
+          : null;
+      case "gas/queries:getFundingStatus":
+      case "gas/queries:getFaucetStatus":
+      case "gas/queries:getWithdrawalStatus":
+        return null;
+      case "gas/queries:getRelayerFundsForOwner":
+        return role === "owner"
+          ? {
+              projectName: projects[projectId!].name,
+              retired: this.retiredProjectIds.has(projectId!),
+              managed:
+                this.config.scenario === "managed-relayer" ||
+                this.config.scenario === "managed-allowlist-drift" ||
+                this.config.scenario === "managed-no-contracts",
+              publicKey: relayers[projectId!]?.publicKey ?? null,
+              status: relayers[projectId!]?.status ?? null,
+              balanceStroops: relayers[projectId!]?.balanceStroops ?? null,
+              balanceUpdatedAt: relayers[projectId!]?.balanceUpdatedAt ?? null,
+            }
+          : null;
       case "gas/queries:getTelemetry":
         if (config.scenario === "telemetry-read-error") {
           throw new Error("fixture telemetry provider failure");
@@ -619,11 +874,89 @@ export class GasFixtureStore {
         return requestId ? clone(executionDetails[requestId] ?? null) : null;
       }
       default:
+        if (
+          config.session.startsWith("settings-") &&
+          functionName === "project_contracts/query:listByProject"
+        ) {
+          return [];
+        }
+        if (
+          config.session.startsWith("settings-") &&
+          functionName === "contract_events/query:listByProject"
+        ) {
+          return {
+            events: [],
+            poller: {
+              status: "idle",
+              lastLedger: undefined,
+              lastRunAt: undefined,
+              errorMessage: undefined,
+            },
+          };
+        }
+        if (
+          config.session.startsWith("settings-") &&
+          functionName === "webhook_endpoints/query:getSummary"
+        ) {
+          return {
+            configured: false,
+            enabled: false,
+            recentDeliveries: 0,
+            successfulDeliveries: 0,
+            failedDeliveries: 0,
+          };
+        }
+        if (
+          config.session.startsWith("settings-") &&
+          functionName === "payment_intents/queries:getProjectStats"
+        ) {
+          return {
+            volumes: [],
+            counts: { total: 0, paid: 0, pending: 0, failed: 0, created: 0 },
+            webhooks: { totalDeliveries: 0, successRate: 100, averageLatency: 0 },
+          };
+        }
         throw new Error(`Unexpected Gas E2E fixture query: ${functionName}`);
     }
   }
 
   private defaultCompletion(call: GasFixtureCall): unknown {
+    if (call.functionName === "projects/mutation:generateApiKey") {
+      const args = call.args as {
+        id: GasFixtureProjectId;
+        label: string;
+        purpose?: "general" | "gas";
+        paymentAnchor?: "inhouse" | "pdax";
+      };
+      const purpose = args.purpose ?? "general";
+      const prefix = purpose === "gas" ? "tg_test_" : "tk_live_";
+      const token = "e".repeat(32);
+      const createdAt = Date.now();
+      this.apiKeys[args.id] = [
+        {
+          _id: `fixture-api-key-${this.apiKeys[args.id].length + 1}`,
+          _creationTime: createdAt,
+          label: args.label.trim() || "Default Key",
+          prefix: `${prefix}${token.slice(0, 4)}...${token.slice(-4)}`,
+          purpose,
+          ...(purpose === "general" && args.paymentAnchor !== undefined
+            ? { paymentAnchor: args.paymentAnchor }
+            : {}),
+          createdAt,
+          requestCount: 0,
+          revoked: false,
+        },
+        ...this.apiKeys[args.id],
+      ];
+      this.notify();
+      return { rawKey: `${prefix}${token}` };
+    }
+    if (call.functionName === "projects/mutation:retire") {
+      const args = call.args as { id: GasFixtureProjectId };
+      this.retiredProjectIds.add(args.id);
+      this.notify();
+      return null;
+    }
     if (call.functionName === "gas/mutations:updatePolicy") {
       const args = call.args as {
         projectId: GasFixtureProjectId;
@@ -662,8 +995,85 @@ export class GasFixtureStore {
         updatedAt: Date.now(),
       };
       relayers[args.projectId] = saved;
+      if (this.config.scenario === "existing-project-no-relayer") {
+        this.existingProjectProvisioningState = "not_configured";
+        this.existingProjectManualRelayerReady = true;
+      }
       this.notify();
       return clone(saved);
+    }
+
+    if (call.functionName === "gas/mutations:setManagedRelayerStatus") {
+      const args = call.args as { status: GasRelayerSnapshot["status"] };
+      this.managedRelayerStatus = args.status;
+      this.notify();
+      return args.status;
+    }
+
+    if (call.functionName === "gas/mutations:activateManagedSponsorship") {
+      this.managedPolicyEnabled = true;
+      const linkedContractIds =
+        this.config.scenario === "managed-no-contracts"
+          ? []
+          : this.config.scenario === "managed-allowlist-drift"
+            ? [VALID_CONTRACT_ID, SECOND_VALID_CONTRACT_ID]
+            : [VALID_CONTRACT_ID];
+      this.managedPolicyAllowedContractIds = Array.from(
+        new Set([...this.managedPolicyAllowedContractIds, ...linkedContractIds]),
+      );
+      this.notify();
+      return null;
+    }
+
+    if (call.functionName === "gas/mutations:retryProvisioning") {
+      if (this.config.scenario === "existing-project-no-relayer") {
+        this.existingProjectProvisioningState = "pending";
+        this.notify();
+      }
+      return "queued";
+    }
+
+    if (call.functionName === "gas/balance_action:prepareRelayerFunding") {
+      return {
+        status: "prepared",
+        requestId: "funding-request-1",
+        operation: "payment",
+        amountStroops: "100000000",
+        destinationPublicKey: relayers["project-gas-owner"].publicKey,
+        transactionXdr: "prepared-funding-xdr",
+        expiresAt: Date.now() + 300_000,
+      };
+    }
+
+    if (call.functionName === "gas/balance_action:requestTestnetRelayerFunds") {
+      return {
+        status: "funded",
+        requestId: "faucet-request-1",
+        cooldownUntil: Date.now() + 86_400_000,
+      };
+    }
+
+    if (call.functionName === "gas/balance_action:checkTestnetRelayerFunds") {
+      return { status: "funded", requestId: "faucet-request-1" };
+    }
+
+    if (call.functionName === "gas/balance_action:prepareRelayerWithdrawal") {
+      return {
+        status: "prepared",
+        requestId: "withdrawal-request-1",
+        amountStroops: "100000000",
+        relayerPublicKey: relayers["project-gas-owner"].publicKey,
+        ownerWallet: OWNER_ADDRESS,
+        transactionXdr: "prepared-withdrawal-consent-xdr",
+        expiresAt: Date.now() + 300_000,
+      };
+    }
+
+    if (call.functionName === "gas/balance_action:confirmRelayerWithdrawal") {
+      this.managedRelayerStatus = "disabled";
+      this.managedPolicyEnabled = false;
+      this.notify();
+      return { status: "verified", transactionHash: "c".repeat(64), verifiedLedger: 123 };
     }
 
     if (call.functionName === "gas/balance_action:refreshRelayerBalance") {
@@ -709,14 +1119,37 @@ export class GasFixtureStore {
       "playground_projects/queries:getMyAccess",
       "projects/query:getById",
       "projects/query:listApiKeys",
+      "project_contracts/query:listByProject",
+      "contract_events/query:listByProject",
+      "webhook_endpoints/query:getSummary",
+      "payment_intents/queries:getProjectStats",
       "gas/queries:getPolicy",
       "gas/queries:getRelayerAccount",
+      "gas/queries:getProvisioningStatus",
+      "gas/queries:getManagedActivationReview",
+      "gas/queries:getFundingStatus",
+      "gas/queries:getFaucetStatus",
+      "gas/queries:getWithdrawalStatus",
+      "gas/queries:getRelayerFundsForOwner",
       "gas/queries:getTelemetry",
       "gas/queries:listLogsPage",
       "gas/queries:getExecutionDetail",
       "gas/mutations:updatePolicy",
       "gas/mutations:updateRelayerAccount",
       "gas/balance_action:refreshRelayerBalance",
+      "gas/mutations:retryProvisioning",
+      "gas/mutations:setManagedRelayerStatus",
+      "gas/mutations:activateManagedSponsorship",
+      "gas/balance_action:prepareRelayerFunding",
+      "gas/balance_action:submitRelayerFunding",
+      "gas/balance_action:requestTestnetRelayerFunds",
+      "gas/balance_action:checkTestnetRelayerFunds",
+      "gas/balance_action:prepareRelayerWithdrawal",
+      "gas/balance_action:confirmRelayerWithdrawal",
+      "gas/balance_action:continueRelayerWithdrawal",
+      "gas/balance_action:cancelRelayerWithdrawal",
+      "projects/mutation:generateApiKey",
+      "projects/mutation:retire",
     ]);
     if (!supported.has(functionName)) {
       throw new Error(`Unexpected Gas E2E fixture call: ${functionName}`);
@@ -761,6 +1194,23 @@ export class GasFixtureStore {
     return this.stringFromArgs(args, "utcDayKey") ?? "2026-09-16";
   }
 
+  private ownerProjectsFor(session: GasFixtureSession): GasFixtureProjectId[] {
+    return sessions[session].ownerProjects.filter((id) => !this.retiredProjectIds.has(id));
+  }
+
+  private projectForSettingsFixture(
+    id: GasFixtureProjectId,
+    session: GasFixtureSession,
+  ): FixtureProject & { isOwner?: boolean } {
+    const project = clone(projects[id]);
+    if (session.startsWith("settings-")) {
+      project.name = "Owner Gas Project";
+      project.description = "Project settings fixture description.";
+      if (id === "project-gas-member") project.ownerAddress = VIEWER_ADDRESS;
+    }
+    return project;
+  }
+
   private notify() {
     this.revision += 1;
     this.listeners.forEach((listener) => listener());
@@ -780,6 +1230,7 @@ export type GasFixtureBrowserApi = {
   setConnection: (connected: boolean) => void;
   simulateReactiveUpdate: () => void;
   simulateStoredPolicyUpdate: () => void;
+  simulateProvisioningCommit: () => void;
   resolveNext: (functionName?: string, value?: unknown) => void;
   rejectNext: (functionName?: string, message?: string) => void;
   getCalls: () => GasFixtureCall[];
@@ -800,6 +1251,7 @@ export function installGasFixtureBrowserApi(store: GasFixtureStore) {
     setConnection: (connected) => store.setConnection(connected),
     simulateReactiveUpdate: () => store.simulateReactiveUpdate(),
     simulateStoredPolicyUpdate: () => store.simulateStoredPolicyUpdate(),
+    simulateProvisioningCommit: () => store.simulateProvisioningCommit(),
     resolveNext: (functionName, value) => store.resolveNext(functionName, value),
     rejectNext: (functionName, message) => store.rejectNext(functionName, message),
     getCalls: () => store.getCalls(),

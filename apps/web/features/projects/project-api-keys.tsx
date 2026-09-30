@@ -62,6 +62,8 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
   const [localError, setLocalError] = useState<string | null>(null);
   const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
   const [selectedAnchor, setSelectedAnchor] = useState<"inhouse" | "pdax">("inhouse");
+  const [selectedPurpose, setSelectedPurpose] = useState<"general" | "gas">("general");
+  const [newKeyPurpose, setNewKeyPurpose] = useState<"general" | "gas" | null>(null);
 
   async function handleGenerateKey() {
     const label = apiKeyLabel.trim();
@@ -72,15 +74,18 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
 
     setIsGeneratingKey(true);
     setNewRawKey(null);
+    setNewKeyPurpose(null);
     setLocalError(null);
 
     try {
       const result = await generateApiKey({
         id: typedProjectId,
         label,
-        paymentAnchor: selectedAnchor,
+        purpose: selectedPurpose,
+        ...(selectedPurpose === "general" ? { paymentAnchor: selectedAnchor } : {}),
       });
       setNewRawKey(result.rawKey);
+      setNewKeyPurpose(selectedPurpose);
       setApiKeyLabel("");
       setIsGenerateDialogOpen(false);
     } catch (error) {
@@ -178,6 +183,8 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
   }
 
   const activeKeys = apiKeys.filter((key) => !key.revoked);
+  const activeGeneralKeys = activeKeys.filter((key) => key.purpose !== "gas");
+  const activeGasKeys = activeKeys.filter((key) => key.purpose !== "general");
 
   return (
     <section className="grid min-w-0 gap-6">
@@ -217,6 +224,7 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
               onClick={() => {
                 setApiKeyLabel("");
                 setSelectedAnchor("inhouse");
+                setSelectedPurpose("general");
                 setLocalError(null);
                 setIsGenerateDialogOpen(true);
               }}
@@ -240,6 +248,12 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
                   Copy this key now. For security reasons, it cannot be shown again after this box
                   is closed or the page refreshes.
                 </p>
+                {newKeyPurpose === "gas" ? (
+                  <p className="mb-3 text-sm leading-relaxed">
+                    Store it as <code>VELO_GAS_API_KEY</code> in your server environment. This
+                    Testnet key is scoped to Gas Station endpoints.
+                  </p>
+                ) : null}
                 <div className="flex items-center gap-2 rounded-md border border-emerald-200 bg-background p-3 font-mono text-xs font-semibold break-all text-foreground shadow-sm dark:border-emerald-900/60">
                   <span className="min-w-0 flex-1 select-all">{newRawKey}</span>
                   <CopyButton value={newRawKey} label="API key" size="sm" />
@@ -268,6 +282,7 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
                 <TableRow>
                   <TableHead>Label</TableHead>
                   <TableHead className="hidden sm:table-cell">Prefix</TableHead>
+                  <TableHead>API scope</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="hidden md:table-cell">Payment Anchor</TableHead>
                   <TableHead className="hidden lg:table-cell">Created</TableHead>
@@ -278,11 +293,28 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
               <TableBody>
                 {apiKeys.map((key) => (
                   <TableRow key={key._id}>
-                    <TableCell className="max-w-40 whitespace-normal break-words text-sm font-medium">
+                    <TableCell className="max-w-40 text-sm font-medium break-words whitespace-normal">
                       {key.label}
                     </TableCell>
                     <TableCell className="hidden font-mono text-xs text-muted-foreground sm:table-cell">
                       {key.prefix}
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={
+                          key.purpose === "gas"
+                            ? "warning"
+                            : key.purpose === "legacy"
+                              ? "gray"
+                              : "info"
+                        }
+                      >
+                        {key.purpose === "gas"
+                          ? "Gas Station · Testnet"
+                          : key.purpose === "legacy"
+                            ? "Legacy · General + Gas"
+                            : "General API"}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant={key.revoked ? "gray" : "success"}>
@@ -290,9 +322,13 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
                       </Badge>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
-                      <Badge variant={key.paymentAnchor === "pdax" ? "warning" : "info"}>
-                        {key.paymentAnchor === "pdax" ? "PDAX" : "In-house"}
-                      </Badge>
+                      {key.purpose === "gas" ? (
+                        <span className="text-sm text-muted-foreground">—</span>
+                      ) : (
+                        <Badge variant={key.paymentAnchor === "pdax" ? "warning" : "info"}>
+                          {key.paymentAnchor === "pdax" ? "PDAX" : "In-house"}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">
                       {formatTimestamp(key.createdAt)}
@@ -330,7 +366,11 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
           <DialogContent className="bg-background text-foreground sm:max-w-[425px]">
             <DialogHeader>
               <DialogTitle>Generate API key</DialogTitle>
-              <DialogDescription>Create a new API key for {project.name}.</DialogDescription>
+              <DialogDescription>
+                {selectedPurpose === "gas"
+                  ? `Create a Testnet Gas Station key for ${project.name}. It works only with Gas endpoints.`
+                  : `Create a general API key for ${project.name}.`}
+              </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               {localError ? (
@@ -356,25 +396,47 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="api-key-anchor" className="text-foreground">
-                  Payment routing
+                <Label htmlFor="api-key-purpose" className="text-foreground">
+                  API access
                 </Label>
                 <select
-                  id="api-key-anchor"
-                  value={selectedAnchor}
-                  onChange={(e) => setSelectedAnchor(e.target.value as "inhouse" | "pdax")}
+                  id="api-key-purpose"
+                  value={selectedPurpose}
+                  onChange={(e) => setSelectedPurpose(e.target.value as "general" | "gas")}
                   disabled={isGeneratingKey}
                   className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <option value="inhouse">Velo's own process (In-house)</option>
-                  <option value="pdax">PDAX Anchor</option>
+                  <option value="general">General project API</option>
+                  <option value="gas">Gas Station · Testnet</option>
                 </select>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  {selectedAnchor === "inhouse"
-                    ? "Standard payment flow routing directly to project owner address."
-                    : "Routed via PDAX. Requires connected PDAX provider. Includes memo tags."}
+                  {selectedPurpose === "gas"
+                    ? "Use this server-side key with velo.gas. It cannot create checkout sessions or call general project APIs. Sponsorship still requires a funded relayer and an enabled project Gas policy."
+                    : "Use this key with checkout and general project API endpoints. It cannot access Gas Station endpoints."}
                 </p>
               </div>
+              {selectedPurpose === "general" ? (
+                <div className="grid gap-2">
+                  <Label htmlFor="api-key-anchor" className="text-foreground">
+                    Payment routing
+                  </Label>
+                  <select
+                    id="api-key-anchor"
+                    value={selectedAnchor}
+                    onChange={(e) => setSelectedAnchor(e.target.value as "inhouse" | "pdax")}
+                    disabled={isGeneratingKey}
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <option value="inhouse">Velo's own process (In-house)</option>
+                    <option value="pdax">PDAX Anchor</option>
+                  </select>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    {selectedAnchor === "inhouse"
+                      ? "Standard payment flow routing directly to project owner address."
+                      : "Routed via PDAX. Requires connected PDAX provider. Includes memo tags."}
+                  </p>
+                </div>
+              ) : null}
             </div>
             <DialogFooter className="gap-2 sm:gap-0">
               <Button
@@ -401,26 +463,46 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
             </h3>
             <div className="grid gap-2.5">
               {[
-                {
-                  method: "GET",
-                  path: "/api/v1/events",
-                  description: "Retrieve recent contract events observed for this project.",
-                },
-                {
-                  method: "GET",
-                  path: "/api/v1/transactions/[hash]",
-                  description: "Lookup a Stellar transaction by hash.",
-                },
-                {
-                  method: "GET",
-                  path: "/api/v1/webhooks/deliveries",
-                  description: "Check recent webhook delivery attempts.",
-                },
-                {
-                  method: "POST",
-                  path: "/api/v1/payment-intents",
-                  description: "Create hosted checkout sessions for customer payments.",
-                },
+                ...(activeGeneralKeys.length > 0
+                  ? [
+                      {
+                        method: "GET",
+                        path: "/api/v1/events",
+                        description: "Retrieve recent contract events observed for this project.",
+                      },
+                      {
+                        method: "GET",
+                        path: "/api/v1/transactions/[hash]",
+                        description: "Lookup a Stellar transaction by hash.",
+                      },
+                      {
+                        method: "GET",
+                        path: "/api/v1/webhooks/deliveries",
+                        description: "Check recent webhook delivery attempts.",
+                      },
+                      {
+                        method: "POST",
+                        path: "/api/v1/payment-intents",
+                        description: "Create hosted checkout sessions for customer payments.",
+                      },
+                    ]
+                  : []),
+                ...(activeGasKeys.length > 0
+                  ? [
+                      {
+                        method: "POST",
+                        path: "/api/gas/sponsor",
+                        description:
+                          "Request a Testnet Gas sponsorship reservation using a server-side Gas key.",
+                      },
+                      {
+                        method: "POST",
+                        path: "/api/gas/submit",
+                        description:
+                          "Submit or recover a sponsored transaction using the same Gas key.",
+                      },
+                    ]
+                  : []),
               ].map((endpoint) => (
                 <div
                   key={endpoint.path}

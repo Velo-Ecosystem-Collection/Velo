@@ -1,0 +1,14 @@
+{
+  "capturedAt": "2026-09-26T05:47:03Z",
+  "environment": "production",
+  "deployment": "agreeable-salmon-748",
+  "networkScope": "Stellar Testnet only",
+  "provisioningEnabled": true,
+  "custodyDeploymentId": "dev:capable-kingfisher-697",
+  "custodyKeyringValueRead": false,
+  "currentCustodyInventory": "unknown; safe aggregate function unavailable on this deployment",
+  "operatorReportedCodeDeployment": true,
+  "deployedSourceIndependentlyVerified": false,
+  "productionMutationPerformed": false,
+  "testnetTransactionSubmitted": false
+}

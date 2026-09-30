@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-09-26T06:30:21Z",
+  "operatorReportedRuntimeWarning": {
+    "messageCode": "pay_access_event_project_mapping_ambiguous",
+    "reportedAtLocal": "2026-09-26 14:12:11 Asia/Manila",
+    "deployment": "unspecified"
+  },
+  "guardBehavior": "retryable ambiguous result; project rows unchanged; global event cursor unchanged",
+  "verification": {
+    "backendSuite": "337/337 passed",
+    "focusedPayAccessAndProjectSettingsSuite": "17/17 passed",
+    "convexTypecheck": "passed",
+    "formatAndLint": "passed"
+  },
+  "duplicateMappingRepair": "not performed; deployment and authoritative project mapping have not been identified",
+  "productionDataAccessed": false,
+  "productionMutationPerformed": false,
+  "testnetTransactionSubmitted": false
+}

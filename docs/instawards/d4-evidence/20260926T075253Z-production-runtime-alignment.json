@@ -1,0 +1,33 @@
+{
+  "capturedAtUtc": "2026-09-26T07:52:53Z",
+  "scope": "local production runtime configuration alignment",
+  "productionDeployment": "prod:agreeable-salmon-748",
+  "configurationReadback": {
+    "custodyDeploymentId": "prod:agreeable-salmon-748",
+    "d2DeploymentName": "prod:agreeable-salmon-748",
+    "deploymentEnvironment": "production",
+    "sourceArtifact": "20260926T073832Z-production-identities-readback.json"
+  },
+  "vercelProductionTarget": "Operator-reported as prod:agreeable-salmon-748; not independently read by this check.",
+  "localChanges": [
+    "Gas runtime configuration is read when each action executes.",
+    "D2 snapshot and provenance HTTP handlers read the active environment for each request.",
+    "D2 deployment identity fallback is limited to an explicitly marked development environment; missing non-development identity fails closed."
+  ],
+  "validation": {
+    "gasBackendTests": "216/216 passed",
+    "backendConvexTypecheck": "passed",
+    "focusedLintAndFormat": "passed",
+    "gitDiffCheck": "passed",
+    "historicalD2ReportVerifier": "passed offline",
+    "historicalD3ReportVerifier": "passed offline",
+    "d2ReportSha256": "5e50a10cc5b68a24f69b5eb6e1319dd10c4f859813bfa7bb4d214a0950e66ee9",
+    "d3ReportSha256": "443f6fe3b9150b6823f408dcddcb12a0a141f294c87e2bacd9cd8cce5dbe8bbb"
+  },
+  "productionSourceDeployed": false,
+  "deployedRuntimeIdentityReverified": false,
+  "custodyProvisioned": false,
+  "fundingOrTestnetTransactionSubmitted": false,
+  "secretsIncluded": false,
+  "campaignDecision": "NO-GO pending reviewed deployment provenance and a fresh production status readback"
+}

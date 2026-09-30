@@ -2,7 +2,8 @@ name: CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
+    tags: ["**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -26,8 +27,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.25.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -46,6 +45,27 @@ jobs:
 
       - name: Run Tests
         run: pnpm test
+
+      - name: Run D2 and D3 Gas Smoke Tests
+        run: node --experimental-strip-types --test scripts/gas-d2-smoke.test.mjs scripts/gas-d3-smoke.test.mjs
+
+      - name: Run D4 Gas Campaign Recorder Tests
+        run: node --experimental-strip-types --test scripts/gas-d4-campaign.test.mjs scripts/convex-deployment-provenance.test.mjs
+
+      - name: Install Playwright Browsers
+        run: pnpm --filter web exec playwright install --with-deps chromium firefox webkit
+
+      - name: Run Three-Browser Gas Suite
+        run: pnpm --filter web test:e2e:gas
+
+      - name: Upload Gas Browser Failure Artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gas-playwright-failure-artifacts
+          path: apps/web/playwright-report/gas-test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Benchmark Harness Smoke Test
         run: pnpm benchmark:smoke
@@ -73,6 +93,11 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     concurrency:
       group: convex-production
       cancel-in-progress: false
@@ -84,8 +109,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.25.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -113,14 +136,80 @@ jobs:
         run: pnpm --filter @carts1024/velo-wallets build
 
       - name: Deploy Convex Production Backend
-        run: pnpm --filter @repo/backend exec convex deploy --typecheck enable --codegen enable
+        run: pnpm --filter @repo/backend exec convex deploy --typecheck enable --codegen enable --message "$GITHUB_SHA"
+
+      - name: Bind source revision to the deployed Convex target
+        id: convex-deployment
+        shell: bash
+        env:
+          EXPECTED_DEPLOYMENT_ID: prod:agreeable-salmon-748
+          EXPECTED_ENVIRONMENT: production
+        run: |
+          set -euo pipefail
+
+          if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
+            echo "::error::Convex deploy modified the checked-out source tree; refusing to attest a different working tree."
+            exit 1
+          fi
+
+          deployment_id="$(pnpm --filter @repo/backend exec convex env get VELO_GAS_D2_DEPLOYMENT_NAME)"
+          deployment_environment="$(pnpm --filter @repo/backend exec convex env get VELO_DEPLOYMENT_ENVIRONMENT)"
+
+          if [[ "$deployment_id" != "$EXPECTED_DEPLOYMENT_ID" ]]; then
+            echo "::error::The Convex deploy key did not resolve to the expected production deployment."
+            exit 1
+          fi
+          if [[ "$deployment_environment" != "$EXPECTED_ENVIRONMENT" ]]; then
+            echo "::error::The Convex production deployment environment is not configured as production."
+            exit 1
+          fi
+
+          pnpm --filter @repo/backend exec convex env set --force VELO_GAS_D2_DEPLOYED_SOURCE_COMMIT "$GITHUB_SHA"
+          deployed_source_commit="$(pnpm --filter @repo/backend exec convex env get VELO_GAS_D2_DEPLOYED_SOURCE_COMMIT)"
+          if [[ "$deployed_source_commit" != "$GITHUB_SHA" ]]; then
+            echo "::error::The deployed source marker did not read back as the workflow commit."
+            exit 1
+          fi
+
+          {
+            echo "deployment_id=$deployment_id"
+            echo "deployment_environment=$deployment_environment"
+            echo "deployed_source_commit=$deployed_source_commit"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create Convex deployment evidence manifest
+        env:
+          CONVEX_PRODUCTION_DEPLOYMENT_ID: ${{ steps.convex-deployment.outputs.deployment_id }}
+          CONVEX_PRODUCTION_DEPLOYMENT_ENVIRONMENT: ${{ steps.convex-deployment.outputs.deployment_environment }}
+          CONVEX_PRODUCTION_STELLAR_NETWORK: testnet
+        run: node scripts/convex-deployment-provenance.mjs create --output "$RUNNER_TEMP/convex-production-deployment.json"
+
+      - name: Attest Convex production deployment evidence
+        id: attest-convex-deployment
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/convex-production-deployment.json
+
+      - name: Upload Convex deployment provenance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: convex-production-deployment-provenance
+          path: |
+            ${{ runner.temp }}/convex-production-deployment.json
+            ${{ steps.attest-convex-deployment.outputs.bundle-path }}
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Record Convex Deployment
         run: |
           {
             echo "### Convex production deployment"
-            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Commit: \`${{ steps.convex-deployment.outputs.deployed_source_commit }}\`"
             echo "- Branch: \`$GITHUB_REF_NAME\`"
+            echo "- Deployment: \`${{ steps.convex-deployment.outputs.deployment_id }}\`"
+            echo "- Environment: \`${{ steps.convex-deployment.outputs.deployment_environment }}\`"
+            echo "- Network: \`Testnet\`"
+            echo "- Provenance: signed deployment manifest attached and uploaded as `convex-production-deployment-provenance`."
           } >> "$GITHUB_STEP_SUMMARY"
 
   deploy-contracts:

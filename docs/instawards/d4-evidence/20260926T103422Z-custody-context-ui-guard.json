@@ -1,0 +1,104 @@
+{
+  "artifact": "velo_gas_d4_custody_context_ui_guard",
+  "capturedAtUtc": "2026-09-26T10:34:22Z",
+  "revision": {
+    "branch": "instawards/gas-station-deliverable-4",
+    "head": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+    "workingTreeFrozen": false
+  },
+  "change": {
+    "safeProvisioningStatus": "Adds a nullable deploymentContextMatches boolean without returning deployment IDs or custody fields.",
+    "ownerPanel": "Blocks managed-account funding, resume, activation, and withdrawal if the deployment binding is false or unknown; keeps pause available and clarifies that stored address/balance does not prove signer decryption.",
+    "scope": "Local source only; no production deployment."
+  },
+  "checks": [
+    {
+      "command": "./node_modules/.bin/vitest run",
+      "workingDirectory": "packages/backend",
+      "testFilesPassed": 46,
+      "testsPassed": 342,
+      "testsFailed": 0
+    },
+    {
+      "command": "node --experimental-strip-types --test features/**/*.test.ts",
+      "workingDirectory": "apps/web",
+      "testsPassed": 251,
+      "testsFailed": 0
+    },
+    {
+      "command": "./node_modules/.bin/vitest run convex/tests/gas/custody_provisioning.test.ts convex/tests/gas/console.test.ts",
+      "workingDirectory": "packages/backend",
+      "testsPassed": 25,
+      "testsFailed": 0
+    },
+    {
+      "command": "./node_modules/.bin/playwright test --config=playwright.gas.config.ts --project=chromium --project=webkit",
+      "workingDirectory": "apps/web",
+      "chromiumPassed": 18,
+      "webkitPassed": 18,
+      "testsPassed": 36,
+      "testsFailed": 0,
+      "mode": "local simulated fixtures; external requests blocked"
+    },
+    {
+      "command": "../node_modules/.bin/tsc --noEmit -p tsconfig.json",
+      "workingDirectory": "packages/backend/convex",
+      "exitCode": 0
+    },
+    {
+      "command": "./node_modules/.bin/tsc --noEmit -p apps/web/tsconfig.json",
+      "workingDirectory": ".",
+      "exitCode": 0
+    },
+    {
+      "command": "./node_modules/.bin/oxlint packages/backend/convex/gas/queries.ts packages/backend/convex/tests/gas/custody_provisioning.test.ts packages/backend/convex/tests/gas/console.test.ts apps/web/features/projects/gas-relayer-panel.tsx apps/web/e2e/fixtures/store.ts apps/web/e2e/gas-station.spec.ts",
+      "workingDirectory": ".",
+      "exitCode": 0
+    },
+    {
+      "command": "./node_modules/.bin/oxfmt --check packages/backend/convex/gas/queries.ts packages/backend/convex/tests/gas/custody_provisioning.test.ts packages/backend/convex/tests/gas/console.test.ts apps/web/features/projects/gas-relayer-panel.tsx apps/web/e2e/fixtures/store.ts apps/web/e2e/gas-station.spec.ts",
+      "workingDirectory": ".",
+      "exitCode": 0
+    },
+    {
+      "command": "./node_modules/.bin/next build",
+      "workingDirectory": "apps/web",
+      "engine": "Turbopack",
+      "recordedAtUtc": "2026-09-26T10:33:00Z",
+      "exitCode": 0
+    },
+    {
+      "command": "./node_modules/.bin/playwright test --config=playwright.gas.config.ts --project=chromium --grep 'blocks account actions when managed custody belongs to another deployment'",
+      "workingDirectory": "apps/web",
+      "testsPassed": 1,
+      "testsFailed": 0,
+      "recordedAtUtc": "2026-09-26T10:34:00Z",
+      "mode": "local simulated fixtures; external requests blocked"
+    }
+  ],
+  "firefox": {
+    "status": "not_run_in_this_iteration",
+    "latestRecordedHostIssue": "Firefox plugin-container sandbox/compositor launch failure before application assertions"
+  },
+  "productionReadiness": {
+    "lastReadAtUtc": "2026-09-26T10:09:34Z",
+    "runtimeDeploymentId": "prod:agreeable-salmon-748",
+    "inventoryReadyRecords": 1,
+    "inventoryRecordDeploymentId": "dev:capable-kingfisher-697",
+    "projectMappingAvailable": false,
+    "ownerPanelReportedReadyFreshBalanceAndSponsorshipEnabled": true,
+    "deployedSourceShaVerified": false,
+    "campaignDecision": "NO-GO"
+  },
+  "safety": {
+    "productionCodeChanged": false,
+    "productionDataMutated": false,
+    "testnetTransactionSubmitted": false
+  },
+  "limitations": [
+    "The owner panel observation is operator-reported; it does not prove signer decryption or a settled sponsored transaction.",
+    "The custody aggregate does not identify the project, and the single ready row is tagged with the development deployment identity.",
+    "Firefox assertions remain unrun because its browser process failed to launch in the prior local attempt.",
+    "No hosted CI run exists for a frozen delivery revision."
+  ]
+}

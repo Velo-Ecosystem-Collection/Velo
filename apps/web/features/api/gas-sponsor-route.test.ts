@@ -13,8 +13,8 @@ import {
 } from "../../core/api/gas-route-handlers.ts";
 import { withRouteTelemetry } from "../../core/observability.ts";
 
-const API_KEY = `tk_live_${"a".repeat(32)}`;
-const OTHER_API_KEY = `tk_live_${"b".repeat(32)}`;
+const API_KEY = `tg_test_${"a".repeat(32)}`;
+const OTHER_API_KEY = `tg_test_${"b".repeat(32)}`;
 const TRANSACTION_XDR = "valid-testnet-transaction-xdr";
 const REQUEST_CORRELATION_ID = "gas-sponsor-test-001";
 const EXPIRES_AT = 1_782_865_800_000;

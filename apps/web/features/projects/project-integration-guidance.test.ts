@@ -132,17 +132,17 @@ async function compileAndLoad(snippet: string, exportName: keyof GuidanceModule)
 
 async function withServerEnvironment<T>(callback: () => Promise<T>): Promise<T> {
   const originalApiKey = process.env.VELO_GAS_API_KEY;
-  const originalBaseUrl = process.env.VELO_BASE_URL;
+  const originalBaseUrl = process.env.VELO_GAS_BASE_URL;
   process.env.VELO_GAS_API_KEY = "workspace-guidance-test-key";
-  process.env.VELO_BASE_URL = "http://127.0.0.1:3000";
+  process.env.VELO_GAS_BASE_URL = "http://127.0.0.1:3000";
 
   try {
     return await callback();
   } finally {
     if (originalApiKey === undefined) delete process.env.VELO_GAS_API_KEY;
     else process.env.VELO_GAS_API_KEY = originalApiKey;
-    if (originalBaseUrl === undefined) delete process.env.VELO_BASE_URL;
-    else process.env.VELO_BASE_URL = originalBaseUrl;
+    if (originalBaseUrl === undefined) delete process.env.VELO_GAS_BASE_URL;
+    else process.env.VELO_GAS_BASE_URL = originalBaseUrl;
   }
 }
 
@@ -150,7 +150,7 @@ test("Gas guidance snippets are configuration-only and use the public SDK entry 
   for (const snippet of Object.values(gasIntegrationSnippets)) {
     assert.match(snippet, /from "@carts1024\/velo-sdk"/);
     assert.match(snippet, /process\.env\.VELO_GAS_API_KEY/);
-    assert.match(snippet, /process\.env\.VELO_BASE_URL/);
+    assert.match(snippet, /process\.env\.VELO_GAS_BASE_URL/);
     assert.doesNotMatch(snippet, /apiKeyPlaceholder|selectedKey|projectId|tk_(?:live|test)_/);
     assert.doesNotMatch(snippet, /window\.|document\.|navigator\./);
   }

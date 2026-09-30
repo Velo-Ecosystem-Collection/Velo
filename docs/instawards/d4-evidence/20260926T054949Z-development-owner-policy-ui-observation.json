@@ -1,0 +1,19 @@
+{
+  "observedAt": "2026-09-26T05:49:49Z",
+  "evidenceSource": "user-provided screenshot in conversation",
+  "environment": "development Convex",
+  "projectIdentityVisible": false,
+  "policySummary": {
+    "status": "Enabled",
+    "dailyCap": "10.0000000 XLM",
+    "requestsPerWallet": 100,
+    "allowedContracts": 1
+  },
+  "notShown": [
+    "project identifier",
+    "relayer spendable balance",
+    "sponsored transaction or ledger receipt",
+    "pause or withdrawal outcome"
+  ],
+  "screenshotArtifactStored": false
+}

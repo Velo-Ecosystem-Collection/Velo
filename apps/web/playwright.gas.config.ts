@@ -18,7 +18,7 @@ export default defineConfig({
     { name: "webkit", use: { ...devices["Desktop Safari"] } },
   ],
   webServer: {
-    command: "VELO_GAS_E2E_FIXTURES=1 pnpm exec next dev --port 3100",
+    command: "VELO_GAS_E2E_FIXTURES=1 node_modules/.bin/next dev --hostname 127.0.0.1 --port 3100",
     url: "http://127.0.0.1:3100/projects/project-gas-owner/gas",
     reuseExistingServer: false,
     timeout: 120_000,

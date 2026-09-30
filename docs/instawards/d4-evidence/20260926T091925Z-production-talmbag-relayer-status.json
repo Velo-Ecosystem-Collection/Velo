@@ -1,0 +1,24 @@
+{
+  "artifact": "velo_gas_d4_production_owner_panel_status_observation",
+  "recordedAtUtc": "2026-09-26T09:19:25Z",
+  "environment": "production",
+  "projectLabel": "Talmbag",
+  "observation": {
+    "status": "ready",
+    "addressVisible": true,
+    "source": "operator_reported_project_gas_panel",
+    "independentlyVerified": false
+  },
+  "safety": {
+    "addressCaptured": false,
+    "keyMaterialCaptured": false,
+    "custodyRecordProjectMappingEstablished": false,
+    "signerDecryptionVerified": false,
+    "fundingVerified": false,
+    "testnetTransactionSubmitted": false
+  },
+  "limitations": [
+    "The production custody aggregate does not return project identifiers, so the reported panel cannot be conclusively tied to the single dev-tagged aggregate record.",
+    "The panel status does not by itself prove signing readiness, funding, or ledger activity."
+  ]
+}

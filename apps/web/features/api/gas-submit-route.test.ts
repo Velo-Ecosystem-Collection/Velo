@@ -12,8 +12,8 @@ import {
 } from "../../core/api/gas-route-handlers.ts";
 import { withRouteTelemetry } from "../../core/observability.ts";
 
-const API_KEY = `tk_live_${"a".repeat(32)}`;
-const OTHER_API_KEY = `tk_live_${"b".repeat(32)}`;
+const API_KEY = `tg_test_${"a".repeat(32)}`;
+const OTHER_API_KEY = `tg_test_${"b".repeat(32)}`;
 const TRANSACTION_HASH = "a".repeat(64);
 const REQUEST_ID = "gas-request-001";
 const CORRELATION_ID = "gas-submit-test-001";

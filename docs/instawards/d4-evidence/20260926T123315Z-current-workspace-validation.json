@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "observedAtUtc": "2026-09-26T12:33:15Z",
+  "revision": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+  "scope": "current local D4 working tree validation only",
+  "checks": {
+    "pnpmTest": {
+      "result": "passed",
+      "turboTasksSuccessful": 9,
+      "turboTasksTotal": 9
+    },
+    "gasD4CampaignRecorder": {
+      "result": "passed",
+      "testsPassed": 10,
+      "testsTotal": 10
+    },
+    "historicalD2D3ReportVerification": {
+      "result": "passed",
+      "offlineOnly": true,
+      "reportsModified": false
+    },
+    "pnpmLintFix": {
+      "result": "passed",
+      "turboTasksSuccessful": 9,
+      "turboTasksTotal": 9,
+      "includesTypeScriptChecks": true
+    },
+    "pnpmBuild": {
+      "result": "passed",
+      "turboTasksSuccessful": 5,
+      "turboTasksTotal": 5
+    },
+    "gitDiffCheck": {
+      "result": "passed"
+    }
+  },
+  "packageManager": {
+    "sandboxAttempt": "failed_before_tests_registry_unreachable",
+    "networkVerifiedRetry": "passed"
+  },
+  "sourceFilesChangedByLintFix": false,
+  "productionDeploymentPerformed": false,
+  "externalTestnetTransactionSubmitted": false,
+  "result": "passed",
+  "limitations": [
+    "Hosted CI, production source attestation, custody identity recovery, deployed two-app Testnet receipts, owner lifecycle demonstrations, and the 50-settlement campaign remain open."
+  ]
+}

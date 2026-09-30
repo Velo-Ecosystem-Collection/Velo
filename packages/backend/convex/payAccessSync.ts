@@ -69,27 +69,51 @@ export const syncPayAccessEvents = internalAction({
 
         if (decoded && decoded.project_id) {
           const registryProjectId = Number(decoded.project_id);
+          let updateArgs:
+            | {
+                registryProjectId: number;
+                paymentAccessActive?: boolean;
+                checkoutCredits?: number;
+              }
+            | undefined;
 
           if (actionType === "activate") {
             const credits = decoded.credits ? Number(decoded.credits) : 100;
-            await ctx.runMutation(internal.payAccessSync.updateProjectAccess, {
+            updateArgs = {
               registryProjectId,
               paymentAccessActive: true,
               checkoutCredits: credits,
-            });
-            processedCount++;
+            };
           } else if (actionType === "deactivate") {
-            await ctx.runMutation(internal.payAccessSync.updateProjectAccess, {
+            updateArgs = {
               registryProjectId,
               paymentAccessActive: false,
-            });
-            processedCount++;
+            };
           } else if (actionType === "consume") {
             const remaining = decoded.remaining ? Number(decoded.remaining) : 0;
-            await ctx.runMutation(internal.payAccessSync.updateProjectAccess, {
+            updateArgs = {
               registryProjectId,
               checkoutCredits: remaining,
-            });
+            };
+          }
+
+          if (updateArgs) {
+            const updateResult: "updated" | "not_found" | "ambiguous" = await ctx.runMutation(
+              internal.payAccessSync.updateProjectAccess,
+              updateArgs,
+            );
+            if (updateResult === "ambiguous") {
+              // Do not advance the cursor past an event whose project mapping
+              // is ambiguous. Once the duplicate data is repaired, the event
+              // will be retried and applied to its single matching project.
+              console.warn("pay_access_event_project_mapping_ambiguous");
+              return {
+                eventCount: result.events.length,
+                processedCount,
+                retryable: true,
+                blockedReason: "ambiguous_project_mapping" as const,
+              };
+            }
             processedCount++;
           }
         }
@@ -152,14 +176,20 @@ export const updateProjectAccess = internalMutation({
     paymentAccessActive: v.optional(v.boolean()),
     checkoutCredits: v.optional(v.number()),
   },
+  returns: v.union(v.literal("updated"), v.literal("not_found"), v.literal("ambiguous")),
   handler: async (ctx, args) => {
-    const project = await ctx.db
+    const matches = await ctx.db
       .query("projects")
       .withIndex("by_registry_project_id", (q) => q.eq("registryProjectId", args.registryProjectId))
-      .unique();
+      .take(2);
 
+    if (matches.length > 1) {
+      return "ambiguous" as const;
+    }
+
+    const project = matches[0] ?? null;
     if (!project) {
-      return;
+      return "not_found" as const;
     }
 
     const updates: {
@@ -188,5 +218,7 @@ export const updateProjectAccess = internalMutation({
         eventType: "payment_access.activated",
       });
     }
+
+    return "updated" as const;
   },
 });

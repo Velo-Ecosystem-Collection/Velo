@@ -1,0 +1,55 @@
+{
+  "capturedAt": "2026-09-26T06:35:57Z",
+  "revision": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+  "workingTreeDirty": true,
+  "tests": {
+    "backend": 337,
+    "web": 249,
+    "sdk": 71,
+    "stellar": 117,
+    "observability": 9,
+    "nextjsExample": 18,
+    "expressExample": 15,
+    "veloWallets": 23,
+    "pdax": 16,
+    "d2D3AndCampaignRecorder": 35,
+    "totalPassed": 890
+  },
+  "allDirectPackageSuitesPassed": true,
+  "turboAggregate": {
+    "status": "failed",
+    "cause": "package tasks invoking pnpm were blocked by signature verification for the pinned pnpm wrapper",
+    "affectedTasks": [
+      "@carts1024/velo-sdk#test",
+      "@carts1024/velo-wallets#test",
+      "@repo/stellar#test"
+    ]
+  },
+  "typechecks": {
+    "convex": "passed",
+    "web": "passed",
+    "sdk": "passed",
+    "stellar": "passed",
+    "observability": "passed",
+    "ui": "passed",
+    "pdax": "passed",
+    "veloWalletsBuildTypes": "passed",
+    "expressExample": "passed",
+    "nextjsExample": "passed"
+  },
+  "directBuilds": {
+    "sdk": "passed",
+    "veloWallets": "passed",
+    "expressExample": "passed",
+    "nextjsExample": "passed",
+    "web": "passed using the already-installed Tailwind PostCSS package from the pnpm store"
+  },
+  "repoOxlint": "passed with five warnings in unchanged scripts/observability-assets.test.mjs",
+  "selectedChangedSourceOxfmt": "39 of 40 passed; project-integration.tsx has a known baseline class-order difference",
+  "gitDiffCheck": "passed",
+  "historicalD2ReportSha256": "5e50a10cc5b68a24f69b5eb6e1319dd10c4f859813bfa7bb4d214a0950e66ee9",
+  "historicalD3ReportSha256": "443f6fe3b9150b6823f408dcddcb12a0a141f294c87e2bacd9cd8cce5dbe8bbb",
+  "liveNetworkUsed": false,
+  "testnetTransactionSubmitted": false,
+  "productionDeploymentPerformed": false
+}

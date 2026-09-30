@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "checkedAtUtc": "2026-09-26T12:16:26Z",
+  "scope": "local Gas configuration only: examples/express/.env.local and examples/nextjs-app-router/.env.local",
+  "express": {
+    "envFilePresent": true,
+    "gasKeyPresent": true,
+    "gasKeyShapeValid": true,
+    "demoTokenPresent": true,
+    "demoTokenBounded": true,
+    "demoTokenDiffersFromGasKey": true,
+    "mode": "development"
+  },
+  "nextjsAppRouter": {
+    "envFilePresent": true,
+    "gasKeyPresent": true,
+    "gasKeyShapeValid": true,
+    "demoTokenPresent": true,
+    "demoTokenBounded": true,
+    "demoTokenDiffersFromGasKey": true,
+    "mode": "development"
+  },
+  "gasKeysDiffer": true,
+  "secretValuesEmitted": false,
+  "deployedConfigurationVerified": false,
+  "productionRequestsMade": false,
+  "testnetTransactionsSubmitted": false,
+  "result": "passed"
+}

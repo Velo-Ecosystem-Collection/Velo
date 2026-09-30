@@ -113,7 +113,11 @@ Modes:
 The D3 environment uses VELO_GAS_D3_* names and maps to the existing D2
 configuration loader. Credentials and signed XDR may be supplied through the
 documented *_FILE alternatives. Reports never contain credentials, XDR, raw
-responses, or exception messages. Dashboard acceptance remains a separate gate.
+responses, or exception messages. Set VELO_GAS_D3_EXPECTED_ENVIRONMENT to
+development (the default) or production. Production mode requires the exact
+deployment name and expected source SHA, and requires the signed deployment
+manifest in VELO_GAS_D3_DEPLOYMENT_ATTESTATION_FILE. Dashboard acceptance remains
+a separate gate.
 `;
 
 const D3_TO_D2_ENV = {
@@ -131,7 +135,9 @@ const D3_TO_D2_ENV = {
   PROVENANCE_URL: "PROVENANCE_URL",
   OPERATOR_TOKEN: "OPERATOR_TOKEN",
   DEPLOYMENT_NAME: "DEPLOYMENT_NAME",
+  EXPECTED_ENVIRONMENT: "EXPECTED_ENVIRONMENT",
   EXPECTED_SOURCE_COMMIT: "EXPECTED_SOURCE_COMMIT",
+  DEPLOYMENT_ATTESTATION_FILE: "DEPLOYMENT_ATTESTATION_FILE",
   TIMEOUT_MS: "TIMEOUT_MS",
   POLL_LIMIT: "POLL_LIMIT",
   POLL_INTERVAL_MS: "POLL_INTERVAL_MS",
@@ -218,6 +224,7 @@ export async function loadD3SmokeConfig(
 
   const loaded = await loadSmokeConfig(mapD3EnvironmentToD2(env), { readPrivateFile });
   const config = loaded.config;
+  invalid.push(...loaded.invalid.map((name) => name.replace("VELO_GAS_D2_", "VELO_GAS_D3_")));
   const invalidUrls = [];
   for (const [name, value] of [
     ["VELO_GAS_D3_API_ORIGIN", config.apiOrigin],
@@ -235,6 +242,9 @@ export async function loadD3SmokeConfig(
   }
   if (!isSafeLabel(config.projectId)) invalid.push("VELO_GAS_D3_PROJECT_ID");
   if (!isSafeLabel(config.deploymentName)) invalid.push("VELO_GAS_D3_DEPLOYMENT_NAME");
+  if (!["development", "production"].includes(config.expectedEnvironment)) {
+    invalid.push("VELO_GAS_D3_EXPECTED_ENVIRONMENT");
+  }
   if (config.expectedSourceCommit && !COMMIT_PATTERN.test(config.expectedSourceCommit)) {
     invalid.push("VELO_GAS_D3_EXPECTED_SOURCE_COMMIT");
   }
@@ -277,9 +287,16 @@ export function createD3SmokeDependencies({
   sdkFactory = createD3Client,
   withSdkTransport = (callback) => withTemporaryFetch(fetchImpl, callback),
   sdkMetadata = null,
+  verifyDeploymentAttestation,
 } = {}) {
   return {
-    ...createSmokeDependencies({ fetchImpl, now, wait, repositoryState }),
+    ...createSmokeDependencies({
+      fetchImpl,
+      now,
+      wait,
+      repositoryState,
+      ...(verifyDeploymentAttestation ? { verifyDeploymentAttestation } : {}),
+    }),
     sdkFactory,
     withSdkTransport,
     sdkMetadata,
@@ -839,8 +856,9 @@ function createConfigurationReport({
       d3Checks: [],
     },
     dashboard: { status: "pending", reason: "deployed_dashboard_acceptance_pending" },
-    failure: "configuration_missing",
-    missingInputs: [...missingInputs, ...invalidInputs],
+    failure: invalidInputs.length > 0 ? "configuration_invalid" : "configuration_missing",
+    ...(missingInputs.length > 0 ? { missingInputs: [...missingInputs] } : {}),
+    ...(invalidInputs.length > 0 ? { invalidInputs: [...invalidInputs] } : {}),
     execution: null,
     replay: null,
     denial: null,
@@ -1259,7 +1277,7 @@ function verifyDeployment(value) {
       "provenanceVerification",
     ]) &&
     isSafeLabel(value.deploymentId) &&
-    value.environment === "development" &&
+    (value.environment === "development" || value.environment === "production") &&
     value.network === "testnet" &&
     COMMIT_PATTERN.test(value.deployedSourceCommit) &&
     value.provenanceVerified === true &&

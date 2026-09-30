@@ -1,0 +1,136 @@
+{
+  "schemaVersion": 1,
+  "mode": "execute",
+  "startedAt": "2026-09-27T01:53:04.173Z",
+  "repository": {
+    "before": {
+      "head": "36591f6ee4ee944de4465039ec54df7f81042510",
+      "workingTree": {
+        "status": "modified",
+        "changedPathCount": 10
+      }
+    },
+    "after": {
+      "head": "36591f6ee4ee944de4465039ec54df7f81042510",
+      "workingTree": {
+        "status": "modified",
+        "changedPathCount": 10
+      }
+    }
+  },
+  "deployment": {
+    "deploymentId": "prod:agreeable-salmon-748",
+    "environment": "production",
+    "network": "testnet",
+    "deployedSourceCommit": "8b66da057e04fe25bef33ea999911513d80c101f",
+    "provenanceVerified": true,
+    "provenanceVerification": "github-artifact-attestation"
+  },
+  "preflight": {
+    "status": "passed",
+    "checks": [
+      {
+        "name": "allowed_invocation_valid",
+        "status": "passed"
+      },
+      {
+        "name": "denied_invocation_valid",
+        "status": "passed"
+      },
+      {
+        "name": "operator_snapshot_available",
+        "status": "passed"
+      },
+      {
+        "name": "deployment_identity",
+        "status": "passed"
+      },
+      {
+        "name": "deployment_provenance_agreement",
+        "status": "passed"
+      },
+      {
+        "name": "backend_signer_ready",
+        "status": "passed"
+      },
+      {
+        "name": "testnet_custody_and_funding",
+        "status": "passed"
+      },
+      {
+        "name": "testnet_rpc_network",
+        "status": "passed"
+      },
+      {
+        "name": "source_provenance_verified",
+        "status": "passed"
+      },
+      {
+        "name": "allowed_policy_eligible",
+        "status": "passed"
+      },
+      {
+        "name": "denied_target_not_whitelisted",
+        "status": "passed"
+      },
+      {
+        "name": "user_wallet_matches_invocations",
+        "status": "passed"
+      },
+      {
+        "name": "distinct_test_transactions",
+        "status": "passed"
+      },
+      {
+        "name": "allowed_transaction_fresh",
+        "status": "passed"
+      },
+      {
+        "name": "denied_transaction_fresh",
+        "status": "passed"
+      }
+    ],
+    "allowedTransactionHash": "578bb4a6f1653d82ea943b08cdd2c83b4b42100adbf3e3c3b9be12c400f922ac",
+    "deniedTransactionHash": "d9bf389d7793da609d6160947f77c5d9ad57e555c5dae188747f70e8307bac92"
+  },
+  "status": "passed",
+  "execution": {
+    "requestId": "0f838169-facc-4726-b398-9d93528f5a54",
+    "innerTransactionHash": "578bb4a6f1653d82ea943b08cdd2c83b4b42100adbf3e3c3b9be12c400f922ac",
+    "outerTransactionHash": "88137891bf5ef2ea2519e83c19c591957f1d6e677e2d7474685751450449ba57",
+    "feeSource": "GBFNV5W3P5YAODX3DUR2INKW42JWEPPLG5GEWWTSL7WWL73SK7I2WUKG",
+    "status": "succeeded",
+    "sendCount": 1,
+    "reservedStroops": "43325",
+    "chargedStroops": "4796",
+    "actualFeeStroops": "4796",
+    "ledger": 4890082,
+    "resultCode": "txFeeBumpInnerSuccess",
+    "innerResultCode": "txSuccess",
+    "explorerUrl": "https://stellar.expert/explorer/testnet/tx/88137891bf5ef2ea2519e83c19c591957f1d6e677e2d7474685751450449ba57",
+    "accounting": {
+      "accountingDayKey": "2026-09-27",
+      "outstandingHoldsStroops": "0",
+      "dailyConfirmedSpendStroops": "4796"
+    }
+  },
+  "replay": {
+    "httpStatus": 200,
+    "sameAttemptIdentity": true,
+    "sameSendCount": true,
+    "sameSettledFee": true,
+    "sameAccounting": true,
+    "status": "passed"
+  },
+  "denial": {
+    "transactionHash": "d9bf389d7793da609d6160947f77c5d9ad57e555c5dae188747f70e8307bac92",
+    "expectedCode": "contract_not_whitelisted",
+    "returnedCode": "contract_not_whitelisted",
+    "httpStatus": 403,
+    "noExecutionAttempt": true,
+    "noReservedExposure": true,
+    "accountingUnchanged": true,
+    "status": "passed"
+  },
+  "completedAt": "2026-09-27T01:53:59.879Z"
+}

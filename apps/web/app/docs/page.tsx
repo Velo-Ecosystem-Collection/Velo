@@ -1,6 +1,9 @@
 "use client";
 
 import { AppShell } from "@/core/app-shell";
+import { GasIntegrationPromptCard } from "@/features/docs/gas-integration-prompt-card";
+import { PaymentIntentsIntegrationPromptCard } from "@/features/docs/payment-intents-integration-prompt-card";
+import { WebhookVerificationIntegrationPromptCard } from "@/features/docs/webhook-verification-integration-prompt-card";
 import {
   CheckIcon,
   CopyIcon,
@@ -125,7 +128,7 @@ import {
 
 const velo = new Velo({
   apiKey: process.env.VELO_GAS_API_KEY!,
-  baseUrl: process.env.VELO_BASE_URL!,
+  baseUrl: process.env.VELO_GAS_BASE_URL!,
   environment: "testnet",
   timeoutMs: 30_000,
 });
@@ -174,7 +177,7 @@ export async function POST(request: Request) {
 
 const velo = new Velo({
   apiKey: process.env.VELO_GAS_API_KEY!,
-  baseUrl: process.env.VELO_BASE_URL!,
+  baseUrl: process.env.VELO_GAS_BASE_URL!,
   environment: "testnet",
 });
 
@@ -1194,6 +1197,8 @@ const session = await velo.checkout.sessions.create({
                   their wallet, sign, and pay on-chain.
                 </p>
 
+                <PaymentIntentsIntegrationPromptCard />
+
                 {renderCodeBlock(codeSnippets.createCheckout, "createCheckoutDemo")}
 
                 <h3 className="mt-8 mb-4 text-lg font-bold text-foreground">Request Parameters</h3>
@@ -1273,8 +1278,11 @@ const session = await velo.checkout.sessions.create({
               <>
                 <p>
                   Underneath every checkout session is a **Payment Intent**. Use payment intent
-                  methods to fetch transaction details or run reconciliation reports on your server.
+                  methods to create, retrieve, or list payment records on your server. Checkout
+                  Sessions and Payment Intents use the same creation endpoint.
                 </p>
+
+                <PaymentIntentsIntegrationPromptCard />
 
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
                   Retrieve a Payment Intent
@@ -1299,7 +1307,7 @@ const session = await velo.checkout.sessions.create({
   id: "pi_12345",
   object: "payment_intent",
   paymentIntentId: "pi_12345",
-  status: "paid", // "created" | "pending" | "paid" | "failed" | "expired" | "cancelled"
+  status: "paid", // "awaiting_route" | "created" | "pending" | "paid" | "failed" | "expired" | "cancelled"
   amount: "10.00",
   asset: "USDC",
   description: "Order #1001",
@@ -1322,6 +1330,8 @@ const session = await velo.checkout.sessions.create({
                   user still signs it. Velo supplies the relayer fee source and returns execution
                   and fee evidence through the server-side SDK.
                 </p>
+
+                <GasIntegrationPromptCard />
 
                 <div className="my-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
                   <AlertTriangleIcon className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-500" />
@@ -1354,46 +1364,77 @@ const session = await velo.checkout.sessions.create({
                   Configure the project
                 </h3>
                 <p>
-                  A project owner configures the Gas Station before an integrator can sponsor a
-                  transaction. Open the project&apos;s <strong>Gas Station</strong> page at{" "}
-                  <code>/projects/&lt;projectId&gt;/gas</code>.
+                  Open the project&apos;s <strong>Gas Station</strong> page at{" "}
+                  <code>/projects/&lt;projectId&gt;/gas</code>. Newly created projects automatically
+                  queue a dedicated Testnet relayer when managed provisioning is configured for the
+                  Velo deployment. The address appears only after Velo commits its encrypted signer
+                  record to private Convex custody.
                 </p>
                 <ol className="list-decimal space-y-2 pl-6 text-zinc-600 dark:text-zinc-400">
                   <li>
-                    An editor or owner enables sponsorship, sets a positive daily cap and wallet
-                    hourly quota, and adds the allowed contract IDs one per line.
+                    <strong className="text-foreground">Check provisioning status.</strong> An owner
+                    can retry a failed or unconfigured provisioning request after the deployment
+                    operator fixes its Testnet custody configuration. A disabled provisioning flag
+                    or missing encryption configuration requires operator help; do not enter a
+                    private key or create a replacement account.
                   </li>
                   <li>
-                    Only an owner can add or change the relayer metadata. In the{" "}
-                    <strong>Relayer funding &amp; balance</strong> panel, choose{" "}
-                    <strong>Add a relayer account</strong>, enter the public <code>G...</code>{" "}
-                    Testnet address, select <strong>Active</strong>, and save.
+                    <strong className="text-foreground">Fund the managed address.</strong> The owner
+                    can use <strong>Fund with wallet</strong> or <strong>Get Testnet funds</strong>.
+                    Wallet funding creates an absent account or sends native XLM to an existing
+                    account. Refresh the balance and check its freshness and spendable amount after
+                    reserves, liabilities, Gas commitments, and fees.
                   </li>
                   <li>
-                    Fund that same public address with Testnet XLM, then choose{" "}
-                    <strong>Refresh balance</strong>. Never enter a secret key in Velo.
+                    <strong className="text-foreground">Review sponsorship settings.</strong> The
+                    owner reviews the suggested <strong>10 XLM/day</strong> cap,{" "}
+                    <strong>100 requests per wallet per UTC hour</strong>, and the active contracts
+                    linked to the project. Link at least one active contract before enabling
+                    sponsorship.
                   </li>
                   <li>
-                    The Convex deployment operator must configure the matching private signer in{" "}
-                    <code>VELO_GAS_TESTNET_RELAYER_SIGNERS_JSON</code>. The dashboard stores only
-                    public metadata; it does not create custody.
+                    <strong className="text-foreground">Enable deliberately.</strong> The owner
+                    resumes the relayer if it is paused, reviews the listed contracts and limits,
+                    then chooses <strong>Enable sponsorship with these settings</strong>. Creating a
+                    relayer never enables sponsorship by itself.
+                  </li>
+                  <li>
+                    <strong className="text-foreground">Pause or withdraw when needed.</strong>{" "}
+                    Owners can pause sponsorship at any time. A withdrawal requires fresh wallet
+                    consent, pauses sponsorship, waits for outstanding Gas work, and sends funds
+                    only to the authenticated owner wallet.
                   </li>
                 </ol>
                 <p className="text-sm text-muted-foreground">
-                  Viewers can read policy and relayer status. Editors can change policy. Owners can
-                  change relayer metadata. A balance snapshot older than five minutes is stale, and
-                  metadata status is not proof of signer readiness.
+                  Viewers can read policy and relayer status. Editors can save policy changes.
+                  Provisioning, funding, activation, pause/resume, and withdrawal require the
+                  project owner. Existing manually configured relayers remain supported through the
+                  advanced setup; Velo never replaces an existing relayer automatically. A balance
+                  snapshot older than five minutes is stale, and a displayed balance alone does not
+                  prove signer readiness.
                 </p>
+                <div className="my-6 flex gap-3 rounded-xl border border-border bg-muted/50 p-4">
+                  <InfoIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+                  <div className="text-sm">
+                    <strong className="mb-1 block text-foreground">Velo-managed custody</strong>
+                    Velo&apos;s trusted backend can decrypt managed relayer keys. Convex stores
+                    authenticated ciphertext, while deployment encryption keys stay in private
+                    environment configuration. This is backend-managed custody, not an external
+                    signing service. It never replaces the end user&apos;s wallet signature.
+                  </div>
+                </div>
 
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
                   Server configuration
                 </h3>
                 <p>
                   Use a Gas-scoped project API key and an explicit deployment URL. Keep both values
-                  in your server environment:
+                  in your server environment. Generate the key from the project&apos;s API Keys page
+                  using <strong>Gas Station · Testnet</strong>; the key is shown once and must stay
+                  server-side.
                 </p>
                 {renderCodeBlock(
-                  "VELO_GAS_API_KEY=replace_with_a_server_only_project_key\nVELO_BASE_URL=https://your-velo-deployment.example",
+                  "VELO_GAS_API_KEY=replace_with_a_server_only_gas_testnet_key\nVELO_GAS_ENV=testnet\nVELO_GAS_BASE_URL=https://www.velo-build.dev",
                   "gasEnvironment",
                 )}
                 <p>
@@ -1529,17 +1570,20 @@ const session = await velo.checkout.sessions.create({
                   <InfoIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
                   <div className="text-sm">
                     <strong className="mb-1 block text-foreground">Dashboard evidence</strong>
-                    The authenticated Gas Station page is the operational readback for policy,
-                    wallet quota, daily cap, relayer address and freshness, confirmed fees,
-                    outstanding holds, telemetry, paginated activity, and receipt detail with inner
-                    and outer hashes. Fixture screenshots are not live evidence.
+                    The authenticated Gas Station page is the operational readback for provisioning
+                    and custody status, policy, wallet quota, daily cap, relayer address and balance
+                    freshness, confirmed fees, outstanding holds, telemetry, paginated activity, and
+                    receipt detail with inner and outer hashes. Fixture screenshots are not live
+                    evidence.
                   </div>
                 </div>
 
                 <p className="text-sm text-muted-foreground">
-                  The Gas helpers are available from the current workspace SDK source. The published{" "}
-                  <code>0.1.0-alpha.2</code> package has not been republished with these Gas exports
-                  yet. See the{" "}
+                  The workspace SDK source manifest is <code>0.1.0-alpha.4</code>. Check the
+                  selected npm package version and exports before installing; public releases can
+                  lag the workspace source. Set <code>VELO_GAS_BASE_URL</code> explicitly to{" "}
+                  <code>https://www.velo-build.dev</code> for Testnet, especially when using an
+                  older SDK artifact. See the{" "}
                   <a
                     href="https://github.com/Velo-Ecosystem-Collection/Velo/blob/main/docs/velo-gas-station.md"
                     target="_blank"
@@ -1559,6 +1603,10 @@ const session = await velo.checkout.sessions.create({
                   Velo sends webhook events to your server to notify you about payment lifecycle
                   changes. To prevent request spoofing, you must verify the signature header.
                 </p>
+
+                <div className="my-6">
+                  <WebhookVerificationIntegrationPromptCard />
+                </div>
 
                 <div className="my-6 flex gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-950 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
                   <AlertTriangleIcon className="mt-0.5 size-5 shrink-0 text-red-600 dark:text-red-500" />

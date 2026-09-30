@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as api_keys_helpers from "../api_keys/helpers.js";
 import type * as authConfig from "../authConfig.js";
 import type * as billing_access from "../billing/access.js";
 import type * as billing_admin from "../billing/admin.js";
@@ -46,9 +47,13 @@ import type * as gas_authorization from "../gas/authorization.js";
 import type * as gas_balance from "../gas/balance.js";
 import type * as gas_balance_action from "../gas/balance_action.js";
 import type * as gas_balance_internal from "../gas/balance_internal.js";
+import type * as gas_custody_crypto from "../gas/custody_crypto.js";
+import type * as gas_custody_internal from "../gas/custody_internal.js";
+import type * as gas_custody_provider from "../gas/custody_provider.js";
 import type * as gas_envelope from "../gas/envelope.js";
 import type * as gas_execution from "../gas/execution.js";
 import type * as gas_execution_action from "../gas/execution_action.js";
+import type * as gas_funding_utils from "../gas/funding_utils.js";
 import type * as gas_mutations from "../gas/mutations.js";
 import type * as gas_operator from "../gas/operator.js";
 import type * as gas_policy from "../gas/policy.js";
@@ -60,6 +65,7 @@ import type * as gas_reconciliation from "../gas/reconciliation.js";
 import type * as gas_reconciliation_action from "../gas/reconciliation_action.js";
 import type * as gas_relayer from "../gas/relayer.js";
 import type * as gas_retention from "../gas/retention.js";
+import type * as gas_runtime_env from "../gas/runtime_env.js";
 import type * as gas_settlement from "../gas/settlement.js";
 import type * as gas_submit from "../gas/submit.js";
 import type * as gas_telemetry from "../gas/telemetry.js";
@@ -152,6 +158,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "api_keys/helpers": typeof api_keys_helpers;
   authConfig: typeof authConfig;
   "billing/access": typeof billing_access;
   "billing/admin": typeof billing_admin;
@@ -190,9 +197,13 @@ declare const fullApi: ApiFromModules<{
   "gas/balance": typeof gas_balance;
   "gas/balance_action": typeof gas_balance_action;
   "gas/balance_internal": typeof gas_balance_internal;
+  "gas/custody_crypto": typeof gas_custody_crypto;
+  "gas/custody_internal": typeof gas_custody_internal;
+  "gas/custody_provider": typeof gas_custody_provider;
   "gas/envelope": typeof gas_envelope;
   "gas/execution": typeof gas_execution;
   "gas/execution_action": typeof gas_execution_action;
+  "gas/funding_utils": typeof gas_funding_utils;
   "gas/mutations": typeof gas_mutations;
   "gas/operator": typeof gas_operator;
   "gas/policy": typeof gas_policy;
@@ -204,6 +215,7 @@ declare const fullApi: ApiFromModules<{
   "gas/reconciliation_action": typeof gas_reconciliation_action;
   "gas/relayer": typeof gas_relayer;
   "gas/retention": typeof gas_retention;
+  "gas/runtime_env": typeof gas_runtime_env;
   "gas/settlement": typeof gas_settlement;
   "gas/submit": typeof gas_submit;
   "gas/telemetry": typeof gas_telemetry;

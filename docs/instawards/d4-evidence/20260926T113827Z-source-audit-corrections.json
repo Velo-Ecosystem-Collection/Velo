@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "recordedAtUtc": "2026-09-26T11:38:27Z",
+  "repositoryHead": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+  "workingTreeClean": false,
+  "findings": [
+    {
+      "path": "packages/backend/convex/http.ts",
+      "issue": "D2 provenance marked an operator-configured source commit as verified.",
+      "correction": "The endpoint now returns verified=false for that marker; it does not claim independent deployment attestation.",
+      "productionDeployed": false
+    },
+    {
+      "path": "examples/nextjs-app-router/app/api/gas/route.ts",
+      "issue": "The Next.js example did not apply the configured 256-byte caller-token limit during authorization.",
+      "correction": "Authorization rejects tokens over 256 bytes before reading the request body, matching the Express example.",
+      "productionDeployed": false
+    }
+  ],
+  "validation": {
+    "backendBalanceTests": "10 passed",
+    "nextGasRouteTests": "8 passed",
+    "expressGasRouteTests": "6 passed",
+    "d2SmokeTests": "13 passed",
+    "expressAndNextExampleTests": "33 passed",
+    "backendTypecheck": "passed",
+    "nextExampleTypecheck": "passed",
+    "changedFileLintAndFormat": "passed",
+    "gitDiffCheck": "passed",
+    "evidenceRedactionScan": "39 JSON files passed at 2026-09-26T11:42:44Z"
+  },
+  "production": {
+    "custodyOrPolicyChanged": false,
+    "transactionSubmitted": false,
+    "ownerReportedBalance": "fresh_verified",
+    "ownerReportedSponsorship": "enabled",
+    "pauseConfirmed": false,
+    "deployedSourceProvenance": "unverified"
+  },
+  "decision": "NO_GO: keep the production campaign paused until custody mapping and trusted source provenance are resolved."
+}

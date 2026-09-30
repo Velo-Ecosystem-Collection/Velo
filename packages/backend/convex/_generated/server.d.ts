@@ -34,11 +34,14 @@ type Env = {
     | "production"
     | undefined;
   readonly VELO_ENABLE_RATE_LIMIT_BENCHMARK: string | undefined;
+  readonly VELO_GAS_CUSTODY_DEPLOYMENT_ID: string | undefined;
+  readonly VELO_GAS_CUSTODY_KEYRING_JSON: string | undefined;
   readonly VELO_GAS_D2_DEPLOYED_SOURCE_COMMIT: string | undefined;
   readonly VELO_GAS_D2_DEPLOYMENT_NAME: string | undefined;
   readonly VELO_GAS_D2_HORIZON_URL: string | undefined;
   readonly VELO_GAS_D2_OPERATOR_TOKEN: string | undefined;
   readonly VELO_GAS_D2_PROJECT_ID: string | undefined;
+  readonly VELO_GAS_MANAGED_RELAYER_PROVISIONING_ENABLED: string | undefined;
   readonly VELO_GAS_TESTNET_FALLBACK_RPC_URL: string | undefined;
   readonly VELO_GAS_TESTNET_RELAYER_SIGNERS_JSON: string | undefined;
   readonly VELO_MAINNET_USDC_ISSUER: string | undefined;

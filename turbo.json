@@ -8,10 +8,16 @@
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
     "dev": {
+      "dependsOn": ["^build"],
       "cache": false,
       "persistent": true
     },
     "lint:fix": {
+      "cache": false,
+      "inputs": [".oxlintrc.json"]
+    },
+    "web#lint:fix": {
+      "dependsOn": ["@carts1024/velo-sdk#build"],
       "cache": false,
       "inputs": [".oxlintrc.json"]
     },

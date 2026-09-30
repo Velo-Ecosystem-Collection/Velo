@@ -1,0 +1,33 @@
+{
+  "artifact": "velo_gas_d4_development_provisioning_followup",
+  "recordedAtUtc": "2026-09-26T04:42:35Z",
+  "deployment": "capable-kingfisher-697",
+  "network": "stellar-testnet",
+  "query": "Convex sandboxed read-only inline query; aggregate fields only",
+  "operatorReport": "A new project was created and its relayer account appeared automatically.",
+  "custodyInventory": {
+    "totalRecords": 3,
+    "byDeploymentId": [
+      {
+        "deploymentId": null,
+        "totalRecords": 1,
+        "pending": 0,
+        "ready": 0,
+        "failed": 1
+      },
+      {
+        "deploymentId": "dev:capable-kingfisher-697",
+        "totalRecords": 2,
+        "pending": 0,
+        "ready": 2,
+        "failed": 0
+      }
+    ],
+    "projectIdentifiersReturned": false,
+    "custodyPayloadsReturned": false
+  },
+  "interpretation": "The new ready count is consistent with the owner-reported provisioning flow, but the aggregate intentionally does not identify a project. Funding and sponsorship activation were not verified.",
+  "keyringValueRead": false,
+  "codePushedByThisCheck": false,
+  "testnetTransactionSubmitted": false
+}

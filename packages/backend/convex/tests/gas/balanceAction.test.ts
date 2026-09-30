@@ -348,7 +348,10 @@ test("concurrent claims serialize to one claim and one cooldown", async () => {
         )
         .unique(),
   );
-  expect(bucket?.tokens).toBe(0);
+  // The second mutation may run a few milliseconds later and legitimately
+  // retain a fractional refill, but it must remain below one token.
+  expect(bucket?.tokens).toBeGreaterThanOrEqual(0);
+  expect(bucket?.tokens).toBeLessThan(1);
 });
 
 test("expired and duplicate completions are stale, while a later claim fences an older result", async () => {
@@ -424,7 +427,7 @@ test("expired and duplicate completions are stale, while a later claim fences an
   }
 });
 
-test("status changes invalidate pending claims but preserve history, while key rotation clears history", async () => {
+test("status changes invalidate pending claims and account rotation clears history while remaining paused", async () => {
   const t = convexTest(schema, modules);
   const owner = asWallet(t, OWNER);
   const projectId = await createProject(t);
@@ -448,11 +451,11 @@ test("status changes invalidate pending claims but preserve history, while key r
   expect(disabled?.refreshToken).toBeUndefined();
   expect(disabled?.refreshStartedAt).toBeUndefined();
 
-  await configureRelayer(t, projectId, ROTATED_RELAYER, "active");
+  await configureRelayer(t, projectId, ROTATED_RELAYER, "disabled");
   const rotated = await getStoredRelayer(t, relayer._id);
   expect(rotated).toMatchObject({
     publicKey: ROTATED_RELAYER,
-    status: "active",
+    status: "disabled",
   });
   expect(rotated?.balanceStroops).toBeUndefined();
   expect(rotated?.balanceUpdatedAt).toBeUndefined();
@@ -491,8 +494,8 @@ test("rotation, status changes, deletion, role changes, and access revocation fe
     await requested;
 
     if (change === "rotation") {
-      await configureRelayer(t, projectId, ROTATED_RELAYER);
-      await configureRelayer(t, projectId, RELAYER);
+      await configureRelayer(t, projectId, RELAYER, "disabled");
+      await configureRelayer(t, projectId, ROTATED_RELAYER, "disabled");
     } else if (change === "status") {
       await configureRelayer(t, projectId, RELAYER, "disabled");
     } else if (change === "delete") {

@@ -1,0 +1,11 @@
+{
+  "capturedAt": "2026-09-26T07:00:06Z",
+  "scope": "local_backup_files_only",
+  "developmentFilePresent": true,
+  "productionFilePresent": true,
+  "developmentActiveVersion": "v1",
+  "productionActiveVersion": "v1",
+  "activeKeyMaterialEqual": false,
+  "keyringValuesOrHashesEmitted": false,
+  "deployedProductionValueCompared": false
+}

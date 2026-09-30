@@ -1,0 +1,32 @@
+{
+  "artifact": "velo_gas_d4_production_config_readback",
+  "recordedAtUtc": "2026-09-26T08:31:18Z",
+  "deployment": "agreeable-salmon-748",
+  "custodyDeploymentIdentitySet": true,
+  "nonSecretEnvironmentReadback": {
+    "VELO_GAS_CUSTODY_DEPLOYMENT_ID": "prod:agreeable-salmon-748",
+    "VELO_GAS_D2_DEPLOYMENT_NAME": "prod:agreeable-salmon-748",
+    "VELO_DEPLOYMENT_ENVIRONMENT": "production",
+    "VELO_GAS_MANAGED_RELAYER_PROVISIONING_ENABLED": true
+  },
+  "environmentVariablePresence": {
+    "VELO_GAS_CUSTODY_KEYRING_JSON": true
+  },
+  "frontendVercel": {
+    "status": "operator_reported_configured_for_same_production_deployment",
+    "url": "https://velo-build.dev",
+    "independentlyVerified": false
+  },
+  "runtimeStatus": {
+    "freshStatusActionReadAfterThisConfigurationCheck": false,
+    "lastObservedDeploymentId": "dev:capable-kingfisher-697",
+    "lastObservedAtUtc": "2026-09-26T07:04:49Z"
+  },
+  "safety": {
+    "keyringValueRead": false,
+    "custodyPayloadRead": false,
+    "provisioningAttempted": false,
+    "relayerFunded": false,
+    "testnetTransactionSubmitted": false
+  }
+}

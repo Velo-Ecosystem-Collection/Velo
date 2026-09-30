@@ -6,12 +6,20 @@ import { expect, test, vi } from "vitest";
 import type { DataModel, Id } from "../../_generated/dataModel";
 import type { TestConvexForDataModelAndIdentity } from "convex-test";
 
-import { internal } from "../../_generated/api";
+import { api, internal } from "../../_generated/api";
 import { GAS_NETWORK, GAS_SUPPORTED_OPERATION } from "../../gas/types";
 import schema from "../../schema";
 
 const modules = import.meta.glob("../../**/*.ts");
 type TestContext = TestConvexForDataModelAndIdentity<DataModel>;
+
+function asWallet(t: TestContext, ownerAddress: string) {
+  return t.withIdentity({
+    subject: ownerAddress,
+    issuer: "http://localhost:3000",
+    tokenIdentifier: "http://localhost:3000|" + ownerAddress,
+  });
+}
 
 const OWNER = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
 const WALLET = "GBNHK3TLWWXBCEGNFHB45Z66R4AI5YUALKUFBP4WF7YK5JLZIAAG2DLI";
@@ -201,6 +209,53 @@ test("first reservation stores exact inner fee plus overhead and consumes one wa
   });
 });
 
+test("retirement racing Gas admission permits only pre-retirement work and preserves replay", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t);
+    await createPolicy(t, scope.projectId);
+    const owner = asWallet(t, OWNER);
+    const firstArgs = admissionArgs(scope);
+    const admissionAndRetirement = await Promise.allSettled([
+      t.mutation(internal.gas.admission.reserve, firstArgs),
+      owner.mutation(api.projects.mutation.retire, {
+        id: scope.projectId,
+        confirmationName: "Gas Admission " + API_KEY_HASH.slice(0, 6),
+      }),
+    ]);
+    const first = admissionAndRetirement[0];
+    expect(admissionAndRetirement[1]?.status).toBe("fulfilled");
+    const project = await t.run(async (ctx) => await ctx.db.get(scope.projectId));
+    expect(project?.retiredAt).toBeTypeOf("number");
+
+    if (first?.status === "fulfilled" && first.value.status === "decision") {
+      const replay = await t.mutation(internal.gas.admission.reserve, firstArgs);
+      expect(replay.status).toBe("decision");
+      if (replay.status === "decision") expect(replay.replayed).toBe(true);
+    } else {
+      expect(first?.status).toBe("fulfilled");
+      if (first?.status === "fulfilled") expect(first.value.status).toBe("unauthorized");
+    }
+
+    const rejected = await t.mutation(
+      internal.gas.admission.reserve,
+      admissionArgs(scope, {
+        idempotencyKeyHash: SECOND_IDEMPOTENCY_HASH,
+        requestFingerprint: SECOND_FINGERPRINT,
+        transactionHash: SECOND_TRANSACTION_HASH,
+      }),
+    );
+    expect(rejected).toEqual({ status: "unauthorized" });
+    const state = await readAdmissionState(t, scope.projectId);
+    expect(state.logs).toHaveLength(
+      first?.status === "fulfilled" && first.value.status === "decision" ? 1 : 0,
+    );
+    expect(state.policy?.dailyReservedStroops).toBe(
+      first?.status === "fulfilled" && first.value.status === "decision" ? 150n : 0n,
+    );
+  });
+});
+
 test("same idempotency key and fingerprint replays without a second write", async () => {
   await withFixedTime(async () => {
     const t = convexTest(schema, modules);
@@ -349,6 +404,44 @@ test("policy denial is replayable, redacted, and consumes neither budget nor wal
     const replay = await t.mutation(internal.gas.admission.reserve, admissionArgs(scope));
     expect(replay).toMatchObject({ status: "decision", replayed: true });
     expect((await readAdmissionState(t, scope.projectId)).logs).toHaveLength(1);
+  });
+});
+
+test("withdrawal maintenance fence rejects new Gas admissions without consuming quota", async () => {
+  await withFixedTime(async () => {
+    const t = convexTest(schema, modules);
+    const scope = await createScope(t);
+    await createPolicy(t, scope.projectId);
+    const relayerId = await t.run(async (ctx) => {
+      const relayerId = await ctx.db.insert("relayerAccounts", {
+        projectId: scope.projectId,
+        publicKey: OWNER,
+        network: GAS_NETWORK,
+        status: "disabled",
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      await ctx.db.insert("gasProjectMaintenance", {
+        projectId: scope.projectId,
+        withdrawalRequestId: "withdrawal-in-progress",
+        ownerWallet: OWNER,
+        relayerId,
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
+      return relayerId;
+    });
+    void relayerId;
+
+    const result = await t.mutation(internal.gas.admission.reserve, admissionArgs(scope));
+    expect(result).toMatchObject({
+      status: "decision",
+      log: { decisionCode: "rejected", rejectionCode: "policy_disabled" },
+    });
+    const state = await readAdmissionState(t, scope.projectId);
+    expect(state.policy?.dailyReservedStroops).toBe(0n);
+    expect(state.logs).toHaveLength(1);
+    expect(state.bucket).toBeNull();
   });
 });
 

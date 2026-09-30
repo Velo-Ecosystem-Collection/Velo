@@ -18,6 +18,8 @@ import {
   type GasSubmitResultProjection,
 } from "./projections";
 import {
+  gasCustodyErrorCodeValidator,
+  gasCustodyStatusValidator,
   gasNetworkValidator,
   gasSendClassificationInputValidator,
   gasSequenceDiagnosisInputValidator,
@@ -57,6 +59,338 @@ const RECONCILIATION_WINDOW_MS = 24 * 60 * 60 * 1_000;
 const SHA256_HASH_PATTERN = /^[a-f0-9]{64}$/;
 const RESULT_CODE_PATTERN = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const recoverAbandonedRef = makeFunctionReference<"mutation">("gas/execution:recoverAbandoned");
+
+const gasCustodyRecordValidator = v.object({
+  projectId: v.id("projects"),
+  network: v.literal(GAS_NETWORK),
+  status: gasCustodyStatusValidator,
+  attemptToken: v.string(),
+  attemptCount: v.number(),
+  publicKey: v.optional(v.string()),
+  deploymentId: v.optional(v.string()),
+  keyVersion: v.optional(v.string()),
+  nonce: v.optional(v.string()),
+  ciphertext: v.optional(v.string()),
+  authTag: v.optional(v.string()),
+  errorCode: v.optional(gasCustodyErrorCodeValidator),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+/** Internal signer boundary lookup; never expose this result to console queries. */
+export const getCustodyRecord = internalQuery({
+  args: { projectId: v.id("projects") },
+  returns: v.union(
+    v.null(),
+    v.object({ status: v.literal("ambiguous") }),
+    gasCustodyRecordValidator,
+  ),
+  handler: async (ctx, args) => {
+    const matches = await ctx.db
+      .query("gasRelayerCustody")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(2);
+    if (matches.length > 1) return { status: "ambiguous" as const };
+    const record = matches[0];
+    if (!record) return null;
+    const {
+      projectId,
+      network,
+      status,
+      attemptToken,
+      attemptCount,
+      publicKey,
+      deploymentId,
+      keyVersion,
+      nonce,
+      ciphertext,
+      authTag,
+      errorCode,
+      createdAt,
+      updatedAt,
+    } = record;
+    return {
+      projectId,
+      network,
+      status,
+      attemptToken,
+      attemptCount,
+      ...(publicKey === undefined ? {} : { publicKey }),
+      ...(deploymentId === undefined ? {} : { deploymentId }),
+      ...(keyVersion === undefined ? {} : { keyVersion }),
+      ...(nonce === undefined ? {} : { nonce }),
+      ...(ciphertext === undefined ? {} : { ciphertext }),
+      ...(authTag === undefined ? {} : { authTag }),
+      ...(errorCode === undefined ? {} : { errorCode }),
+      createdAt,
+      updatedAt,
+    };
+  },
+});
+
+/** Safe preflight for an operator-requested custody deployment-context migration. */
+export const getCustodyContextMigrationPreflight = internalQuery({
+  args: { projectId: v.id("projects"), publicKey: v.string() },
+  returns: v.object({
+    policyState: v.union(
+      v.literal("missing"),
+      v.literal("disabled"),
+      v.literal("enabled"),
+      v.literal("ambiguous"),
+    ),
+    relayerState: v.union(
+      v.literal("matching"),
+      v.literal("missing"),
+      v.literal("mismatch"),
+      v.literal("ambiguous"),
+    ),
+    maintenanceLockActive: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const policies = await ctx.db
+      .query("gasPolicies")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(2);
+    const relayers = await ctx.db
+      .query("relayerAccounts")
+      .withIndex("by_project_id_and_network", (q) =>
+        q.eq("projectId", args.projectId).eq("network", GAS_NETWORK),
+      )
+      .take(2);
+    const locks = await ctx.db
+      .query("gasProjectMaintenance")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(1);
+    return {
+      policyState:
+        policies.length > 1
+          ? ("ambiguous" as const)
+          : policies[0]
+            ? policies[0].enabled
+              ? ("enabled" as const)
+              : ("disabled" as const)
+            : ("missing" as const),
+      relayerState:
+        relayers.length > 1
+          ? ("ambiguous" as const)
+          : relayers.length === 0
+            ? ("missing" as const)
+            : relayers[0]?.publicKey === args.publicKey
+              ? ("matching" as const)
+              : ("mismatch" as const),
+      maintenanceLockActive: locks.length > 0,
+    };
+  },
+});
+
+export const markCustodyProvisioningFailed = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    attemptToken: v.string(),
+    errorCode: gasCustodyErrorCodeValidator,
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const matches = await ctx.db
+      .query("gasRelayerCustody")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(2);
+    const record = matches[0];
+    if (matches.length !== 1 || !record) return null;
+    if (record.status !== "pending" || record.attemptToken !== args.attemptToken) return null;
+    await ctx.db.patch(record._id, {
+      status: "failed",
+      errorCode: args.errorCode,
+      updatedAt: Date.now(),
+    });
+    return null;
+  },
+});
+
+export const commitProvisionedCustody = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    attemptToken: v.string(),
+    publicKey: v.string(),
+    deploymentId: v.string(),
+    keyVersion: v.string(),
+    nonce: v.string(),
+    ciphertext: v.string(),
+    authTag: v.string(),
+  },
+  returns: v.union(v.literal("stored"), v.literal("stale"), v.literal("conflict")),
+  handler: async (ctx, args): Promise<"stored" | "stale" | "conflict"> => {
+    const custodyMatches = await ctx.db
+      .query("gasRelayerCustody")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(2);
+    const custody = custodyMatches[0];
+    if (custodyMatches.length !== 1 || !custody) return "stale";
+    if (custody.status === "ready") return "stale";
+    if (custody.status !== "pending" || custody.attemptToken !== args.attemptToken) return "stale";
+
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.retiredAt !== undefined) return "conflict";
+    const accountMatches = await ctx.db
+      .query("relayerAccounts")
+      .withIndex("by_project_id_and_network", (q) =>
+        q.eq("projectId", args.projectId).eq("network", GAS_NETWORK),
+      )
+      .take(2);
+    if (accountMatches.length !== 0) return "conflict";
+    const accountKeyMatches = await ctx.db
+      .query("relayerAccounts")
+      .withIndex("by_public_key", (q) => q.eq("publicKey", args.publicKey))
+      .take(2);
+    if (accountKeyMatches.length !== 0) return "conflict";
+    const custodyKeyMatches = await ctx.db
+      .query("gasRelayerCustody")
+      .withIndex("by_public_key", (q) => q.eq("publicKey", args.publicKey))
+      .take(2);
+    if (custodyKeyMatches.some((item) => item.projectId !== args.projectId)) return "conflict";
+
+    const now = Date.now();
+    await ctx.db.insert("relayerAccounts", {
+      projectId: args.projectId,
+      publicKey: args.publicKey,
+      network: GAS_NETWORK,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.patch(custody._id, {
+      status: "ready",
+      publicKey: args.publicKey,
+      deploymentId: args.deploymentId,
+      keyVersion: args.keyVersion,
+      nonce: args.nonce,
+      ciphertext: args.ciphertext,
+      authTag: args.authTag,
+      errorCode: undefined,
+      updatedAt: now,
+    });
+    return "stored";
+  },
+});
+
+/** Atomically replace only the encrypted envelope after trusted key rotation. */
+export const rotateProvisionedCustodyKey = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    expectedKeyVersion: v.string(),
+    deploymentId: v.string(),
+    keyVersion: v.string(),
+    nonce: v.string(),
+    ciphertext: v.string(),
+    authTag: v.string(),
+  },
+  returns: v.union(v.literal("rotated"), v.literal("already_current"), v.literal("stale")),
+  handler: async (ctx, args): Promise<"rotated" | "already_current" | "stale"> => {
+    const custodyMatches = await ctx.db
+      .query("gasRelayerCustody")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(2);
+    const custody = custodyMatches[0];
+    if (custodyMatches.length !== 1 || !custody || custody.status !== "ready") return "stale";
+    if (custody.keyVersion === args.keyVersion) return "already_current";
+    if (
+      custody.keyVersion !== args.expectedKeyVersion ||
+      custody.deploymentId !== args.deploymentId ||
+      !custody.publicKey
+    ) {
+      return "stale";
+    }
+    const relayers = await ctx.db
+      .query("relayerAccounts")
+      .withIndex("by_project_id_and_network", (q) =>
+        q.eq("projectId", args.projectId).eq("network", GAS_NETWORK),
+      )
+      .take(2);
+    if (relayers.length !== 1 || relayers[0]?.publicKey !== custody.publicKey) return "stale";
+    await ctx.db.patch(custody._id, {
+      keyVersion: args.keyVersion,
+      nonce: args.nonce,
+      ciphertext: args.ciphertext,
+      authTag: args.authTag,
+      updatedAt: Date.now(),
+    });
+    return "rotated";
+  },
+});
+
+/** Atomically rebind custody AAD after an operator has verified the old envelope. */
+export const migrateProvisionedCustodyDeploymentContext = internalMutation({
+  args: {
+    projectId: v.id("projects"),
+    expectedStoredDeploymentId: v.string(),
+    targetDeploymentId: v.string(),
+    expectedKeyVersion: v.string(),
+    expectedUpdatedAt: v.number(),
+    expectedPublicKey: v.string(),
+    keyVersion: v.string(),
+    nonce: v.string(),
+    ciphertext: v.string(),
+    authTag: v.string(),
+  },
+  returns: v.union(
+    v.literal("migrated"),
+    v.literal("stale"),
+    v.literal("sponsorship_enabled"),
+    v.literal("maintenance_locked"),
+  ),
+  handler: async (ctx, args) => {
+    const custodyMatches = await ctx.db
+      .query("gasRelayerCustody")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(2);
+    const custody = custodyMatches[0];
+    if (
+      custodyMatches.length !== 1 ||
+      !custody ||
+      custody.status !== "ready" ||
+      custody.deploymentId !== args.expectedStoredDeploymentId ||
+      custody.deploymentId === args.targetDeploymentId ||
+      custody.keyVersion !== args.expectedKeyVersion ||
+      custody.updatedAt !== args.expectedUpdatedAt ||
+      custody.publicKey !== args.expectedPublicKey
+    ) {
+      return "stale" as const;
+    }
+
+    const policies = await ctx.db
+      .query("gasPolicies")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(2);
+    if (policies.length > 1) return "stale" as const;
+    if (policies[0]?.enabled) return "sponsorship_enabled" as const;
+
+    const locks = await ctx.db
+      .query("gasProjectMaintenance")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(1);
+    if (locks.length > 0) return "maintenance_locked" as const;
+
+    const relayers = await ctx.db
+      .query("relayerAccounts")
+      .withIndex("by_project_id_and_network", (q) =>
+        q.eq("projectId", args.projectId).eq("network", GAS_NETWORK),
+      )
+      .take(2);
+    if (relayers.length !== 1 || relayers[0]?.publicKey !== args.expectedPublicKey) {
+      return "stale" as const;
+    }
+
+    await ctx.db.patch(custody._id, {
+      deploymentId: args.targetDeploymentId,
+      keyVersion: args.keyVersion,
+      nonce: args.nonce,
+      ciphertext: args.ciphertext,
+      authTag: args.authTag,
+      updatedAt: Date.now(),
+    });
+    return "migrated" as const;
+  },
+});
 
 export type GasClaimResult =
   | { status: "unauthorized" }
@@ -304,6 +638,17 @@ async function findRelayer(
     .take(2);
   if (matches.length > 1) return "ambiguous";
   return matches[0] ?? null;
+}
+
+async function hasGasMaintenanceLock(
+  ctx: Pick<MutationCtx, "db">,
+  projectId: Doc<"projects">["_id"],
+): Promise<boolean> {
+  const matches = await ctx.db
+    .query("gasProjectMaintenance")
+    .withIndex("by_project_id", (q) => q.eq("projectId", projectId))
+    .take(1);
+  return matches.length > 0;
 }
 
 function validateStoredReservation(reservation: Doc<"gasLogs">): boolean {
@@ -592,6 +937,7 @@ export const claim = internalMutation({
   returns: gasClaimResultValidator,
   handler: async (ctx, args): Promise<GasClaimResult> => {
     if (!(await revalidateGasApiKeyScope(ctx, args))) return { status: "unauthorized" };
+    if (await hasGasMaintenanceLock(ctx, args.projectId)) return { status: "relayer_unavailable" };
 
     let normalized: {
       requestId: string;
@@ -834,6 +1180,7 @@ export const recoverClaim = internalMutation({
   returns: gasRecoveryClaimResultValidator,
   handler: async (ctx, args): Promise<GasRecoveryClaimResult> => {
     if (!(await revalidateGasApiKeyScope(ctx, args))) return { status: "unauthorized" };
+    if (await hasGasMaintenanceLock(ctx, args.projectId)) return { status: "relayer_unavailable" };
 
     let normalized: {
       requestId: string;
@@ -1561,6 +1908,7 @@ export const authorizeSend = internalMutation({
   returns: gasSendAuthorizationResultValidator,
   handler: async (ctx, args): Promise<GasSendAuthorizationResult> => {
     if (!(await revalidateGasApiKeyScope(ctx, args))) return { status: "unauthorized" };
+    if (await hasGasMaintenanceLock(ctx, args.projectId)) return { status: "relayer_unavailable" };
 
     let normalized: {
       requestId: string;

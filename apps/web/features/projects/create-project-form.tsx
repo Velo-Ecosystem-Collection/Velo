@@ -162,6 +162,10 @@ export function CreateProjectForm() {
                 pattern="[a-z0-9-]+"
                 required
               />
+              <p className="text-xs text-zinc-500">
+                This slug is the preferred URL. If it is already in use, Velo will add a short
+                suffix.
+              </p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="project-description">Description</Label>
@@ -196,16 +200,18 @@ export function CreateProjectForm() {
       <aside className="flex flex-col gap-4 rounded-lg border border-zinc-200 bg-white p-5">
         <div>
           <h2 className="text-base font-semibold tracking-normal">Metadata preview</h2>
-          <p className="mt-1 text-sm text-zinc-600">Stored with the draft project.</p>
+          <p className="mt-1 text-sm text-zinc-600">
+            The URL may receive a short suffix if this slug is already in use.
+          </p>
         </div>
         <div className="rounded-md bg-zinc-950 p-3 text-xs text-zinc-50">
-          <pre className="max-h-80 overflow-auto whitespace-pre-wrap break-words">
+          <pre className="max-h-80 overflow-auto break-words whitespace-pre-wrap">
             {metadataJson}
           </pre>
         </div>
         <div className="grid gap-1">
           <span className="text-sm font-medium">SHA-256 metadata hash</span>
-          <code className="break-all rounded-md bg-zinc-100 p-3 text-xs">
+          <code className="rounded-md bg-zinc-100 p-3 text-xs break-all">
             {metadataHash ?? "Connect wallet to generate hash"}
           </code>
         </div>

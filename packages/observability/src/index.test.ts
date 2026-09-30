@@ -55,6 +55,7 @@ test("accepts only validated correlation and W3C trace context", () => {
 test("correlation IDs reject complete API keys, Stellar seeds, and JWT-shaped values", () => {
   assert.equal(isCorrelationId("request-00000001"), true);
   assert.equal(isCorrelationId(`tk_live_${"a".repeat(32)}`), false);
+  assert.equal(isCorrelationId(`tg_test_${"a".repeat(32)}`), false);
   assert.equal(isCorrelationId(`S${"A".repeat(55)}`), false);
   assert.equal(isCorrelationId("header.payload.signature"), false);
 });

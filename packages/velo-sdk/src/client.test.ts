@@ -26,11 +26,11 @@ test("resolveBaseUrl works as expected", () => {
   );
   assert.equal(
     resolveBaseUrl({ apiKey: "key", environment: "production" }),
-    "https://api.velo.pay",
+    "https://www.velo-build.dev",
   );
   assert.equal(
     resolveBaseUrl({ apiKey: "key", environment: "testnet" }),
-    "https://api.testnet.velo.pay",
+    "https://www.velo-build.dev",
   );
   assert.equal(
     resolveBaseUrl({ apiKey: "key", environment: "development" }),

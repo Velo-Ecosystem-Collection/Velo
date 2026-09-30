@@ -1,0 +1,61 @@
+{
+  "capturedAtUtc": "2026-09-26T08:11:42Z",
+  "scope": "direct local package regression and typecheck refresh",
+  "candidate": {
+    "branch": "instawards/gas-station-deliverable-4",
+    "head": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+    "worktreeFrozen": false
+  },
+  "packageTests": {
+    "backend": "340/340 passed",
+    "web": "249/249 passed",
+    "veloSdk": "71/71 passed",
+    "stellar": "117/117 passed after allowing the ephemeral 127.0.0.1 RPC test listener",
+    "wallets": "23/23 passed",
+    "pdax": "16/16 passed",
+    "observability": "9/9 passed",
+    "nextjsExample": "18/18 passed",
+    "expressExample": "15/15 passed",
+    "gasD2D3D4Smoke": "35/35 passed",
+    "total": "893/893 passed"
+  },
+  "typechecks": {
+    "backendConvex": "passed",
+    "web": "passed",
+    "veloSdk": "passed",
+    "stellar": "passed",
+    "wallets": "passed",
+    "pdax": "passed",
+    "observability": "passed",
+    "ui": "passed",
+    "nextjsExample": "passed",
+    "expressExample": "passed"
+  },
+  "staticChecks": {
+    "rootOxlint": "passed with five warnings in unchanged scripts/observability-assets.test.mjs",
+    "oxfmt": "passed on 49 changed/new source files; generated Convex API declarations excluded",
+    "gitDiffCheck": "passed"
+  },
+  "historicalReports": {
+    "d2Verifier": "passed offline",
+    "d2Sha256": "5e50a10cc5b68a24f69b5eb6e1319dd10c4f859813bfa7bb4d214a0950e66ee9",
+    "d3Verifier": "passed offline",
+    "d3Sha256": "443f6fe3b9150b6823f408dcddcb12a0a141f294c87e2bacd9cd8cce5dbe8bbb"
+  },
+  "browserSuite": {
+    "chromium": "17/17 passed",
+    "webkit": "17/17 passed",
+    "firefox": "not run to application assertions; local browser launch failed under macOS sandbox/plugin-container restrictions"
+  },
+  "workspaceBuildAndHostedCi": "Open. The earlier pnpm/Turbo aggregate was blocked by package-manager signature verification; direct package builds passed in the earlier 06:35 UTC validation snapshot.",
+  "production": {
+    "vercelTarget": "Operator-reported as prod:agreeable-salmon-748",
+    "convexEnvironmentReadback": "Recorded in 20260926T073832Z-production-identities-readback.json",
+    "operatorReportedEarlierRelayerDeploy": "Source SHA remains unverified",
+    "localRuntimeFixDeployed": false,
+    "custodyProvisioned": false,
+    "fundingOrTestnetTransactionSubmitted": false
+  },
+  "d4Decision": "NO-GO; frozen source, hosted CI, deployed provenance, owner/reviewer access, and live campaign evidence remain open",
+  "secretsIncluded": false
+}

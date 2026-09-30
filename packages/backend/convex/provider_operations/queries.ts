@@ -37,6 +37,7 @@ export const get = query({
     const project = await ctx.db.get(operation.projectId);
     if (
       !project ||
+      project.retiredAt !== undefined ||
       (project.ownerTokenIdentifier !== identity.tokenIdentifier &&
         project.ownerAddress !== identity.subject)
     ) {
@@ -54,6 +55,7 @@ export const listRecovery = query({
     const project = await ctx.db.get(args.projectId);
     if (
       !project ||
+      project.retiredAt !== undefined ||
       (project.ownerTokenIdentifier !== identity.tokenIdentifier &&
         project.ownerAddress !== identity.subject)
     )

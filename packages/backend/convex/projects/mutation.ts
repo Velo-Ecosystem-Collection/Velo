@@ -2,11 +2,16 @@ import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import { internalMutation, mutation } from "../_generated/server";
+import { queueInitialGasRelayerProvisioning } from "../gas/custody_internal";
 import { ensureOrganizationForIdentity } from "../organizations/helpers";
 import {
   draftProjectArgs,
+  allocateProjectSlug,
+  buildProjectMetadata,
   normalizeAddress,
+  normalizeProjectName,
   normalizeTransactionHash,
+  requireUniqueActiveProjectName,
   requireIdentity,
   requireProjectOwner,
   requireUniqueSlug,
@@ -18,9 +23,21 @@ export const createDraft = mutation({
     const identity = await requireIdentity(ctx);
     const now = Date.now();
     const ownerAddress = normalizeAddress(args.ownerAddress);
-    const slug = args.slug.trim().toLowerCase();
-
-    await requireUniqueSlug(ctx, slug);
+    const name = args.name.trim();
+    const description = args.description.trim();
+    const slug = await allocateProjectSlug(ctx, args.slug);
+    await requireUniqueActiveProjectName(ctx, {
+      name,
+      ownerAddress,
+      ownerTokenIdentifier: identity.tokenIdentifier,
+    });
+    const metadata = await buildProjectMetadata(
+      name,
+      slug,
+      description,
+      args.website,
+      ownerAddress,
+    );
     const organization = await ensureOrganizationForIdentity(
       ctx,
       identity,
@@ -28,14 +45,15 @@ export const createDraft = mutation({
       args.name,
     );
 
-    return await ctx.db.insert("projects", {
+    const projectId = await ctx.db.insert("projects", {
       organizationId: organization._id,
-      name: args.name.trim(),
+      name,
+      normalizedName: normalizeProjectName(name),
       slug,
-      description: args.description.trim(),
+      description,
       website: args.website?.trim() || undefined,
-      metadataJson: args.metadataJson,
-      metadataHash: args.metadataHash,
+      metadataJson: metadata.metadataJson,
+      metadataHash: metadata.metadataHash,
       ownerAddress,
       ownerTokenIdentifier: identity.tokenIdentifier,
       status: "draft",
@@ -45,6 +63,8 @@ export const createDraft = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    await queueInitialGasRelayerProvisioning(ctx, projectId, now);
+    return projectId;
   },
 });
 
@@ -82,10 +102,21 @@ export const markRegistrationSynced = mutation({
     createdLedger: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const project = await requireProjectOwner(ctx, args.id);
+    const project = await requireProjectOwner(ctx, args.id, { allowRetired: true });
 
     if (!project.registrationTxHash) {
       throw new Error("Project has no registration transaction to sync");
+    }
+
+    const registryProjectId = args.registryProjectId;
+    if (registryProjectId !== undefined) {
+      const registryMatches = await ctx.db
+        .query("projects")
+        .withIndex("by_registry_project_id", (q) => q.eq("registryProjectId", registryProjectId))
+        .take(2);
+      if (registryMatches.some((match) => match._id !== project._id)) {
+        throw new Error("Registry project ID is already assigned to another Velo project");
+      }
     }
 
     const now = Date.now();
@@ -115,7 +146,7 @@ export const markRegistrationStale = mutation({
     id: v.id("projects"),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwner(ctx, args.id);
+    await requireProjectOwner(ctx, args.id, { allowRetired: true });
 
     const now = Date.now();
     await ctx.db.patch(args.id, {
@@ -132,7 +163,7 @@ export const markRegistrationError = mutation({
     registrationError: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwner(ctx, args.id);
+    await requireProjectOwner(ctx, args.id, { allowRetired: true });
 
     const now = Date.now();
     await ctx.db.patch(args.id, {
@@ -162,19 +193,39 @@ export const updateDraft = mutation({
     }
 
     const ownerAddress = normalizeAddress(args.ownerAddress);
+    const name = args.name.trim();
+    const description = args.description.trim();
+    const normalizedName = normalizeProjectName(name);
 
     const slug = args.slug.trim().toLowerCase();
     if (slug !== project.slug) {
       await requireUniqueSlug(ctx, slug);
     }
 
-    await ctx.db.patch(args.id, {
-      name: args.name.trim(),
+    if (normalizedName !== normalizeProjectName(project.normalizedName ?? project.name)) {
+      await requireUniqueActiveProjectName(ctx, {
+        name,
+        ownerAddress: project.ownerAddress,
+        ownerTokenIdentifier: project.ownerTokenIdentifier!,
+        excludeProjectId: project._id,
+      });
+    }
+    const metadata = await buildProjectMetadata(
+      name,
       slug,
-      description: args.description.trim(),
+      description,
+      args.website,
+      ownerAddress,
+    );
+
+    await ctx.db.patch(args.id, {
+      name,
+      normalizedName,
+      slug,
+      description,
       website: args.website?.trim() || undefined,
-      metadataJson: args.metadataJson,
-      metadataHash: args.metadataHash,
+      metadataJson: metadata.metadataJson,
+      metadataHash: metadata.metadataHash,
       ownerAddress,
       ownerTokenIdentifier: project.ownerTokenIdentifier,
       defaultPaymentAnchor: args.defaultPaymentAnchor,
@@ -196,10 +247,11 @@ export const updateSettings = mutation({
     defaultPaymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
   },
   handler: async (ctx, args) => {
-    await requireProjectOwner(ctx, args.id);
+    const project = await requireProjectOwner(ctx, args.id);
 
     const name = args.name.trim();
     const description = args.description.trim();
+    const normalizedName = normalizeProjectName(name);
 
     if (!name) {
       throw new Error("Project name is required");
@@ -209,8 +261,18 @@ export const updateSettings = mutation({
       throw new Error("Project description is required");
     }
 
+    if (normalizedName !== normalizeProjectName(project.normalizedName ?? project.name)) {
+      await requireUniqueActiveProjectName(ctx, {
+        name,
+        ownerAddress: project.ownerAddress,
+        ownerTokenIdentifier: project.ownerTokenIdentifier!,
+        excludeProjectId: project._id,
+      });
+    }
+
     await ctx.db.patch(args.id, {
       name,
+      normalizedName,
       description,
       ...(args.defaultPaymentAnchor !== undefined
         ? { defaultPaymentAnchor: args.defaultPaymentAnchor }
@@ -222,6 +284,31 @@ export const updateSettings = mutation({
       projectId: args.id,
       eventType: "project.updated",
     });
+  },
+});
+
+export const retire = mutation({
+  args: {
+    id: v.id("projects"),
+    confirmationName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const project = await requireProjectOwner(ctx, args.id, { allowRetired: true });
+    if (args.confirmationName !== project.name) {
+      throw new Error("Project name confirmation does not match");
+    }
+
+    if (project.retiredAt === undefined) {
+      const identity = await requireIdentity(ctx);
+      const retiredAt = Date.now();
+      await ctx.db.patch(args.id, {
+        retiredAt,
+        retiredByTokenIdentifier: identity.tokenIdentifier,
+        updatedAt: retiredAt,
+      });
+    }
+
+    return null;
   },
 });
 
@@ -279,17 +366,19 @@ export const generateApiKey = mutation({
     id: v.id("projects"),
     label: v.string(),
     paymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
+    purpose: v.optional(v.union(v.literal("general"), v.literal("gas"))),
   },
   handler: async (ctx, args) => {
     await requireProjectOwner(ctx, args.id);
 
-    // Generate secure random API key token: tk_live_<32 hex chars>
+    const purpose = args.purpose ?? "general";
+    const keyPrefix = purpose === "gas" ? "tg_test_" : "tk_live_";
     const randomBytes = new Uint8Array(16);
     crypto.getRandomValues(randomBytes);
     const token = Array.from(randomBytes)
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
-    const rawKey = `tk_live_${token}`;
+    const rawKey = `${keyPrefix}${token}`;
 
     // Hash the rawKey using SHA-256
     const encoder = new TextEncoder();
@@ -302,9 +391,12 @@ export const generateApiKey = mutation({
     await ctx.db.insert("apiKeys", {
       projectId: args.id,
       keyHash: apiKeyHash,
-      prefix: `tk_live_${token.slice(0, 4)}...${token.slice(-4)}`,
+      prefix: `${keyPrefix}${token.slice(0, 4)}...${token.slice(-4)}`,
       label: args.label.trim() || "Default Key",
-      paymentAnchor: args.paymentAnchor,
+      ...(purpose === "general" && args.paymentAnchor !== undefined
+        ? { paymentAnchor: args.paymentAnchor }
+        : {}),
+      purpose,
       createdAt: now,
       requestCount: 0,
       revoked: false,
@@ -323,14 +415,22 @@ export const generateApiKeyInternal = internalMutation({
     id: v.id("projects"),
     label: v.string(),
     paymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
+    purpose: v.optional(v.union(v.literal("general"), v.literal("gas"))),
   },
   handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.id);
+    if (!project || project.retiredAt !== undefined) {
+      throw new Error("Project is retired or unavailable");
+    }
+
+    const purpose = args.purpose ?? "general";
+    const keyPrefix = purpose === "gas" ? "tg_test_" : "tk_live_";
     const randomBytes = new Uint8Array(16);
     crypto.getRandomValues(randomBytes);
     const token = Array.from(randomBytes)
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
-    const rawKey = `tk_live_${token}`;
+    const rawKey = `${keyPrefix}${token}`;
 
     const encoder = new TextEncoder();
     const data = encoder.encode(rawKey);
@@ -342,9 +442,12 @@ export const generateApiKeyInternal = internalMutation({
     await ctx.db.insert("apiKeys", {
       projectId: args.id,
       keyHash: apiKeyHash,
-      prefix: `tk_live_${token.slice(0, 4)}...${token.slice(-4)}`,
+      prefix: `${keyPrefix}${token.slice(0, 4)}...${token.slice(-4)}`,
       label: args.label.trim() || "Default Key",
-      paymentAnchor: args.paymentAnchor,
+      ...(purpose === "general" && args.paymentAnchor !== undefined
+        ? { paymentAnchor: args.paymentAnchor }
+        : {}),
+      purpose,
       createdAt: now,
       requestCount: 0,
       revoked: false,

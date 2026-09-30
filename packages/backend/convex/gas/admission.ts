@@ -248,6 +248,11 @@ export const reserve = internalMutation({
         : { status: "idempotency_key_conflict" };
     }
 
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.retiredAt !== undefined) {
+      return { status: "unauthorized" };
+    }
+
     const existingTransactionLog = await findTransactionLog(
       ctx,
       args.projectId,
@@ -285,9 +290,14 @@ export const reserve = internalMutation({
       if (!result.ok) return { status: "invalid_internal_input" };
       accounting = result.snapshot;
     }
+    const maintenanceMatches = await ctx.db
+      .query("gasProjectMaintenance")
+      .withIndex("by_project_id", (q) => q.eq("projectId", args.projectId))
+      .take(1);
     const policyForEvaluation = accounting
       ? {
           ...accounting.policy,
+          enabled: accounting.policy.enabled && maintenanceMatches.length === 0,
           dailyReservedStroops: accounting.effectiveUsageStroops,
         }
       : null;

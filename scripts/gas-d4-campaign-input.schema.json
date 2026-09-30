@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Sanitized Velo Gas D4 campaign outcome input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["campaign", "attempt"],
+  "properties": {
+    "campaign": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "campaignId",
+        "network",
+        "startedAtUtc",
+        "sourceCommit",
+        "webDeploymentId",
+        "convexDeploymentId",
+        "sdkVersion",
+        "sdkArtifact",
+        "projects"
+      ],
+      "properties": {
+        "campaignId": { "$ref": "#/$defs/label" },
+        "network": { "const": "testnet" },
+        "startedAtUtc": { "$ref": "#/$defs/utcTimestamp" },
+        "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{40}([a-f0-9]{24})?$" },
+        "webDeploymentId": { "$ref": "#/$defs/label" },
+        "convexDeploymentId": { "$ref": "#/$defs/label" },
+        "sdkVersion": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
+        },
+        "sdkArtifact": { "enum": ["workspace-source", "published"] },
+        "projects": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/project" }
+        }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dappId",
+        "projectId",
+        "participantAlias",
+        "scenario",
+        "operationId",
+        "outcome",
+        "requestId",
+        "innerHash",
+        "outerHash",
+        "sourceAccount",
+        "relayerAddress",
+        "relayerFeeSource",
+        "contractId",
+        "ledger",
+        "closedAtUtc",
+        "backendStatus",
+        "innerSucceeded",
+        "reconciliationRequired",
+        "actualFeeStroops",
+        "chargedFeeStroops",
+        "explorerUrl",
+        "denialCode",
+        "noExecutionAttempt",
+        "noReservedExposure"
+      ],
+      "properties": {
+        "dappId": { "$ref": "#/$defs/label" },
+        "projectId": { "$ref": "#/$defs/label" },
+        "participantAlias": { "$ref": "#/$defs/label" },
+        "scenario": { "$ref": "#/$defs/label" },
+        "operationId": { "$ref": "#/$defs/label" },
+        "outcome": { "enum": ["succeeded", "expected_denial", "failed", "unresolved"] },
+        "requestId": { "anyOf": [{ "$ref": "#/$defs/label" }, { "type": "null" }] },
+        "innerHash": { "anyOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] },
+        "outerHash": { "anyOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] },
+        "sourceAccount": { "anyOf": [{ "$ref": "#/$defs/account" }, { "type": "null" }] },
+        "relayerAddress": { "anyOf": [{ "$ref": "#/$defs/account" }, { "type": "null" }] },
+        "relayerFeeSource": { "anyOf": [{ "$ref": "#/$defs/account" }, { "type": "null" }] },
+        "contractId": { "anyOf": [{ "$ref": "#/$defs/contract" }, { "type": "null" }] },
+        "ledger": { "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] },
+        "closedAtUtc": { "anyOf": [{ "$ref": "#/$defs/utcTimestamp" }, { "type": "null" }] },
+        "backendStatus": {
+          "anyOf": [
+            {
+              "enum": [
+                "claimed",
+                "submission_unknown",
+                "submitted",
+                "succeeded",
+                "failed",
+                "cancelled",
+                "denied"
+              ]
+            },
+            { "type": "null" }
+          ]
+        },
+        "innerSucceeded": { "type": ["boolean", "null"] },
+        "reconciliationRequired": { "type": ["boolean", "null"] },
+        "actualFeeStroops": { "anyOf": [{ "$ref": "#/$defs/stroops" }, { "type": "null" }] },
+        "chargedFeeStroops": { "anyOf": [{ "$ref": "#/$defs/stroops" }, { "type": "null" }] },
+        "explorerUrl": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^https://stellar\\.expert/explorer/testnet/tx/[a-f0-9]{64}$"
+            },
+            { "type": "null" }
+          ]
+        },
+        "denialCode": {
+          "anyOf": [
+            {
+              "enum": [
+                "contract_not_whitelisted",
+                "daily_cap_exceeded",
+                "wallet_rate_limited",
+                "policy_disabled",
+                "policy_denied"
+              ]
+            },
+            { "type": "null" }
+          ]
+        },
+        "noExecutionAttempt": { "type": ["boolean", "null"] },
+        "noReservedExposure": { "type": ["boolean", "null"] }
+      }
+    }
+  },
+  "$defs": {
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "dappId",
+        "projectId",
+        "relayerAddress",
+        "custodyMode",
+        "keyringConfigured",
+        "custodyDeploymentId",
+        "custodyKeyVersion",
+        "provisioningFeatureEnabled",
+        "provisioningStatus",
+        "fundingStatus",
+        "activationStatus",
+        "observedAtUtc"
+      ],
+      "properties": {
+        "dappId": { "$ref": "#/$defs/label" },
+        "projectId": { "$ref": "#/$defs/label" },
+        "relayerAddress": { "$ref": "#/$defs/account" },
+        "custodyMode": { "enum": ["managed", "legacy"] },
+        "keyringConfigured": { "type": ["boolean", "null"] },
+        "custodyDeploymentId": { "anyOf": [{ "$ref": "#/$defs/label" }, { "type": "null" }] },
+        "custodyKeyVersion": { "anyOf": [{ "$ref": "#/$defs/label" }, { "type": "null" }] },
+        "provisioningFeatureEnabled": { "type": ["boolean", "null"] },
+        "provisioningStatus": { "enum": ["ready", "pending", "failed", "not_applicable"] },
+        "fundingStatus": { "enum": ["verified", "stale", "insufficient", "unavailable"] },
+        "activationStatus": { "enum": ["enabled", "paused", "disabled"] },
+        "observedAtUtc": { "$ref": "#/$defs/utcTimestamp" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "custodyMode": { "const": "managed" } },
+            "required": ["custodyMode"]
+          },
+          "then": {
+            "properties": {
+              "keyringConfigured": { "const": true },
+              "custodyKeyVersion": { "$ref": "#/$defs/label" },
+              "provisioningFeatureEnabled": { "const": true },
+              "provisioningStatus": { "enum": ["ready", "pending", "failed"] }
+            }
+          },
+          "else": {
+            "properties": {
+              "keyringConfigured": { "type": "null" },
+              "custodyDeploymentId": { "type": "null" },
+              "custodyKeyVersion": { "type": "null" },
+              "provisioningFeatureEnabled": { "type": "null" },
+              "provisioningStatus": { "const": "not_applicable" }
+            }
+          }
+        }
+      ]
+    },
+    "label": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$",
+      "not": {
+        "pattern": "(?:tk_(live|test)|tg_test)_[a-f0-9]{32}|S[A-Z2-7]{55}|Bearer[ ]|eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+"
+      }
+    },
+    "utcTimestamp": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?Z$",
+      "format": "date-time"
+    },
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "account": { "type": "string", "pattern": "^G[A-Z2-7]{55}$" },
+    "contract": { "type": "string", "pattern": "^C[A-Z2-7]{55}$" },
+    "stroops": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" }
+  }
+}

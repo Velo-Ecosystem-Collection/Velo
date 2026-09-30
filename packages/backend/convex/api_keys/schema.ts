@@ -10,6 +10,7 @@ export default defineTable({
   lastUsedAt: v.optional(v.number()),
   requestCount: v.number(),
   paymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
+  purpose: v.optional(v.union(v.literal("general"), v.literal("gas"))),
   revoked: v.boolean(),
 })
   .index("by_project", ["projectId"])

@@ -1,0 +1,122 @@
+{
+  "reportKind": "velo_gas_d3_smoke",
+  "schemaVersion": 1,
+  "mode": "preflight",
+  "status": "incomplete",
+  "reportIdentity": "d3-preflight-b8f324cd-a517-4d5d-ab03-7a5bc5d30b45",
+  "startedAt": "2026-09-25T08:12:31.889Z",
+  "completedAt": "2026-09-25T08:12:33.186Z",
+  "sdk": {
+    "version": "0.1.0-alpha.3",
+    "sourceEntryPoint": "packages/velo-sdk/src/index.ts"
+  },
+  "repository": {
+    "before": {
+      "head": "9ff46a8d06b74835b814d8f7a41bbd654a93fc55",
+      "workingTree": {
+        "status": "modified",
+        "changedPathCount": 5
+      }
+    },
+    "after": {
+      "head": "9ff46a8d06b74835b814d8f7a41bbd654a93fc55",
+      "workingTree": {
+        "status": "modified",
+        "changedPathCount": 5
+      }
+    }
+  },
+  "deployment": null,
+  "preflight": {
+    "status": "blocked",
+    "checks": [
+      {
+        "name": "allowed_invocation_valid",
+        "status": "passed"
+      },
+      {
+        "name": "denied_invocation_valid",
+        "status": "passed"
+      },
+      {
+        "name": "operator_snapshot_available",
+        "status": "blocked",
+        "failure": "operator_snapshot_unavailable"
+      },
+      {
+        "name": "deployment_identity",
+        "status": "blocked",
+        "failure": "deployment_identity_mismatch"
+      },
+      {
+        "name": "deployment_provenance_agreement",
+        "status": "blocked",
+        "failure": "deployment_provenance_mismatch"
+      },
+      {
+        "name": "backend_signer_ready",
+        "status": "blocked",
+        "failure": "signer_not_ready"
+      },
+      {
+        "name": "testnet_custody_and_funding",
+        "status": "blocked",
+        "failure": "funding_not_verified"
+      },
+      {
+        "name": "testnet_rpc_network",
+        "status": "passed"
+      },
+      {
+        "name": "source_provenance_verified",
+        "status": "blocked",
+        "failure": "source_provenance_mismatch"
+      },
+      {
+        "name": "allowed_policy_eligible",
+        "status": "blocked",
+        "failure": "allowed_policy_denied"
+      },
+      {
+        "name": "denied_target_not_whitelisted",
+        "status": "blocked",
+        "failure": "denied_target_is_whitelisted"
+      },
+      {
+        "name": "user_wallet_matches_invocations",
+        "status": "blocked",
+        "failure": "user_wallet_mismatch"
+      },
+      {
+        "name": "distinct_test_transactions",
+        "status": "passed"
+      },
+      {
+        "name": "allowed_transaction_fresh",
+        "status": "blocked",
+        "failure": "allowed_invocation_expired"
+      },
+      {
+        "name": "denied_transaction_fresh",
+        "status": "blocked",
+        "failure": "denied_invocation_expired"
+      }
+    ],
+    "allowedTransactionHash": null,
+    "deniedTransactionHash": null,
+    "d3Checks": [
+      {
+        "name": "sdk_source_entry_point",
+        "status": "passed"
+      }
+    ]
+  },
+  "dashboard": {
+    "status": "pending",
+    "reason": "deployed_dashboard_acceptance_pending"
+  },
+  "failure": "preflight_failed",
+  "execution": null,
+  "replay": null,
+  "denial": null
+}

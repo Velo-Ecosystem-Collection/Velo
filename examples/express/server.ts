@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import express from "express";
 
 import { isCheckoutAnchor, requireApiKeyForAnchor, type CheckoutAnchor } from "./config.ts";
+import { createGasRouter } from "./gas-route.ts";
 
 dotenv.config();
 
@@ -16,6 +17,9 @@ function createVeloClient(anchor: CheckoutAnchor) {
     baseUrl: process.env.VELO_BASE_URL,
   });
 }
+
+// Gas uses its own bounded raw-body parser and must run before express.json().
+app.use("/api/gas", createGasRouter());
 
 // JSON body parser for normal routes
 app.use(express.json());

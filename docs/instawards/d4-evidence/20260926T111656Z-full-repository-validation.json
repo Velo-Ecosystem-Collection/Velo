@@ -1,0 +1,75 @@
+{
+  "artifact": "velo_gas_d4_full_repository_validation",
+  "capturedAtUtc": "2026-09-26T11:16:56Z",
+  "revision": {
+    "branch": "instawards/gas-station-deliverable-4",
+    "head": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+    "workingTreeFrozen": false,
+    "nodeVersion": "v24.13.0",
+    "pnpmVersion": "11.24.0",
+    "pnpmSignatureVerification": "passed with package-registry access"
+  },
+  "repositoryCommands": {
+    "pnpmLintFix": { "result": "passed", "tasks": 9 },
+    "pnpmBuild": { "result": "passed", "tasks": 5 },
+    "pnpmTest": { "result": "passed", "tasks": 9 },
+    "cargoTestRegistry": {
+      "result": "passed",
+      "integrationTests": 11,
+      "failed": 0,
+      "manifest": "contracts/registry/Cargo.toml"
+    }
+  },
+  "packageTestCounts": {
+    "backend": 342,
+    "web": 251,
+    "veloSdk": 71,
+    "stellar": 117,
+    "veloWallets": 23,
+    "pdax": 17,
+    "observability": 9,
+    "expressExample": 15,
+    "nextjsExample": 18,
+    "workspaceTotal": 863,
+    "gasSmokeAndCampaignRecorder": 35,
+    "registryContractIntegration": 11,
+    "totalIncludingGasToolsAndRegistry": 909
+  },
+  "additionalChecks": {
+    "rootOxlint": "passed with five warnings in unchanged scripts/observability-assets.test.mjs",
+    "benchmarkDryRun": "passed",
+    "historicalD2Verifier": "passed",
+    "historicalD3Verifier": "passed",
+    "historicalD2Sha256": "5e50a10cc5b68a24f69b5eb6e1319dd10c4f859813bfa7bb4d214a0950e66ee9",
+    "historicalD3Sha256": "443f6fe3b9150b6823f408dcddcb12a0a141f294c87e2bacd9cd8cce5dbe8bbb",
+    "historicalReportsMutated": false,
+    "gitDiffCheck": "passed",
+    "d4JsonEvidenceRedactionScan": {
+      "result": "passed",
+      "verifiedAtUtc": "2026-09-26T11:22:22Z",
+      "filesScanned": 38,
+      "secretShapedValuesFound": 0,
+      "custodyPayloadFieldsFound": 0
+    }
+  },
+  "gasBrowserSuite": {
+    "chromium": "18/18 passed in local simulated run",
+    "webkit": "18/18 passed in local simulated run",
+    "firefox": {
+      "result": "incomplete",
+      "firstTestFailedBeforeAssertions": true,
+      "browserLaunchTimeoutMs": 180000,
+      "error": "macOS plugin-container sandbox extension and software framebuffer failures",
+      "secondTestInterrupted": true,
+      "remainingTestsNotRun": 16
+    }
+  },
+  "deliveryStatus": {
+    "hostedCiCaptured": false,
+    "sourceFrozen": false,
+    "productionDeploymentAttempted": false,
+    "productionDataMutated": false,
+    "testnetTransactionSubmitted": false,
+    "campaignDecision": "NO-GO pending production custody reconciliation and remaining SOW acceptance evidence"
+  }
+}

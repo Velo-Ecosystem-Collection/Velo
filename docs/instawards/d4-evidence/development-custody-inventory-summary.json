@@ -1,0 +1,35 @@
+{
+  "artifact": "velo_gas_d4_development_custody_inventory",
+  "recordedAtUtc": "2026-09-26T04:26:37Z",
+  "deployment": "capable-kingfisher-697",
+  "network": "stellar-testnet",
+  "query": "Convex sandboxed read-only inline query; aggregate fields only",
+  "custodyInventory": {
+    "totalRecords": 2,
+    "statuses": {
+      "pending": 0,
+      "ready": 1,
+      "failed": 1
+    },
+    "statusAndErrorCodeCounts": {
+      "ready:none": 1,
+      "failed:provisioning_disabled": 1
+    },
+    "deploymentIds": [
+      null,
+      "dev:capable-kingfisher-697"
+    ]
+  },
+  "configuration": {
+    "keyringVariablePresent": true,
+    "custodyDeploymentId": "dev:capable-kingfisher-697",
+    "provisioningFlag": true,
+    "keyringValueRead": false,
+    "keyringStatus": "valid",
+    "activeKeyVersion": "v1",
+    "keyVersionCount": 1,
+    "statusSource": "internal-only custodyConfigurationStatus action"
+  },
+  "codePushedByThisCheck": false,
+  "testnetTransactionSubmitted": false
+}

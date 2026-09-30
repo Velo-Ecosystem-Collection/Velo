@@ -12,7 +12,7 @@ import {
   readTestnetNativeBalance,
 } from "../../gas/balance";
 import { GAS_MAX_STROOPS } from "../../gas/types";
-import { readOperatorSnapshot } from "../../http";
+import { readDeploymentProvenance, readOperatorSnapshot } from "../../http";
 
 const SIGNER = "GAI7NKM2MASZ4OJH2LQNMXL4VEUVOWPVDNRVTB6XQRWYYRX3JD4KX4ZI";
 const USER = "GBNHK3TLWWXBCEGNFHB45Z66R4AI5YUALKUFBP4WF7YK5JLZIAAG2DLI";
@@ -248,11 +248,21 @@ test("caps streamed response bodies and shares one deadline across fetch and bod
 });
 
 async function withOperatorEnvironment<T>(callback: () => Promise<T>): Promise<T> {
-  const names = ["VELO_GAS_D2_OPERATOR_TOKEN", "VELO_GAS_D2_PROJECT_ID", "VELO_GAS_D2_HORIZON_URL"];
+  const names = [
+    "VELO_GAS_D2_OPERATOR_TOKEN",
+    "VELO_GAS_D2_PROJECT_ID",
+    "VELO_GAS_D2_HORIZON_URL",
+    "VELO_GAS_D2_DEPLOYMENT_NAME",
+    "VELO_GAS_D2_DEPLOYED_SOURCE_COMMIT",
+    "VELO_DEPLOYMENT_ENVIRONMENT",
+  ];
   const previous = new Map(names.map((name) => [name, process.env[name]]));
   process.env.VELO_GAS_D2_OPERATOR_TOKEN = OPERATOR_TOKEN;
+  process.env.VELO_DEPLOYMENT_ENVIRONMENT = "development";
   delete process.env.VELO_GAS_D2_PROJECT_ID;
   delete process.env.VELO_GAS_D2_HORIZON_URL;
+  delete process.env.VELO_GAS_D2_DEPLOYMENT_NAME;
+  delete process.env.VELO_GAS_D2_DEPLOYED_SOURCE_COMMIT;
   try {
     return await callback();
   } finally {
@@ -303,6 +313,11 @@ test("D2 snapshot preserves positive balance fields and keeps zero/failure gener
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({
         schemaVersion: 1,
+        deployment: {
+          deploymentId: "dev:capable-kingfisher-697",
+          environment: "development",
+          network: "testnet",
+        },
         signer: {
           status: "ready",
           network: "testnet",
@@ -361,4 +376,81 @@ test("D2 snapshot preserves positive balance fields and keeps zero/failure gener
       globalThis.fetch = previousFetch;
     }
   });
+});
+
+test("D2 snapshot and provenance read the current production environment object", async () => {
+  const previousEnvironment = process.env;
+  const previousFetch = globalThis.fetch;
+  process.env = {
+    ...previousEnvironment,
+    VELO_GAS_D2_OPERATOR_TOKEN: OPERATOR_TOKEN,
+    VELO_GAS_D2_DEPLOYMENT_NAME: "prod:agreeable-salmon-748",
+    VELO_GAS_D2_DEPLOYED_SOURCE_COMMIT: "a".repeat(40),
+    VELO_DEPLOYMENT_ENVIRONMENT: "production",
+  };
+  globalThis.fetch = vi.fn(async (input: string) => {
+    if (input.endsWith("/")) return networkResponse();
+    const address = input.endsWith(SIGNER) ? SIGNER : USER;
+    return accountResponse(address, "1");
+  }) as unknown as typeof fetch;
+
+  try {
+    const snapshot = await readOperatorSnapshot(snapshotRequest(), snapshotContext());
+    expect(snapshot.status).toBe(200);
+    await expect(snapshot.json()).resolves.toMatchObject({
+      deployment: {
+        deploymentId: "prod:agreeable-salmon-748",
+        environment: "production",
+        network: "testnet",
+      },
+    });
+
+    const provenance = await readDeploymentProvenance(
+      new Request(
+        `https://velo.test/api/operator/d2/provenance?projectId=${PROJECT_ID}&deploymentId=prod:agreeable-salmon-748`,
+        { headers: { authorization: `Bearer ${OPERATOR_TOKEN}` } },
+      ),
+    );
+    expect(provenance.status).toBe(200);
+    await expect(provenance.json()).resolves.toMatchObject({
+      deploymentId: "prod:agreeable-salmon-748",
+      environment: "production",
+      verified: false,
+      deployedSourceCommit: "a".repeat(40),
+      verification: "operator-configured-deployed-commit",
+    });
+  } finally {
+    process.env = previousEnvironment;
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("D2 production endpoints fail closed when the deployment identity is missing", async () => {
+  const previousEnvironment = process.env;
+  process.env = {
+    ...previousEnvironment,
+    VELO_GAS_D2_OPERATOR_TOKEN: OPERATOR_TOKEN,
+    VELO_DEPLOYMENT_ENVIRONMENT: "production",
+  };
+  delete process.env.VELO_GAS_D2_DEPLOYMENT_NAME;
+
+  try {
+    const context = snapshotContext();
+    const snapshot = await readOperatorSnapshot(snapshotRequest(), context);
+    expect(snapshot.status).toBe(503);
+    expect(context.runQuery).not.toHaveBeenCalled();
+
+    const provenance = await readDeploymentProvenance(
+      new Request(
+        `https://velo.test/api/operator/d2/provenance?projectId=${PROJECT_ID}&deploymentId=prod:agreeable-salmon-748`,
+        { headers: { authorization: `Bearer ${OPERATOR_TOKEN}` } },
+      ),
+    );
+    expect(provenance.status).toBe(503);
+    await expect(provenance.json()).resolves.toEqual({
+      error: "Deployment provenance is not configured",
+    });
+  } finally {
+    process.env = previousEnvironment;
+  }
 });

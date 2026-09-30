@@ -77,6 +77,7 @@ export function GasRelayerConfigurationForm({
     publicKeyTouched && !validation.ok ? validation.errors.publicKey : undefined;
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
     };

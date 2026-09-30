@@ -29,12 +29,14 @@ type SelectedProjectContextValue = {
   selectedProjectId: string | null;
   projectCount: number;
   projectsLoaded: boolean;
+  clearSelectedProject: (id: string) => void;
 };
 
 const SelectedProjectContext = createContext<SelectedProjectContextValue>({
   selectedProjectId: null,
   projectCount: 0,
   projectsLoaded: false,
+  clearSelectedProject: () => {},
 });
 
 export function useSelectedProject() {
@@ -64,6 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [loadedSelectedProjectStorageKey, setLoadedSelectedProjectStorageKey] = useState<
     string | null
   >(null);
+  const [retiredProjectSelection, setRetiredProjectSelection] = useState<string | null>(null);
 
   const showWalletNotice = ["unavailable", "unsupported", "rejected", "stale", "error"].includes(
     wallet.status,
@@ -119,6 +122,20 @@ export function AppShell({ children }: { children: ReactNode }) {
       logoUrl: p.logoUrl,
     }));
   }, [rawProjects]);
+  const selectableProjects = useMemo(
+    () => sidebarProjects.filter((project) => project.id !== retiredProjectSelection),
+    [retiredProjectSelection, sidebarProjects],
+  );
+
+  useEffect(() => {
+    const routeProjectMatch = pathname.match(/^\/projects\/([a-zA-Z0-9_-]+)/);
+    if (
+      retiredProjectSelection &&
+      (!routeProjectMatch || routeProjectMatch[1] !== retiredProjectSelection)
+    ) {
+      setRetiredProjectSelection(null);
+    }
+  }, [pathname, retiredProjectSelection]);
 
   const selectedProjectStorageKey = useMemo(() => {
     return wallet.address ? `${selectedProjectStoragePrefix}:${wallet.address}` : null;
@@ -142,18 +159,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   const routeProjectId = useMemo(() => {
     const projectsMatch = pathname.match(/^\/projects\/([a-zA-Z0-9_-]+)/);
     if (projectsMatch && projectsMatch[1] !== "new") {
+      if (projectsMatch[1] === retiredProjectSelection) return null;
       return projectsMatch[1];
     }
     const verifyMatch = pathname.match(/^\/verify\/([a-zA-Z0-9_-]+)/);
     if (verifyMatch) {
       const slug = verifyMatch[1];
-      const project = sidebarProjects.find((p) => p.slug === slug);
+      const project = selectableProjects.find((p) => p.slug === slug);
       if (project) {
         return project.id;
       }
     }
     return null;
-  }, [pathname, sidebarProjects]);
+  }, [pathname, retiredProjectSelection, selectableProjects]);
 
   const activeProjectId = useMemo(() => {
     if (routeProjectId) {
@@ -168,13 +186,15 @@ export function AppShell({ children }: { children: ReactNode }) {
       return null;
     }
 
-    const storedProject = sidebarProjects.find((project) => project.id === storedSelectedProjectId);
-    return storedProject?.id ?? sidebarProjects[0]?.id ?? null;
+    const storedProject = selectableProjects.find(
+      (project) => project.id === storedSelectedProjectId,
+    );
+    return storedProject?.id ?? selectableProjects[0]?.id ?? null;
   }, [
     hasLoadedStoredSelectedProject,
     rawProjects,
     routeProjectId,
-    sidebarProjects,
+    selectableProjects,
     storedSelectedProjectId,
   ]);
 
@@ -183,6 +203,17 @@ export function AppShell({ children }: { children: ReactNode }) {
       setStoredSelectedProjectId(id);
       if (selectedProjectStorageKey) {
         window.localStorage.setItem(selectedProjectStorageKey, id);
+      }
+    },
+    [selectedProjectStorageKey],
+  );
+
+  const clearSelectedProject = useCallback(
+    (id: string) => {
+      setRetiredProjectSelection(id);
+      setStoredSelectedProjectId(null);
+      if (selectedProjectStorageKey) {
+        window.localStorage.removeItem(selectedProjectStorageKey);
       }
     },
     [selectedProjectStorageKey],
@@ -304,7 +335,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     for (const url of urls) {
       router.prefetch(url);
     }
-  }, [activeProjectId, router, sidebarProjects]);
+  }, [activeProjectId, router, selectableProjects]);
 
   if (showSidebar) {
     return (
@@ -312,15 +343,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         <SelectedProjectContext
           value={{
             selectedProjectId: activeProjectId,
-            projectCount: sidebarProjects.length,
+            projectCount: selectableProjects.length,
             projectsLoaded:
               rawProjects !== undefined &&
               (routeProjectId !== null || hasLoadedStoredSelectedProject),
+            clearSelectedProject,
           }}
         >
           <AppSidebar
             user={sidebarUser}
-            projects={sidebarProjects}
+            projects={selectableProjects}
             activeProjectId={activeProjectId}
             currentPath={pathname}
             onSelectProject={handleSelectProject}

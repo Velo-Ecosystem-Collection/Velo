@@ -290,6 +290,28 @@ NEXT_PUBLIC_VELO_PAY_ACCESS_CONTRACT_ID=CBHDLZYSYWETHPC6KDGH35S4SNBU5P7QWLNNDWYX
 
 Authentication, backend, hosted deployment, and PDAX UAT flows require additional server-side configuration. See the [full environment reference](docs/velo-master-context.md#environment-variables) and [demo setup guide](docs/demo-setup.md).
 
+#### Optional WalletConnect login
+
+Create a project in the [Reown dashboard](https://dashboard.reown.com/), configure its
+allowed origins for your local and hosted Velo URLs, and set
+`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` in the web environment. This is a public
+project identifier, not a private API key. Set `NEXT_PUBLIC_APP_URL` to the actual
+app origin so the wallet sees matching Velo metadata. Restart development or
+rebuild/redeploy the web app after changing these build-time values.
+
+When configured, Velo's wallet selector includes WalletConnect for Stellar
+Testnet. Without it, the existing wallet options remain available. Authentication
+uses a signed challenge, never an on-chain transaction. This integration applies
+to Velo login/sign-up; it does not enable WalletConnect in the Velo Wallets widget.
+See the [Stellar Wallets Kit module documentation](https://stellarwalletskit.dev/wallets/wallet-connect.html).
+
+Run `pnpm --filter web test:e2e:wallet-auth` for simulated Chromium authentication
+tests. Before enabling a deployment, qualify Freighter mobile with desktop QR
+pairing and mobile handoff: sign-up, returning login, rejected signing, cancellation,
+disconnect, reload/reconnect, and Testnet selection. Also check Freighter extension
+login. Automated fixtures do not establish real-device compatibility; that live
+acceptance remains unverified.
+
 ### 3. Start the development workspace
 
 ```bash

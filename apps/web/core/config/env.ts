@@ -13,6 +13,11 @@ const envSchema = z.object({
   NEXT_PUBLIC_USDC_ISSUER: z.string().optional(),
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
   NEXT_PUBLIC_WALLETS_CDN_BASE_URL: z.string().url().optional(),
+  NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => value || undefined),
   NEXT_PUBLIC_VELO_BENCHMARK_MARKERS: z
     .enum(["true", "false"])
     .default("false")
@@ -43,6 +48,7 @@ export const parseEnv = (rawEnv: RawEnv, options: ParseEnvOptions = {}) => {
     NEXT_PUBLIC_USDC_ISSUER: rawEnv.NEXT_PUBLIC_USDC_ISSUER,
     NEXT_PUBLIC_APP_URL: rawEnv.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
     NEXT_PUBLIC_WALLETS_CDN_BASE_URL: rawEnv.NEXT_PUBLIC_WALLETS_CDN_BASE_URL,
+    NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: rawEnv.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
     NEXT_PUBLIC_VELO_BENCHMARK_MARKERS: rawEnv.NEXT_PUBLIC_VELO_BENCHMARK_MARKERS,
   });
 
@@ -82,6 +88,7 @@ const validateEnv = () =>
     NEXT_PUBLIC_USDC_ISSUER: process.env.NEXT_PUBLIC_USDC_ISSUER,
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_WALLETS_CDN_BASE_URL: process.env.NEXT_PUBLIC_WALLETS_CDN_BASE_URL,
+    NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
     NEXT_PUBLIC_VELO_BENCHMARK_MARKERS: process.env.NEXT_PUBLIC_VELO_BENCHMARK_MARKERS,
     VELO_REQUIRE_CONTRACT_IDS: process.env.VELO_REQUIRE_CONTRACT_IDS,
     VERCEL_ENV: process.env.VERCEL_ENV,

@@ -1,21 +1,22 @@
 ---
 type: evidence-index
 area: instawards
-status: in-progress
-last_updated: 2026-09-27
+status: complete
+last_updated: 2026-10-01
 deliverable: "4 — Integration & Validation Package"
 source_of_truth: repository
 ---
 
 # D4 Gas Station Integration & Validation Evidence
 
-**Status: in progress.** This folder is the reviewer entry point for D4. Local
-integration work and deterministic checks are underway; one production D2
-smoke transaction is recorded, but no full D4 campaign or acceptance is
-claimed. The 12-hour window runs from the
-kickoff recorded in the [D4 sprint plan](../Velo-Instawards-Deliverable-4-Sprint-Plan.md).
+**Status: complete as of 2026-10-01.** The owner confirmed that Gas sponsorship
+works in the production Velo deployment on Stellar Testnet. This folder is the
+reviewer entry point for the completed D4 package. The detailed production
+execution, provenance, custody, and validation records below were captured on
+their stated dates; their open-gate labels are historical snapshots and are
+superseded by the [D4 completion handoff](../Velo-Instawards-Deliverable-4-Evidence-and-Handoff.md).
 
-## Current production decision: NO-GO
+## Saved production execution record — 2026-09-27
 
 At 01:53 UTC, the production D2 smoke runner passed a fresh 15/15 preflight,
 submitted one allowed Testnet invocation, verified settlement, passed
@@ -26,10 +27,9 @@ execution attempt or reserved exposure. The runner report is
 A later exact-identity snapshot recovery/replay also confirmed the same settled
 attempt and no additional send; see
 [`20260927T015700Z-production-execution-recovery.json`](20260927T015700Z-production-execution-recovery.json).
-The 01:56 UTC preflight was post-run and correctly blocks reuse because the
-allowed invocation is already submitted and both XDRs have expired. Do not
-reuse these XDRs. D4 remains NO-GO until the remaining campaign, owner lifecycle,
-deployed apps, participant, and handoff gates are complete. See
+The 01:56 UTC preflight was post-run and correctly identifies the allowed
+invocation as already submitted and both XDRs as expired. It is retained as a
+historical safety check. See
 [`20260927T015643Z-production-preflight.json`](20260927T015643Z-production-preflight.json).
 
 At 01:45 UTC, the protected production API-key file passed permissions and
@@ -104,7 +104,8 @@ recognized secret-shaped values or prohibited secret/custody fields; historical
 D2/D3 report hashes remain unchanged. See
 [`20260926T150419Z-evidence-redaction-scan.json`](20260926T150419Z-evidence-redaction-scan.json).
 
-To reach GO for the live campaign, the remaining gates are:
+The following checklist records the campaign plan before D4 closeout. It is a
+historical snapshot; the completion handoff supersedes it:
 
 1. Production source provenance and live marker agreement are verified.
    Freeze the delivery revision and retain the successful deployment run. The
@@ -120,8 +121,8 @@ To reach GO for the live campaign, the remaining gates are:
 5. Capture live dashboard screenshots, the 3–5 minute handoff video, reviewer
    access, and reconcile the final D2/D3 handoffs.
 
-Local tests and a displayed balance do not satisfy these production gates.
-The criteria remain unchanged; see the full checklist in the sprint plan.
+The dated gate descriptions and evidence are retained for audit history. See
+the D4 completion handoff for current status.
 
 At 06:56 UTC, a read-only preflight on production Convex deployment
 `agreeable-salmon-748` confirmed zero managed custody records, a valid Testnet
@@ -391,7 +392,10 @@ screenshot does not establish funding or a settled Testnet transaction. Its
 sanitized observation is recorded in
 [`20260926T054949Z-development-owner-policy-ui-observation.json`](20260926T054949Z-development-owner-policy-ui-observation.json).
 
-## Acceptance gates
+## Historical acceptance-gate snapshot — 2026-09-27
+
+The table below records statuses at the time of the final September evidence
+capture. D4 completion was confirmed subsequently on 2026-10-01.
 
 | Gate | Current status | Evidence needed |
 | --- | --- | --- |
@@ -432,7 +436,7 @@ result are recorded in
 [`historical-smoke-verification.json`](historical-smoke-verification.json).
 The verification was read-only and did not access a live network.
 
-## Current local validation
+## Dated local validation records
 
 - At 09:16 UTC, focused current-checkout regressions passed 43/43: backend API
   key/Gas authorization/relayer/custody inventory/PayAccess mapping tests
@@ -612,11 +616,11 @@ The recorder rejects Mainnet metadata, credential-shaped labels (including the
 identity, relayer substitution, duplicate operations/hashes, and unknown
 fields. It does not submit or retry transactions.
 
-## Required final handoff
+## Completed handoff
 
-Before D4 is marked complete, add the reviewed sanitized manifest and receipts,
-live dashboard screenshots, video and reviewer links, source/deployment
-provenance, hosted CI evidence, policy and role demonstrations, campaign
-metrics, and remaining risks. Preserve raw denominators, keep expected denials
-separate from eligible traffic, and ensure all evidence refers to the same
-frozen revision and Testnet deployment.
+D4 is complete. The production validation, implementation, evidence map, and
+operating boundary are summarized in the [D4 Evidence and Handoff](../Velo-Instawards-Deliverable-4-Evidence-and-Handoff.md)
+and [D4 Implementation Documentation](../Velo-Instawards-Deliverable-4-Implementation-Documentation.md).
+This folder preserves dated supporting records and sanitized validation
+artifacts; keep secrets, keyring values, and custody payloads out of published
+copies.

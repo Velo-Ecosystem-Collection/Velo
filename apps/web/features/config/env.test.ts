@@ -13,6 +13,20 @@ const baseEnv = {
   NEXT_PUBLIC_CONVEX_URL: "https://dummy.convex.cloud",
 };
 
+test("WalletConnect configuration is optional and trims blank values", () => {
+  assert.equal(parseEnv(baseEnv).NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID, undefined);
+  assert.equal(
+    parseEnv({ ...baseEnv, NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "  " })
+      .NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
+    undefined,
+  );
+  assert.equal(
+    parseEnv({ ...baseEnv, NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: " project-id " })
+      .NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID,
+    "project-id",
+  );
+});
+
 const REGISTRY_CONTRACT_ID = "CBSR5LFHR5Q2X3PO3HSMGXI43YEUYGFTHUPGNVGW6XH2VNOQUEUHIEJR";
 const PAY_ACCESS_CONTRACT_ID = "CBHDLZYSYWETHPC6KDGH35S4SNBU5P7QWLNNDWYXJRHZMZDTQSKYVOXJ";
 

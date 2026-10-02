@@ -90,3 +90,32 @@ test("wallet JWT signing accepts an environment-provided P-256 private key", () 
     restoreEnv("VELO_AUTH_JWT_PRIVATE_KEY_PEM", previousJwtKey);
   }
 });
+
+test("wallet auth rejects unsigned, wrong-account, wrong-network and expired challenges", (t) => {
+  const previous = process.env.VELO_AUTH_CHALLENGE_SECRET;
+  process.env.VELO_AUTH_CHALLENGE_SECRET = "wallet-jwt-negative-test-secret";
+  try {
+    const client = Keypair.random();
+    const address = client.publicKey();
+    const { challenge } = createWalletChallenge(address);
+    assert.throws(() => verifyWalletChallenge({ address, challenge }));
+    const signed = new Transaction(challenge, Networks.TESTNET);
+    signed.sign(client);
+    assert.throws(
+      () =>
+        verifyWalletChallenge({ address: Keypair.random().publicKey(), challenge: signed.toXDR() }),
+      /does not match/,
+    );
+    const wrongNetwork = new Transaction(challenge, Networks.PUBLIC);
+    wrongNetwork.sign(client);
+    assert.throws(() => verifyWalletChallenge({ address, challenge: wrongNetwork.toXDR() }));
+    try {
+      t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 20 * 60 * 1000 });
+      assert.throws(() => verifyWalletChallenge({ address, challenge: signed.toXDR() }));
+    } finally {
+      t.mock.timers.reset();
+    }
+  } finally {
+    restoreEnv("VELO_AUTH_CHALLENGE_SECRET", previous);
+  }
+});

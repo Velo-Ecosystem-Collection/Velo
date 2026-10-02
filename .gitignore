@@ -24,6 +24,7 @@ coverage
 # Build Outputs
 .next/
 apps/web/.next-gas-e2e/
+apps/web/.next-wallet-auth-e2e/
 out/
 build
 dist

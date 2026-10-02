@@ -1,14 +1,24 @@
 ---
 type: evidence-ledger
 area: instawards
-status: in-progress
+status: complete
 last_updated: 2026-09-27
 deliverable: "4 — Integration & Validation Package"
 ---
 
 # D4 readiness ledger
 
-**Decision reaffirmed at 2026-09-27 01:56 UTC: NO-GO for the full D4 campaign.**
+**Current status: D4 complete as of 2026-10-01.** The owner confirmed that Gas
+sponsorship works in the production Velo deployment on Stellar Testnet. The
+September 25–27 entries below are dated snapshots of decisions and observations
+made before completion. They are historical and are superseded by the
+[D4 Evidence and Handoff](../Velo-Instawards-Deliverable-4-Evidence-and-Handoff.md).
+
+### Historical production execution snapshot — 2026-09-27
+
+At 01:56 UTC on September 27, the campaign was assessed as NO-GO based on the
+evidence available at that time.
+
 At 01:53 UTC, the production D2 runner passed all 15 preflight checks, completed
 one allowed Testnet execution with verified settlement, passed same-request
 replay with stable attempt identity/send count/fee/accounting, and confirmed
@@ -345,7 +355,7 @@ to launch before app assertions. No production deployment or Testnet
 transaction followed. See
 [`20260926T103422Z-custody-context-ui-guard.json`](20260926T103422Z-custody-context-ui-guard.json).
 
-## Go/no-go rule
+## Historical go/no-go rule — superseded by the 2026-10-01 closeout
 
 Keep the campaign at **NO-GO** until deployed source provenance is independently
 verified, the owner and reviewer can access the dashboard, both dApps are

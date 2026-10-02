@@ -1,6 +1,7 @@
 "use client";
 
 import { stellarConfig, STELLAR_TESTNET_NETWORK_PASSPHRASE } from "@/core/config/stellar";
+import { initializeWalletKit } from "@/core/wallet/wallet-kit";
 import {
   createContext,
   ReactNode,
@@ -8,8 +9,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
+
+import { WalletRequestScope, walletErrorMessage } from "./wallet-connect-policy";
 
 type WalletStatus =
   | "initializing"
@@ -68,16 +72,8 @@ const WalletContext = createContext<WalletState | null>(null);
 
 const LAST_SESSION_KEY = "velo:last-wallet-session";
 
-function getErrorMessage(error: unknown) {
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return "Wallet request failed";
-}
-
 function isRejected(error: unknown) {
-  return /reject|denied|cancel/i.test(getErrorMessage(error));
+  return /reject|denied|cancel|closed the modal/i.test(walletErrorMessage(error));
 }
 
 function walletName(wallets: SupportedWallet[], walletId: string | null) {
@@ -111,6 +107,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [supportedWallets, setSupportedWallets] = useState<SupportedWallet[]>([]);
   const [staleAddress, setStaleAddress] = useState<string | null>(null);
 
+  const requestScope = useRef(new WalletRequestScope());
+  const connecting = useRef(false);
+  const connectedAddress = useRef<string | null>(null);
+
   useEffect(() => {
     let isMounted = true;
     const unsubscribers: Array<() => void> = [];
@@ -121,22 +121,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
 
       try {
-        const [{ StellarWalletsKit, KitEventType, Networks }, { defaultModules }] =
-          await Promise.all([
-            import("@creit-tech/stellar-wallets-kit"),
-            import("@creit-tech/stellar-wallets-kit/modules/utils"),
-          ]);
-
-        StellarWalletsKit.init({
-          modules: defaultModules(),
-          network: Networks.TESTNET,
-          authModal: {
-            showInstallLabel: true,
-            hideUnsupportedWallets: false,
-          },
-        });
-        StellarWalletsKit.setNetwork(Networks.TESTNET);
-
+        const { StellarWalletsKit, KitEventType } = await initializeWalletKit();
         const wallets = await StellarWalletsKit.refreshSupportedWallets();
         if (!isMounted) {
           return;
@@ -162,26 +147,29 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
         unsubscribers.push(
           StellarWalletsKit.on(KitEventType.STATE_UPDATED, (event) => {
-            setAddress(event.payload.address ?? null);
-            setError(null);
-            setErrorCode(null);
-
-            if (event.payload.networkPassphrase !== STELLAR_TESTNET_NETWORK_PASSPHRASE) {
-              setStatus("unsupported");
-              setErrorCode("WALLET_NETWORK_MISMATCH");
-              setError(`Switch wallet network to ${stellarConfig.networkLabel}.`);
-              return;
-            }
-
-            if (event.payload.address) {
-              setStatus("connected");
-              setStaleAddress(null);
+            // A pairing event is not acceptance: connect() validates its result first.
+            if (!connectedAddress.current || connecting.current) return;
+            if (
+              event.payload.networkPassphrase !== STELLAR_TESTNET_NETWORK_PASSPHRASE ||
+              event.payload.address !== connectedAddress.current
+            ) {
+              requestScope.current.invalidate();
+              connectedAddress.current = null;
+              setAddress(null);
+              setStatus("stale");
+              setErrorCode("WALLET_STALE_SESSION");
+              setError(`Reconnect a wallet on ${stellarConfig.networkLabel}.`);
+              window.localStorage.removeItem(LAST_SESSION_KEY);
             }
           }),
           StellarWalletsKit.on(KitEventType.WALLET_SELECTED, (event) => {
             setWalletId(event.payload.id ?? null);
           }),
           StellarWalletsKit.on(KitEventType.DISCONNECT, () => {
+            requestScope.current.invalidate();
+            connecting.current = false;
+            connectedAddress.current = null;
+            setWalletId(null);
             setAddress(null);
             setStaleAddress(null);
             setStatus("disconnected");
@@ -197,7 +185,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
         setStatus("unavailable");
         setErrorCode("WALLET_UNAVAILABLE");
-        setError(getErrorMessage(initError));
+        setError(walletErrorMessage(initError));
       }
     }
 
@@ -205,6 +193,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     return () => {
       isMounted = false;
+      requestScope.current.invalidate();
+      connecting.current = false;
       unsubscribers.forEach((unsubscribe) => unsubscribe());
     };
   }, []);
@@ -222,15 +212,25 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (connecting.current) return;
+    connecting.current = true;
+    requestScope.current.invalidate();
+    const isCurrent = requestScope.current.capture();
+    connectedAddress.current = null;
+    setAddress(null);
     setStatus("connecting");
     setError(null);
     setErrorCode(null);
 
     try {
-      const { StellarWalletsKit } = await import("@creit-tech/stellar-wallets-kit");
+      const { StellarWalletsKit } = await initializeWalletKit();
+      await StellarWalletsKit.refreshSupportedWallets();
+      if (!isCurrent()) return;
       const result = await StellarWalletsKit.authModal();
+      if (!isCurrent()) return;
       const selectedWalletId = StellarWalletsKit.selectedModule?.productId ?? walletId;
 
+      connectedAddress.current = result.address;
       setAddress(result.address);
       setWalletId(selectedWalletId);
       setStaleAddress(null);
@@ -240,10 +240,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         JSON.stringify({ address: result.address, walletId: selectedWalletId }),
       );
     } catch (connectError) {
+      if (!isCurrent()) return;
+      connectedAddress.current = null;
+      setAddress(null);
+      window.localStorage.removeItem(LAST_SESSION_KEY);
       const rejected = isRejected(connectError);
       setStatus(rejected ? "rejected" : "error");
       setErrorCode(rejected ? "WALLET_REJECTED" : "WALLET_UNAVAILABLE");
-      setError(getErrorMessage(connectError));
+      setError(walletErrorMessage(connectError));
+    } finally {
+      if (isCurrent()) connecting.current = false;
     }
   }, [walletId]);
 
@@ -252,6 +258,12 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    requestScope.current.invalidate();
+    connecting.current = false;
+    connectedAddress.current = null;
+    setAddress(null);
+    setWalletId(null);
+    setStatus("disconnected");
     try {
       const { StellarWalletsKit } = await import("@creit-tech/stellar-wallets-kit");
       await StellarWalletsKit.disconnect();
@@ -272,13 +284,24 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       }
 
       try {
+        const isCurrent = requestScope.current.capture();
         const { StellarWalletsKit } = await import("@creit-tech/stellar-wallets-kit");
+        if (!isCurrent() || connectedAddress.current !== address) {
+          throw new WalletError("WALLET_STALE_SESSION", "Reconnect your wallet before signing.");
+        }
         const result = await StellarWalletsKit.signTransaction(xdr, {
           networkPassphrase: STELLAR_TESTNET_NETWORK_PASSPHRASE,
           address,
         });
+        if (!isCurrent() || connectedAddress.current !== address) {
+          throw new WalletError(
+            "WALLET_STALE_SESSION",
+            "Wallet changed while signing. Reconnect to continue.",
+          );
+        }
         return result.signedTxXdr;
       } catch (signError) {
+        if (signError instanceof WalletError) throw signError;
         throw new WalletError(
           isRejected(signError) ? "WALLET_REJECTED" : "WALLET_SIGNING_FAILED",
           isRejected(signError)

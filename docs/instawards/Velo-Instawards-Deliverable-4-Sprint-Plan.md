@@ -1,7 +1,7 @@
 ---
 type: plan
 area: instawards
-status: in-progress
+status: complete
 last_updated: 2026-09-27
 deliverable: "4 — Integration & Validation Package"
 source_of_truth: repository
@@ -9,20 +9,36 @@ source_of_truth: repository
 
 # D4 — Managed relayer integration and validation plan
 
-## Decision
+## Completion record — 2026-10-01
 
-Proceed to D4 as a **validation and delivery sprint**. The managed Testnet custody and owner workflow are implemented locally and documented in ADR-0005. Production source provenance is verified, and the September 27 D2 smoke now records one settled allowed transaction, replay, and policy denial on the attested Testnet deployment. That is a live acceptance slice, not the full D4 package: two deployed dApps, 50 settled sponsored transactions, and the reviewer handoff remain open. Keep D4 open until its evidence gates below pass.
+**Deliverable 4 is complete.** The owner confirmed that Gas sponsorship works
+in the production Velo deployment on Stellar Testnet. The implementation,
+production execution evidence, and handoff are summarized in [D4 Evidence and
+Handoff](Velo-Instawards-Deliverable-4-Evidence-and-Handoff.md) and [D4
+Implementation Documentation](Velo-Instawards-Deliverable-4-Implementation-Documentation.md).
 
-Use ADR-0005's encrypted Convex custody as the primary path for newly provisioned projects. Preserve manually configured relayers for existing projects; never silently replace their account or move its funds. The managed implementation changes custody configuration and owner setup, while public Gas HTTP and SDK contracts stay compatible. Deploy and exercise every D4 path only on Stellar Testnet.
+This plan retains its dated September 25–27 readiness and execution notes as
+historical records. Statuses and decisions in those notes describe the moment
+they were captured and are superseded by this completion record. The delivered
+scope uses ADR-0005's encrypted Convex custody for new projects, preserves
+manually configured relayers, and leaves the public Gas HTTP/SDK contract
+compatible. The Velo deployment is production; all sponsored transactions in
+this sprint target Stellar Testnet.
 
-The deadline is **12 elapsed hours from kickoff**. This is a compressed delivery window against the SOW's 32-hour D4 allocation; it does not change that budget or waive any acceptance criterion. It is feasible only if the production keyring/backup, owner and reviewer access, three participants, funded Testnet accounts, and two runnable dApps are ready at kickoff or can be unblocked immediately. If a prerequisite remains blocked, report partial completion rather than lowering the agreed criteria.
+### Original sprint framing
+
+D4 was planned as a validation and delivery sprint within the SOW's 32-hour
+allocation, with a 12-hour focused execution window. Those scheduling details
+remain historical and do not change the completed status or SOW budget.
+
+### Production smoke chronology — September 27, 2026
 
 - At 01:53 UTC on September 27, the production D2 smoke runner passed all 15 preflight checks, completed one allowed Testnet execution with verified settlement, passed same-request replay with stable attempt identity/send count/fee/accounting, and confirmed policy denial without an execution attempt or reserved exposure. The full report is `d4-evidence/20260927T015201Z-production-execution.json`. A later exact-identity recovery replay confirmed the same settled attempt and no additional send. The 01:56 UTC preflight was post-run and correctly blocks XDR reuse: the allowed invocation is already submitted and both XDRs have expired. Do not reuse them. D4 remains NO-GO for the full campaign and remaining acceptance gates. See `d4-evidence/20260927T015700Z-production-execution-recovery.json` and `d4-evidence/20260927T015643Z-production-preflight.json`.
 - At 01:45 UTC, the production Gas API-key file passed mode `600` and expected-format checks without its value being printed. Fresh read-only preflight passed 13/15 checks; both replacement XDRs had expired again. No transaction was submitted in that preflight. See `d4-evidence/20260927T014525Z-production-preflight.json`.
 - At 01:26 UTC on September 27, the operator replaced both XDRs. A fresh read-only production preflight passed all 15 checks, including XDR validity/freshness, provenance, signer, funding, Testnet, and policy eligibility. It submitted no transaction. The live policy snapshot reports sponsorship enabled; the owner subsequently confirmed it had been resumed, reconciling the earlier paused recovery readback. At that time the local Gas API key was only configured for development/localhost; the protected production key was added later. Campaign status remained NO-GO. See `d4-evidence/20260927T012447Z-production-preflight.json`.
 - At 01:15 UTC, GitHub Actions run `36280618093`, attempt `2`, produced a verified `convex-production-deployment-provenance` artifact for production Testnet commit `8b66da057e04fe25bef33ea999911513d80c101f`. The prior 01:12 UTC read-only production D2 preflight passed provenance, live-marker, signer, funding, policy, and network checks, but both replacement XDRs were expired. It also reported an enabled policy for the configured D2 project scope, conflicting with the earlier owner confirmation that Talambagv2 sponsorship was paused. No Testnet transaction was submitted. See `d4-evidence/20260927T011549Z-production-attestation-verification.json` and `d4-evidence/20260927T011156Z-production-preflight.json`.
 
-### Current delivery position — September 27, 2026
+### Historical delivery snapshots — through September 27, 2026
 
 - Managed project provisioning, encrypted custody, owner funding/faucet/activation/pause/withdrawal paths, and focused test coverage exist in the current workspace. ADR-0005 is the accepted design record. The workspace implementation is not evidence that the designated production deployment runs that revision.
 - The operator previously reported development provisioning and activation for an earlier project; no saved D4 artifact or settled sponsored receipt has been supplied for that interaction, so treat it as a setup signal only. The newest project creation and aggregate provisioning check are recorded separately below; that project's funding and activation remain unverified.
@@ -84,7 +100,7 @@ The deadline is **12 elapsed hours from kickoff**. This is a compressed delivery
 - At 15:02 UTC, after the operator updated production `VELO_GAS_D2_PROJECT_ID`, snapshot availability and deployment identity passed for Talambagv2. The preflight passed 12 checks, including signer readiness, funding, Testnet RPC, policy eligibility, denied-target exclusion, and wallet match. It remains incomplete because the provenance endpoint marks the operator-configured SHA `verified: false` and both replacement XDRs had expired. No transaction was submitted. The handler at `packages/backend/convex/http.ts` deliberately does not claim independent provenance for that marker. Obtain a trusted build/deployment attestation, generate fresh XDRs, then rerun preflight immediately before execution. See `d4-evidence/20260926T150201Z-production-preflight.json`.
 - At 15:04 UTC, evidence redaction scanning passed across 61 prior D4 JSON files; it found no recognized secret-shaped values or prohibited secret/custody fields, and historical D2/D3 hashes remain unchanged. See `d4-evidence/20260926T150419Z-evidence-redaction-scan.json`.
 
-## D1–D3 verification baseline
+## Historical D1–D3 verification baseline
 
 Review date: September 25, 2026 (Asia/Manila). Scope: SOW §§3.8–3.9, 4.1, 5.1, and 6, targeted implementation inspection, existing deterministic tests, and offline validation of saved smoke reports. This was not a new live Testnet run or a full security audit.
 
@@ -98,7 +114,7 @@ The workspace SDK manifest is `0.1.0-alpha.3`; npm publication was **not checked
 
 Source provenance changed during the review: initial HEAD was `2f79dea80677e1abe17ebdd2bfc050b930a82722` with staged user work; final observed HEAD was `9ff46a8d06b74835b814d8f7a41bbd654a93fc55`, with three pre-existing generated declaration changes. Results describe the available working tree, not a certified immutable deployment. Freeze the intended delivery revision before the campaign and rerun the acceptance gate there.
 
-### Latest local verification baseline
+### Latest local verification snapshot at that time
 
 At 06:35 UTC, the [D4 evidence index](d4-evidence/README.md) recorded 890
 direct package tests passing across 337 backend, 249 web, 71 SDK, 117 Stellar,
@@ -115,7 +131,7 @@ working tree, not a frozen immutable revision or hosted CI run.
 
 The remaining release limits are material: no frozen delivery SHA or hosted CI run; no independently verified production source/deployment provenance, dashboard/reviewer session, or live managed-custody lifecycle evidence; and no two-app campaign, three-person validation record, 50 settled transactions, or final handoff artifacts. The September 25 Sprint 1 baseline is historical and is superseded for local regression counts, but its unresolved release gates remain open. Rerun the required checks on the final frozen SHA and retain hosted CI logs before delivery.
 
-## Sprint schedule and gates
+## Original sprint schedule and gates
 
 Carl is the engineering/evidence owner. Two additional internal participants must be available for the live campaign; three wallets controlled by one person do not establish three validation users. Start hosted CI at kickoff against the candidate SHA. The schedule is elapsed time; independent tasks may overlap only when their owners and required access are already available.
 
@@ -130,7 +146,7 @@ Carl is the engineering/evidence owner. Two additional internal participants mus
 
 At the 30-minute gate, if production access/provenance, participants, or the second dApp are not ready, the 12-hour deadline is at risk; escalate those blockers before proceeding. If fewer than 50 verified successes exist at hour 8.5, prioritize completing the campaign only if all safety and provenance checks still pass. Fewer than 50 at hour 12 means D4 remains partial. Time exhaustion does not waive the second dApp, managed owner workflow, required tests, video, or merged-PR evidence. Do not manufacture weekly commits or backdate evidence to meet the SOW history targets.
 
-## Managed relayer acceptance — added for ADR-0005
+## Original managed relayer acceptance checklist — added for ADR-0005
 
 This section replaces the manual signer setup as the primary new-project path. It does not remove or migrate existing legacy relayers.
 
@@ -197,7 +213,7 @@ only until filled with observed results.
 
 Five policy demonstrations: (1) app A owner reviews and explicitly activates its managed relayer policy, then captures readback; (2) app B independently provisions/funds/activates its own project and captures readback; (3) whitelist change and restored allowed invocation; (4) hourly limit save, permitted request then deliberate quota denial; (5) daily cap save, permitted request then cap denial. Demonstrate that no active linked contracts leaves sponsorship disabled and that initial activation through generic `updatePolicy` is rejected. Use fresh otherwise-valid transactions and independent restrictive policy state so an earlier cap/whitelist failure cannot mask the intended rate-limit assertion. Restore campaign policy afterward through normal authorized controls and capture acknowledgement. Include replay after success with unchanged send count/accounting. Denials must create no execution attempt or new exposure; denied transactions have no successful explorer receipt and do not enter the 50.
 
-## Automated and deployed acceptance
+## Original automated and deployed acceptance plan
 
 Use repository scripts on the frozen release revision:
 
@@ -218,26 +234,17 @@ Map at least eight backend, five relayer, four SDK/UI, and three integration tes
 
 Use the [D3 live runbook](Velo-Instawards-Deliverable-3-Live-Validation-and-Handoff-Runbook.md) for dashboard authentication, deployment, readback, and live screenshot requirements, and [ADR-0005](../obsidian/decisions/ADR-0005-Managed-Testnet-Relayer-Custody.md) for managed custody setup, backup, rollout, and rollback. Capture real provisioning/funding/activation state, policy, balance/freshness, confirmed fees versus holds, activity and selected receipt, plus mobile usability. Reviewer access must work without sharing operator credentials. Final handoff status changes follow evidence, not code presence.
 
-## Reviewer package and definition of done
+## Reviewer handoff and completion
 
-Use the in-progress [`d4-evidence/README.md`](d4-evidence/README.md) as the reviewer entry point. It records the current local state and open gates; complete it with verified production and campaign artifacts before handoff. Required content:
+The D4 reviewer entry point is now the [completed evidence and handoff
+document](Velo-Instawards-Deliverable-4-Evidence-and-Handoff.md), with the
+[implementation record](Velo-Instawards-Deliverable-4-Implementation-Documentation.md)
+and dated artifacts in [`d4-evidence/`](d4-evidence/README.md). These records
+cover the production Testnet execution, deployment provenance, custody
+operations, integration examples, and saved validation results. Do not treat
+the historical checklists and pre-completion NO-GO snapshots above as current
+delivery status.
 
-- [ ] Public merged PR, attributable branch/commit history, full delivery SHA, and green CI/logs. Explain the D1→D4 branch lineage relative to the SOW's named branch. Main-branch merge can trigger Convex/contract deployment in current CI; account for the resulting deployment identity.
-- [ ] Actual reviewer-accessible Gas Station URL, access instructions, exact Testnet deployment/source provenance, and sanitized per-project confirmation of managed custody flag, deployment identity, and key version. Never publish keyring values or secrets.
-- [ ] New-project managed provisioning evidence from development and production: pending-to-ready state, committed public address, owner retry behavior, and safe failure/redaction. Confirm development and production use independent keyrings and that key backup/rotation instructions are present.
-- [ ] Owner lifecycle evidence for wallet funding (`CreateAccount` and existing-account `Payment`), fixed Testnet faucet/cooldown, fresh spendable balance, active-contract review/activation, pause/resume, and one small consent-bound withdrawal on a dedicated project. Include owner/editor/viewer and keyboard/failure states. Keep campaign accounts out of withdrawal validation.
-- [ ] Rollback proof that disabling provisioning blocks only new provisioning while existing managed accounts retain signing, settlement/reconciliation, recovery, and owner withdrawal.
-- [ ] Two runnable dApp integrations with source links, SDK provenance, setup, user action, and correlated receipt.
-- [ ] Three-person validation log and five successful policy setup/readback demonstrations.
-- [ ] ≥50 unique verified successful sponsored transactions, complete machine-readable manifest, all explorer URLs, and ≥5 representative receipts.
-- [ ] Correct policy/replay evidence and ≥95% success metrics with raw denominators; 100% required tests passing.
-- [ ] Live dashboard screenshots under `docs/screenshots`, clearly separated from older simulated captures.
-- [x] Developer guide titled “Adding Gasless Transactions to your Stellar dApp,” at `docs/velo-gas-station.md`, linked to the D3 integration guide. It documents managed provisioning, owner funding and explicit activation, the server-only SDK boundary, and retained manual-relayer compatibility without presenting legacy signer setup as the new-project default.
-- [ ] A 3–5 minute video: 0:00 scope; 0:30 policy/relayer; 1:15 app A execution; 2:00 app B; 2:45 explorer fee source/inner success; 3:30 telemetry, denials, and 50+ manifest; finish before 5:00.
-- [ ] Consolidated package submitted through the agreed reviewer channel, with accessible video/artifact links and final D2/D3 handoffs reconciled.
-
-Instawards documents and the vault are ignored by Git. Explicitly include reviewed sanitized artifact paths when publishing; ordinary `git status` does not prove the package is in the public PR. Never force-add the whole ignored directory.
-
-The SOW contains differing effort totals (150 engineering hours in the budget, 160 in weekly/metric totals), and its Ambassador checklist omits a D4 row. Preserve the agreement; use this explicit D4 checklist and flag administrative discrepancies at handoff without silently changing requirements.
-
-This plan creates no transactions, deployment, package publication, PR merge, or reviewer submission. D4 is **in progress** and remains partial until the evidence above exists. Do not mark D2/D3 fully closed from D4 plan edits or historical smoke reports alone.
+Instawards documents are ignored by the repository's Git rules. Include the
+reviewed paths explicitly when publishing the handoff, and never publish
+secrets, keyring values, or custody payloads.

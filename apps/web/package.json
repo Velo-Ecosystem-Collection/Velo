@@ -12,7 +12,8 @@
     "test": "node --experimental-strip-types --test features/**/*.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:gas": "playwright test --config=playwright.gas.config.ts",
-    "test:e2e:project-settings": "playwright test --config=playwright.project-settings.config.ts"
+    "test:e2e:project-settings": "playwright test --config=playwright.project-settings.config.ts",
+    "test:e2e:wallet-auth": "playwright test --config=playwright.wallet-auth.config.ts"
   },
   "dependencies": {
     "@carts1024/velo-sdk": "workspace:*",

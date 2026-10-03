@@ -11,9 +11,14 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:3201",
     trace: "retain-on-failure",
-    ...devices["iPhone 13"],
-    browserName: "chromium",
   },
+  projects: [
+    {
+      name: "android-chromium",
+      use: { ...devices["Pixel 7"], browserName: "chromium" },
+    },
+    { name: "ios-webkit", use: { ...devices["iPhone 13"], browserName: "webkit" } },
+  ],
   webServer: {
     command: "VELO_GAS_E2E_FIXTURES=1 node_modules/.bin/next dev --hostname 127.0.0.1 --port 3201",
     url: "http://127.0.0.1:3201/projects/project-gas-owner/settings",

@@ -14,10 +14,23 @@ test("create project form stays tappable and fits a narrow mobile viewport", asy
     { storageKey: GAS_E2E_STORAGE_KEY },
   );
 
-  await page.goto("/projects/new");
+  await page.goto("/dashboard");
+  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Toggle Sidebar" }).tap();
+  const mobileSidebar = page.getByRole("dialog");
+  await expect(mobileSidebar).toBeVisible();
+  await mobileSidebar.getByRole("button", { name: /Owner Gas Project/ }).tap();
+  await page.getByRole("menuitem", { name: "Create project" }).tap();
+
+  await expect(page).toHaveURL(/\/projects\/new$/);
+  await expect(mobileSidebar).toBeHidden();
   await expect(page.getByRole("heading", { name: "Create project" })).toBeVisible();
 
   const name = page.getByLabel("Project name");
+  await expect
+    .poll(() => page.evaluate(() => getComputedStyle(document.body).pointerEvents))
+    .toBe("auto");
   await name.tap();
   await expect(name).toBeFocused();
   await name.fill("Mobile project");

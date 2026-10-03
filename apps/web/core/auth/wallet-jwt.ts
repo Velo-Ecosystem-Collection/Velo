@@ -27,7 +27,11 @@ function hmacSecret() {
 }
 
 function issuer() {
-  return process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  return (
+    process.env.VELO_AUTH_ISSUER ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
 }
 
 function privateKeyPem() {

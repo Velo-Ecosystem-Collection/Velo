@@ -108,9 +108,9 @@ export function CreateProjectForm() {
   }
 
   return (
-    <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
-      <div className="flex flex-col gap-3">
-        <h1 className="text-3xl font-semibold tracking-normal">Create project</h1>
+    <section className="mx-auto grid w-full min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,24rem)]">
+      <div className="flex min-w-0 flex-col gap-3">
+        <h1 className="text-2xl font-semibold tracking-normal sm:text-3xl">Create project</h1>
         <p className="max-w-2xl text-sm text-zinc-600">
           Draft metadata is stored off-chain in Convex. The metadata hash is ready for the Sprint 3
           registry transaction.
@@ -142,7 +142,10 @@ export function CreateProjectForm() {
           </Alert>
         ) : null}
 
-        <form onSubmit={handleSubmit} className="rounded-lg border border-zinc-200 bg-white p-5">
+        <form
+          onSubmit={handleSubmit}
+          className="rounded-lg border border-zinc-200 bg-white p-4 sm:p-5"
+        >
           <div className="grid gap-5">
             <div className="grid gap-2">
               <Label htmlFor="project-name">Project name</Label>
@@ -150,6 +153,7 @@ export function CreateProjectForm() {
                 id="project-name"
                 value={name}
                 onChange={(event) => updateName(event.target.value)}
+                className="min-h-11"
                 required
               />
             </div>
@@ -160,6 +164,7 @@ export function CreateProjectForm() {
                 value={slug}
                 onChange={(event) => setSlug(slugifyProjectName(event.target.value))}
                 pattern="[a-z0-9-]+"
+                className="min-h-11"
                 required
               />
               <p className="text-xs text-zinc-500">
@@ -173,6 +178,7 @@ export function CreateProjectForm() {
                 id="project-description"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
+                className="min-h-28"
                 required
               />
             </div>
@@ -183,13 +189,23 @@ export function CreateProjectForm() {
                 type="url"
                 value={website}
                 onChange={(event) => setWebsite(event.target.value)}
+                className="min-h-11"
               />
             </div>
-            <div className="flex flex-wrap gap-3">
-              <Button type="submit" disabled={!wallet.address || !metadataHash || isSaving}>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button
+                type="submit"
+                className="min-h-11 w-full sm:w-auto"
+                disabled={!wallet.address || !metadataHash || isSaving}
+              >
                 {isSaving ? "Saving..." : "Create draft"}
               </Button>
-              <Button type="button" variant="outline" onClick={() => router.push("/dashboard")}>
+              <Button
+                type="button"
+                variant="outline"
+                className="min-h-11 w-full sm:w-auto"
+                onClick={() => router.push("/dashboard")}
+              >
                 Cancel
               </Button>
             </div>
@@ -197,7 +213,7 @@ export function CreateProjectForm() {
         </form>
       </div>
 
-      <aside className="flex flex-col gap-4 rounded-lg border border-zinc-200 bg-white p-5">
+      <aside className="flex min-w-0 flex-col gap-4 rounded-lg border border-zinc-200 bg-white p-4 sm:p-5">
         <div>
           <h2 className="text-base font-semibold tracking-normal">Metadata preview</h2>
           <p className="mt-1 text-sm text-zinc-600">

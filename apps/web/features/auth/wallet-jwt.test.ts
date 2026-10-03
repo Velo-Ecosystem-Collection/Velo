@@ -5,8 +5,13 @@ import test from "node:test";
 process.env.NEXT_PUBLIC_CONVEX_URL ??= "https://dummy.convex.cloud";
 
 const { Keypair, Transaction, Networks } = await import("@repo/stellar");
-const { createWalletChallenge, createWalletJwt, verifyWalletChallenge, walletJwks } =
-  await import("../../core/auth/wallet-jwt.ts");
+const {
+  createWalletChallenge,
+  createWalletJwt,
+  verifyWalletChallenge,
+  walletAuthConfig,
+  walletJwks,
+} = await import("../../core/auth/wallet-jwt.ts");
 
 function restoreEnv(name: string, value: string | undefined) {
   if (value === undefined) {
@@ -88,6 +93,36 @@ test("wallet JWT signing accepts an environment-provided P-256 private key", () 
     assert.equal(walletJwks().keys[0]?.crv, "P-256");
   } finally {
     restoreEnv("VELO_AUTH_JWT_PRIVATE_KEY_PEM", previousJwtKey);
+  }
+});
+
+test("web wallet JWT issuer honors the shared Convex issuer override", () => {
+  const previousJwtKey = process.env.VELO_AUTH_JWT_PRIVATE_KEY_PEM;
+  const previousIssuer = process.env.VELO_AUTH_ISSUER;
+  const previousAppUrl = process.env.NEXT_PUBLIC_APP_URL;
+  const { privateKey } = generateKeyPairSync("ec", {
+    namedCurve: "P-256",
+    privateKeyEncoding: { format: "pem", type: "pkcs8" },
+    publicKeyEncoding: { format: "pem", type: "spki" },
+  });
+  process.env.VELO_AUTH_JWT_PRIVATE_KEY_PEM = privateKey;
+  process.env.NEXT_PUBLIC_APP_URL = "http://192.168.3.26:3000";
+  process.env.VELO_AUTH_ISSUER = "https://auth.example/";
+
+  try {
+    const token = createWalletJwt(Keypair.random().publicKey());
+    const [, encodedPayload] = token.split(".");
+    const claims = JSON.parse(Buffer.from(encodedPayload!, "base64url").toString("utf8")) as {
+      iss?: string;
+    };
+
+    assert.equal(claims.iss, "https://auth.example");
+    assert.equal(walletAuthConfig().issuer, "https://auth.example");
+    assert.equal(walletAuthConfig().jwks, "https://auth.example/api/auth/wallet/jwks");
+  } finally {
+    restoreEnv("VELO_AUTH_JWT_PRIVATE_KEY_PEM", previousJwtKey);
+    restoreEnv("VELO_AUTH_ISSUER", previousIssuer);
+    restoreEnv("NEXT_PUBLIC_APP_URL", previousAppUrl);
   }
 });
 

@@ -295,9 +295,18 @@ Authentication, backend, hosted deployment, and PDAX UAT flows require additiona
 Create a project in the [Reown dashboard](https://dashboard.reown.com/), configure its
 allowed origins for your local and hosted Velo URLs, and set
 `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` in the web environment. This is a public
-project identifier, not a private API key. Set `NEXT_PUBLIC_APP_URL` to the actual
-app origin so the wallet sees matching Velo metadata. Restart development or
-rebuild/redeploy the web app after changing these build-time values.
+WalletConnect relay project identifier, not a private API key. Set
+`NEXT_PUBLIC_APP_URL` to the actual app origin so the wallet sees matching Velo
+metadata. For phone testing over Wi-Fi, add the exact LAN origin, such as
+`http://192.168.1.20:3000`, to the project's allowed origins; localhost does not
+cover a LAN IP, and scheme, host, and port must match. See the [Reown relay
+origin rules](https://docs.reown.com/walletkit/ios/cloud/relay).
+
+The signed login JWT must use the same issuer as Convex. Set `VELO_AUTH_ISSUER`
+to that value in both the web server and Convex environment. If unset, Velo uses
+`NEXT_PUBLIC_APP_URL`. Convex Cloud must receive `VELO_AUTH_JWKS` through an
+HTTPS URL or a `data:` URI; it cannot fetch a JWKS from a phone's local network.
+Restart development or rebuild/redeploy the web app after changing these values.
 
 When configured, Velo's wallet selector includes WalletConnect for Stellar
 Testnet. Without it, the existing wallet options remain available. Authentication

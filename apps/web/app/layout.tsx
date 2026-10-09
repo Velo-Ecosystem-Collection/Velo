@@ -4,6 +4,7 @@ import { WalletProvider } from "@/core/wallet/wallet-provider";
 import UiProviders from "@repo/ui/ui-providers";
 import { Analytics } from "@vercel/analytics/next";
 import localFont from "next/font/local";
+import Script from "next/script";
 
 import type { Metadata, Viewport } from "next";
 
@@ -62,6 +63,18 @@ export default function RootLayout({
             </UiProviders>
           </ConvexClientProvider>
         </WalletProvider>
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-KSXQ5MBNLK"
+          strategy="afterInteractive"
+        />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){window.dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-KSXQ5MBNLK');
+          `}
+        </Script>
         <Analytics />
       </body>
     </html>

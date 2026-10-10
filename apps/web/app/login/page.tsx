@@ -37,12 +37,12 @@ export default function LoginPage() {
   };
 
   const isConnecting = wallet.status === "connecting" || wallet.status === "initializing";
-  const isVerifyingWallet = wallet.status === "connected" && isConvexLoading;
+  const isStartingSession = wallet.status === "connected" && isConvexLoading;
   const isBusy = isConnecting || isConvexLoading || isLoading;
   const buttonLabel = isConnecting
     ? "Connecting wallet…"
-    : isVerifyingWallet
-      ? "Verify sign-in in your wallet…"
+    : isStartingSession
+      ? "Starting your Velo session…"
       : isLoading
         ? "Loading your Velo account…"
         : "Connect Wallet";
@@ -61,13 +61,10 @@ export default function LoginPage() {
                 Log in to manage developer projects, verify smart contracts, and view real-time
                 Stellar events.
               </p>
-              <ol className="list-decimal space-y-1 pt-2 pl-5 text-sm text-zinc-600">
-                <li>Approve the wallet connection so Velo can read your public address.</li>
-                <li>
-                  Approve the sign-in request to prove you control that address. It is checked by
-                  Velo and is not submitted to Stellar or charged a network fee.
-                </li>
-              </ol>
+              <p className="pt-2 text-sm text-zinc-600">
+                Approve the wallet connection once. Velo will use the approved public address to
+                start your session; there is no separate sign-in request or network fee.
+              </p>
             </div>
 
             {/* Wallet Error Alerts */}
@@ -100,10 +97,9 @@ export default function LoginPage() {
               )}
             </Button>
 
-            {isVerifyingWallet && (
+            {isStartingSession && (
               <p role="status" className="mt-3 text-center text-sm text-zinc-600">
-                Your wallet is connected. Approve Velo’s sign-in request in the wallet to finish
-                authentication.
+                Your wallet is connected. Velo is starting your session.
               </p>
             )}
 

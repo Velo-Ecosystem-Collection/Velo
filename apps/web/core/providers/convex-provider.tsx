@@ -84,7 +84,7 @@ function validTokenForWallet(
 }
 
 function useWalletConvexAuth() {
-  const { address: walletAddress, status: walletStatus, disconnect, signTransaction } = useWallet();
+  const { address: walletAddress, status: walletStatus, disconnect } = useWallet();
   const tokenRef = useRef<WalletToken | null>(null);
   const pendingPromiseRef = useRef<Promise<string | null> | null>(null);
   const requestScope = useRef(new WalletRequestScope());
@@ -115,8 +115,8 @@ function useWalletConvexAuth() {
     setTokenState(walletAddress ? readStoredConvexToken() : null);
   }, [walletAddress]);
 
-  // Pairing cannot authenticate; retain an address-bound cache until reconnect finishes.
-  // Clear it on rejection, disconnect, or an unavailable/error state.
+  // The connected wallet address identifies the session; retain its cached token while
+  // reconnecting and clear it on rejection, disconnect, or an unavailable/error state.
   useEffect(() => {
     if (
       walletStatus !== "connected" &&
@@ -164,35 +164,15 @@ function useWalletConvexAuth() {
       const isCurrent = requestScope.current.capture();
       const fetchPromise = (async () => {
         try {
-          const challengeResponse = await fetch("/api/auth/wallet/challenge", {
+          const sessionResponse = await fetch("/api/auth/wallet/session", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ address: walletAddress }),
           });
-          if (!challengeResponse.ok) {
-            throw new Error("Unable to create wallet auth challenge");
+          if (!sessionResponse.ok) {
+            throw new Error("Unable to create wallet session");
           }
-          const challenge = (await challengeResponse.json()) as {
-            challenge: string;
-          };
-          if (!isCurrent()) return null;
-          const signedTxXdr = await signTransaction(challenge.challenge);
-          if (!isCurrent()) return null;
-          const verifyResponse = await fetch("/api/auth/wallet/verify", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              address: walletAddress,
-              challenge: signedTxXdr,
-            }),
-          });
-          if (!verifyResponse.ok) {
-            const errorBody = (await verifyResponse.json().catch(() => null)) as {
-              error?: string;
-            } | null;
-            throw new Error(errorBody?.error ?? "Unable to verify wallet auth signature");
-          }
-          const authResult = (await verifyResponse.json()) as { token: string; address: string };
+          const authResult = (await sessionResponse.json()) as { token: string; address: string };
           if (!isCurrent()) return null;
           if (authResult.address !== walletAddress) throw new Error("Wallet auth address mismatch");
           const result: WalletToken = {
@@ -218,7 +198,7 @@ function useWalletConvexAuth() {
       pendingPromiseRef.current = fetchPromise;
       return fetchPromise;
     },
-    [disconnect, signTransaction, walletAddress, walletStatus],
+    [disconnect, walletAddress, walletStatus],
   );
 
   const hasValidToken = validTokenForWallet(tokenState, walletAddress);

@@ -43,11 +43,6 @@ export const StellarWalletsKit = {
       document.body.append(dialog);
     });
   },
-  async signTransaction() {
-    if (window.sessionStorage.getItem("reject-signature"))
-      throw { code: 4001, message: "User rejected signing" };
-    return { signedTxXdr: "simulated-signed-challenge" };
-  },
   async signMessage() {
     return { signedMessage: "simulated" };
   },

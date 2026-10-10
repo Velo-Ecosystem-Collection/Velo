@@ -44,6 +44,29 @@ export class VeloWalletConnectModule extends WalletConnectModule {
     }
   }
 
+  private reusableTestnetSession() {
+    return this.signClient.session.values.find((session) => {
+      try {
+        assertValidPublicKey(testnetSessionAddress(session));
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  private async activateSession(session: Parameters<typeof testnetSessionAddress>[0]) {
+    const address = assertValidPublicKey(testnetSessionAddress(session));
+    const previousTopics = wcSessionPaths.value.map((path) => path.topic);
+    wcSessionPaths.value = [{ publicKey: address, topic: session.topic }];
+    await Promise.all(
+      previousTopics
+        .filter((topic) => topic !== session.topic)
+        .map((topic) => this.closeSession(topic)),
+    );
+    return { address };
+  }
+
   override async getAddress(): Promise<{ address: string }> {
     this.cancelPairing?.();
     let cancelled = false;
@@ -66,6 +89,9 @@ export class VeloWalletConnectModule extends WalletConnectModule {
     const connect = async () => {
       await this.ready();
       if (cancelled) throw new Error("WalletConnect request cancelled.");
+      const existingSession = this.reusableTestnetSession();
+      if (existingSession) return this.activateSession(existingSession);
+
       const { uri, approval } = await this.signClient.connect({
         requiredNamespaces: {
           stellar: {
@@ -79,16 +105,9 @@ export class VeloWalletConnectModule extends WalletConnectModule {
       const approved = approval().then(async (session) => {
         try {
           if (cancelled) throw new Error("WalletConnect request cancelled.");
-          const address = assertValidPublicKey(testnetSessionAddress(session));
-          const previousTopics = wcSessionPaths.value.map((path) => path.topic);
-          wcSessionPaths.value = [{ publicKey: address, topic: session.topic }];
-          await Promise.all(
-            previousTopics
-              .filter((topic) => topic !== session.topic)
-              .map((topic) => this.closeSession(topic)),
-          );
+          const result = await this.activateSession(session);
           if (cancelled) throw new Error("WalletConnect request cancelled.");
-          return { address };
+          return result;
         } catch (error) {
           await this.closeSession(session.topic);
           throw error;

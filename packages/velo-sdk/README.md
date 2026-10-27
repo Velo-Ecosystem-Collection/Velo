@@ -3,17 +3,21 @@
 The official Velo SDK for Node.js and modern JavaScript environments.
 
 > [!NOTE]
-> This package is currently in **Alpha** (`0.1.0-alpha.2`) and is meant for server-side environments only.
+> This package is currently in **Alpha** (`0.1.0-alpha.4`) and is meant for server-side environments only.
 
 ## Installation
 
 ```bash
-npm install @carts1024/velo-sdk
+npm install @carts1024/velo-sdk@alpha
 # or
-pnpm add @carts1024/velo-sdk
+pnpm add @carts1024/velo-sdk@alpha
 # or
-yarn add @carts1024/velo-sdk
+yarn add @carts1024/velo-sdk@alpha
 ```
+
+Version `0.1.0-alpha.4` includes Gas Station support and the corrected Velo
+API host default. Install it with `@alpha` or pin `@0.1.0-alpha.4`; the
+`latest` dist-tag remains on `0.1.0-alpha.2`.
 
 ## Getting Started
 
@@ -51,21 +55,21 @@ const paymentIntent = await velo.paymentIntents.retrieve("pi_12345");
 console.log(`Payment status: ${paymentIntent.status}`);
 ```
 
-### Reserving Gas sponsorship (unreleased source addition)
+### Reserving Gas sponsorship
 
-The current source checkout also exposes `velo.gas.sponsor()` for trusted
-server code. This addition is not in the published `0.1.0-alpha.2` package;
-the package version remains unchanged. Configure the deployed Velo URL
-explicitly and keep the API key, caller authorization, signed XDR, and
-operation key on the server:
+`velo.gas.sponsor()` reserves fee exposure for a user-signed Testnet Soroban
+transaction. It is included in `0.1.0-alpha.4`. Gas Station is an alpha
+Testnet feature; configure the deployed Velo URL explicitly and keep the API
+key, caller authorization, signed XDR, and operation key on the server:
 
 ```ts
 import { Velo } from "@carts1024/velo-sdk";
 
 const velo = new Velo({
-  apiKey: process.env.VELO_API_KEY!,
-  // Replace the SOW target with the verified deployment URL for your environment.
-  baseUrl: process.env.VELO_BASE_URL ?? "https://www.velo-build.dev",
+  apiKey: process.env.VELO_GAS_API_KEY!,
+  // Keep Gas configuration separate from Checkout.
+  baseUrl: process.env.VELO_GAS_BASE_URL ?? "https://www.velo-build.dev",
+  environment: "testnet",
 });
 
 // Authorize the caller in your own server/session layer before this point.
@@ -86,10 +90,9 @@ automatic retry. If sponsorship times out before an identity is returned,
 retry the exact signed XDR with the same idempotency key to recover the
 original reservation. Do not create or sign a new operation automatically.
 Submission, status retrieval, composed `sponsorAndSubmit()`, and bounded
-`waitForResult()` workflows are unreleased source additions; the published
-`0.1.0-alpha.2` package does not include them.
+`waitForResult()` are also included in this release.
 
-### Composing sponsorship and submission (unreleased source addition)
+### Composing sponsorship and submission
 
 `sponsorAndSubmit()` is a server-only convenience for a trusted application
 server that already has the user's signed Testnet Soroban XDR. Its exact
@@ -128,11 +131,11 @@ Only `status: "succeeded"` indicates success. The helper returns the first
 validated submission DTO and does not wait for ledger settlement. Use
 `waitForResult()` when the server-side caller wants bounded observation.
 
-### Submitting a sponsored transaction (unreleased source addition)
+### Submitting a sponsored transaction
 
-The current source checkout also exposes `velo.gas.submit()` for the trusted
-server handoff. Keep the request ID and inner transaction hash from the
-reservation before sending the original user-signed Testnet XDR:
+`velo.gas.submit()` exposes the trusted server handoff. Keep the request ID and
+inner transaction hash from the reservation before sending the original
+user-signed Testnet XDR:
 
 ```ts
 const identity = {
@@ -161,7 +164,7 @@ result (`claimed`, `submission_unknown`, or `submitted`) is not a successful
 transaction; `failed` and `cancelled` are terminal non-success results even
 when the HTTP response is `200`.
 
-### Manually recovering Gas status (unreleased source addition)
+### Manually recovering Gas status
 
 After a local timeout, disconnect, or cancellation, do not infer chain
 cancellation and do not submit the XDR again. Recover with the identity saved
@@ -183,7 +186,7 @@ inner/outer hash distinction, and returns the same six execution states. Keep
 the identity as a safe recovery record; never persist the signed XDR, API key,
 or relayer credentials in browser storage or logs.
 
-### Bounded Gas result observation (unreleased source addition)
+### Bounded Gas result observation
 
 `waitForResult()` is an opt-in, server-side observer built on repeated
 identity-only `getStatus()` calls:
@@ -295,18 +298,18 @@ expiry or reconciliation.
 
 ### Dashboard Gas Station guidance
 
-The project integration page provides two copyable, server-side snippets:
-one for `sponsorAndSubmit()` and one for identity-only status recovery.
-The displayed source is kept in
-[apps/web/features/projects/project-integration-guidance.ts](../../apps/web/features/projects/project-integration-guidance.ts)
-and is compiled and executed against this workspace package entry point by
-[project-integration-guidance.test.ts](../../apps/web/features/projects/project-integration-guidance.test.ts).
+The Velo project integration page provides two copyable, server-side snippets:
+one for `sponsorAndSubmit()` and one for identity-only status recovery. The
+snippets are maintained in `apps/web/features/projects/project-integration-guidance.ts`
+and covered by `apps/web/features/projects/project-integration-guidance.test.ts`.
 
-Set both variables explicitly in the consuming server environment:
+Set the Gas-scoped key and Gas Testnet origin separately from Checkout in the
+consuming server environment:
 
 ```bash
 VELO_GAS_API_KEY=replace_with_a_gas_scoped_project_key
-VELO_BASE_URL=https://replace-with-your-velo-deployment.example
+VELO_GAS_ENV=testnet
+VELO_GAS_BASE_URL=https://www.velo-build.dev
 ```
 
 The snippets never interpolate project-page API-key data into client code.
@@ -316,21 +319,38 @@ consuming server. On `VeloGasSubmissionUnknownError`, persist and reconcile
 `error.recovery` with `velo.gas.getStatus()`; do not send the signed XDR again.
 `waitForResult()` is an optional bounded identity-only observer.
 
+New projects queue a managed Testnet relayer automatically when the Velo
+deployment has managed custody configured. The project owner funds the
+generated address, checks its verified balance, reviews the suggested
+10-XLM/day and 100-requests-per-wallet/hour limits with active linked
+contracts, and explicitly enables sponsorship. Relayer creation does not
+activate sponsorship. Existing manually configured relayers remain supported;
+Velo never replaces an existing account automatically. Managed keys are
+stored as authenticated ciphertext in Convex, and the trusted backend can
+decrypt them.
+
+Relayer provisioning, funding, activation, pause, and withdrawal are Velo
+dashboard/backend operations. They do not add SDK methods or change the Gas
+HTTP routes consumed by this package. The SDK continues to accept a Gas-scoped
+Testnet key and call the same sponsor and submit/status endpoints.
+
 Only `succeeded` is success. `claimed`, `submission_unknown`, and
 `submitted` remain unresolved; `failed` and `cancelled` are terminal
 non-success results. `actualFeeStroops: null` remains unknown.
 
-The executable [Next.js App Router Gas example](../../examples/nextjs-app-router/)
+The executable Next.js App Router Gas example in `examples/nextjs-app-router/`
 contains the full route, streamed-input bound, and redacted response pattern.
 Its bearer token is a local demo caller guard, not production authentication;
 the example has no durable operation store or later status endpoint. The
-[D3 integration guide](../../docs/instawards/Velo-Instawards-Deliverable-3-Integration-Guide.md)
-has workspace setup and recovery guidance.
+`docs/instawards/Velo-Instawards-Deliverable-3-Integration-Guide.md` has
+workspace setup and recovery guidance.
 
-This guidance was inspected against source revision
-`c8dedeff0a6d885c82126a7a281245a74ad4a1eb`. The package remains
-`0.1.0-alpha.2`; the Gas source additions are not claimed as an npm
-publication or deployed acceptance.
+The package is published as ESM JavaScript with TypeScript declarations and a
+public `alpha` dist-tag. The Gas Station methods are Testnet-only during alpha
+and require an authorized project API key on a trusted server. Use a
+**Gas Station · Testnet** key
+(`tg_test_...`) for Gas methods; a newly generated general API key is not
+authorized for Gas endpoints.
 
 ### Dual-Anchor Routing (V2)
 
@@ -377,16 +397,16 @@ Velo signs webhook events sent to your endpoints using HMAC-SHA256. Webhook veri
 Current events use `version: "1"`. After HMAC verification, the SDK normalizes a legacy event with
 no `version` to v1 and rejects an explicit unsupported version. Signature validation happens before
 the unsupported-version error, preventing unauthenticated payloads from becoming a version oracle.
-Evidence: [`verifyWebhookSignature normalizes a signed legacy event to version 1`](src/webhooks.test.ts)
-and [`verifyWebhookSignature verifies HMAC before rejecting unsupported versions`](src/webhooks.test.ts).
+The SDK test suite covers legacy normalization and unsupported-version handling after signature
+verification.
 
 The typed union includes payment, project, contract, transaction, settlement quote/trade/withdrawal,
-and `provider.pdax.event.received` events. Settlement/provider shape validation is covered by
-[`verifyWebhookSignature accepts settlement and provider event payloads`](src/webhooks.test.ts).
+and `provider.pdax.event.received` events. The SDK test suite covers settlement and provider event
+shape validation.
 
 Delivery IDs represent durable, fenced deliveries. Consumers must still deduplicate by
 `x-velo-delivery`: Velo provides **exactly-once observable transitions**, not exactly-once
-transport. Invalid signatures fail closed, as covered by [`verifyWebhookSignature rejects signature mismatch`](src/webhooks.test.ts).
+transport. Invalid signatures fail closed.
 
 > [!IMPORTANT]
 > Webhook signature verification requires the **raw, unparsed request body**. Do not parse the request body as JSON prior to calling verify.
@@ -506,11 +526,11 @@ app.post("/webhooks", express.raw({ type: "application/json" }), async (req, res
 
 Configure the following environment variables in your server environments:
 
-| Variable              | Required          | Description                                                                                                                                                                               |
-| --------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `VELO_API_KEY`        | **Yes**           | Your Velo project API key (e.g. `tk_live_...` or `tk_test_...`).                                                                                                                          |
-| `VELO_WEBHOOK_SECRET` | Only for Webhooks | Used to verify signature of incoming webhook events.                                                                                                                                      |
-| `VELO_BASE_URL`       | No                | Overrides the default Velo API endpoint. SDK defaults are `https://api.velo.pay` for production, `https://api.testnet.velo.pay` for testnet, and `http://localhost:3000` for development. |
+| Variable              | Required          | Description                                                                                                                                                                                                                                        |
+| --------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `VELO_API_KEY`        | **Yes**           | Your Velo project API key (e.g. `tk_live_...` or `tk_test_...`).                                                                                                                                                                                   |
+| `VELO_WEBHOOK_SECRET` | Only for Webhooks | Used to verify signature of incoming webhook events.                                                                                                                                                                                               |
+| `VELO_BASE_URL`       | No                | Overrides the default Velo API endpoint. Production and Testnet currently use `https://www.velo-build.dev`; development uses `http://localhost:3000`. Environment selection chooses the API origin and does not itself verify the Stellar network. |
 
 ---
 
@@ -580,7 +600,7 @@ production availability evidence.
 ## Testnet vs Mainnet & Alpha Limitations
 
 > [!WARNING]
-> This SDK is currently in **Alpha** (`0.1.0-alpha.2`) and subject to changes.
+> This SDK is currently in **Alpha** (`0.1.0-alpha.4`) and subject to changes.
 >
 > - **Stellar Testnet Only**: During the alpha phase, all transactions and checkout sessions are routed through the Stellar Testnet. Mainnet is currently unsupported.
 > - **ESM-Only**: The package uses ESM exports and requires `"type": "module"` or an ESM-compatible bundler/environment. CommonJS `require()` is not supported directly.

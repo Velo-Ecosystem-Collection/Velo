@@ -35,6 +35,8 @@ export const getPublishedByKey = query({
       .withIndex("by_public_key", (q) => q.eq("publicKey", args.publicKey))
       .unique();
     if (!config) return { status: "not_found" as const };
+    const project = await ctx.db.get(config.projectId);
+    if (!project || project.retiredAt !== undefined) return { status: "not_found" as const };
     if (!config.activePublicationId) {
       return { status: config.enabled ? ("unpublished" as const) : ("disabled" as const) };
     }

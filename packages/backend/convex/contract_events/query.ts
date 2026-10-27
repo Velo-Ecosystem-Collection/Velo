@@ -62,6 +62,7 @@ export const listPublicBySlug = query({
 
     if (
       !project ||
+      project.retiredAt !== undefined ||
       project.status !== "registered" ||
       project.registryProjectId === undefined ||
       !METADATA_HASH_PATTERN.test(project.metadataHash.trim())
@@ -125,7 +126,7 @@ export const getPollTarget = internalQuery({
       args.ownerSubject,
     );
 
-    if (project.status !== "registered") {
+    if (project.retiredAt !== undefined || project.status !== "registered") {
       throw new Error("Only registered projects can poll contract events");
     }
 
@@ -151,10 +152,20 @@ export const listScheduledTargets = internalQuery({
     const activeContracts = await ctx.db
       .query("projectContracts")
       .withIndex("by_status", (q) => q.eq("status", "active"))
-      .take(MAX_SCHEDULED_CONTRACTS);
+      .collect();
+    const projectIds = [...new Set(activeContracts.map((contract) => contract.projectId))];
+    const activeProjectIds = new Set(
+      (await Promise.all(projectIds.map((projectId) => ctx.db.get(projectId)))).flatMap((project) =>
+        project && project.retiredAt === undefined && project.status === "registered"
+          ? [project._id]
+          : [],
+      ),
+    );
     const contractIdsByProject = new Map<ProjectId, string[]>();
 
-    for (const contract of activeContracts) {
+    for (const contract of activeContracts
+      .filter((candidate) => activeProjectIds.has(candidate.projectId))
+      .slice(0, MAX_SCHEDULED_CONTRACTS)) {
       const contractIds = contractIdsByProject.get(contract.projectId) ?? [];
       if (contractIds.length < 20) {
         contractIds.push(contract.contractId);
@@ -168,7 +179,7 @@ export const listScheduledTargets = internalQuery({
       MAX_SCHEDULED_PROJECTS,
     )) {
       const project = await ctx.db.get(projectId);
-      if (!project || project.status !== "registered") {
+      if (!project || project.retiredAt !== undefined || project.status !== "registered") {
         continue;
       }
 
@@ -191,7 +202,7 @@ export const getPollTargetInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     const project = await ctx.db.get(args.projectId);
-    if (!project || project.status !== "registered") {
+    if (!project || project.retiredAt !== undefined || project.status !== "registered") {
       throw new Error("Only registered projects can poll contract events");
     }
 

@@ -24,7 +24,7 @@ async function createProject(
 ) {
   const owner = asWallet(t, OWNER);
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
-    name: "Dashboard Merchant",
+    name: `Dashboard Merchant ${options.slug}`,
     slug: options.slug,
     description: "Merchant payment operations",
     metadataJson: "{}",

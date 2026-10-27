@@ -1,0 +1,134 @@
+{
+  "artifact": "velo_gas_d4_focused_rollback_regressions",
+  "recordedAtUtc": "2026-09-26T10:00:34Z",
+  "branch": "instawards/gas-station-deliverable-4",
+  "head": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+  "workingTreeFrozen": false,
+  "checks": [
+    {
+      "command": "./node_modules/.bin/vitest run convex/tests/apiKey.test.ts convex/tests/gas/authorization.test.ts convex/tests/gas/relayer.test.ts convex/tests/gas/custody_inventory.test.ts convex/tests/gas/custody_provisioning.test.ts convex/tests/payAccessSync.test.ts",
+      "workingDirectory": "packages/backend",
+      "recordedAtUtc": "2026-09-26T09:53:12Z",
+      "testFilesPassed": 6,
+      "testsPassed": 33,
+      "testsFailed": 0
+    },
+    {
+      "command": "node --experimental-strip-types --test features/projects/project-api-keys.test.ts",
+      "workingDirectory": "apps/web",
+      "recordedAtUtc": "2026-09-26T09:53:12Z",
+      "testsPassed": 8,
+      "testsFailed": 0
+    },
+    {
+      "command": "node --experimental-strip-types --test scripts/gas-d4-campaign.test.mjs",
+      "workingDirectory": ".",
+      "recordedAtUtc": "2026-09-26T09:53:12Z",
+      "testsPassed": 10,
+      "testsFailed": 0
+    },
+    {
+      "command": "./node_modules/.bin/vitest run",
+      "workingDirectory": "packages/backend",
+      "recordedAtUtc": "2026-09-26T09:52:29Z",
+      "testFilesPassed": 46,
+      "testsPassed": 341,
+      "testsFailed": 0
+    },
+    {
+      "command": "node --experimental-strip-types --test features/**/*.test.ts",
+      "workingDirectory": "apps/web",
+      "recordedAtUtc": "2026-09-26T09:52:29Z",
+      "testsPassed": 251,
+      "testsFailed": 0
+    },
+    {
+      "command": "./node_modules/.bin/oxlint packages/backend/convex/tests/gas/relayer.test.ts packages/backend/convex/tests/gas/custody_provisioning.test.ts",
+      "workingDirectory": ".",
+      "recordedAtUtc": "2026-09-26T09:36:34Z",
+      "exitCode": 0
+    },
+    {
+      "command": "./node_modules/.bin/oxfmt --check packages/backend/convex/tests/gas/relayer.test.ts packages/backend/convex/tests/gas/custody_provisioning.test.ts",
+      "workingDirectory": ".",
+      "recordedAtUtc": "2026-09-26T09:36:34Z",
+      "exitCode": 0
+    },
+    {
+      "command": "./node_modules/.bin/oxlint apps/web/features/projects/project-api-keys.tsx apps/web/features/projects/project-api-keys.test.ts",
+      "workingDirectory": ".",
+      "exitCode": 0
+    },
+    {
+      "command": "./node_modules/.bin/oxfmt --check apps/web/features/projects/project-api-keys.tsx apps/web/features/projects/project-api-keys.test.ts",
+      "workingDirectory": ".",
+      "exitCode": 0
+    }
+  ],
+  "totalTestsPassed": 51,
+  "totalTestsFailed": 0,
+  "backendPackageSuite": {
+    "testFilesPassed": 46,
+    "testsPassed": 341,
+    "testsFailed": 0
+  },
+  "webPackageSuite": {
+    "testsPassed": 251,
+    "testsFailed": 0
+  },
+  "additionalChecks": [
+    {
+      "command": "../node_modules/.bin/tsc --noEmit -p tsconfig.json",
+      "workingDirectory": "packages/backend/convex",
+      "exitCode": 0
+    },
+    {
+      "command": "./node_modules/.bin/tsc --noEmit -p apps/web/tsconfig.json",
+      "workingDirectory": ".",
+      "exitCode": 0
+    },
+    {
+      "command": "node --experimental-strip-types scripts/gas-d2-smoke.mjs --mode verify --report docs/instawards/Velo-Instawards-Deliverable-2-Smoke-Run.json",
+      "workingDirectory": ".",
+      "result": "passed_offline"
+    },
+    {
+      "command": "node --experimental-strip-types scripts/gas-d3-smoke.mjs --mode verify --report docs/instawards/Velo-Instawards-Deliverable-3-Smoke-Run.json",
+      "workingDirectory": ".",
+      "result": "passed_offline"
+    },
+    {
+      "command": "shasum -a 256 docs/instawards/Velo-Instawards-Deliverable-2-Smoke-Run.json docs/instawards/Velo-Instawards-Deliverable-3-Smoke-Run.json",
+      "workingDirectory": ".",
+      "sha256": [
+        "5e50a10cc5b68a24f69b5eb6e1319dd10c4f859813bfa7bb4d214a0950e66ee9",
+        "443f6fe3b9150b6823f408dcddcb12a0a141f294c87e2bacd9cd8cce5dbe8bbb"
+      ],
+      "unchangedFromPriorEvidence": true,
+      "reportsWrittenByVerification": false
+    },
+    {
+      "command": "./node_modules/.bin/next build",
+      "workingDirectory": "apps/web",
+      "recordedAtUtc": "2026-09-26T10:00:34Z",
+      "engine": "Turbopack",
+      "exitCode": 0
+    },
+    {
+      "command": "git diff --check",
+      "workingDirectory": ".",
+      "exitCode": 0
+    }
+  ],
+  "scope": "Focused API-key authorization, Gas authorization, relayer, custody inventory and provisioning, rollback signing/provisioning, PayAccess duplicate-mapping, project API-key UI, and D4 campaign recorder regressions. The 51-test focused set and complete backend and web package suites were rerun on the final local test edits.",
+  "rollbackCoverage": [
+    "With provisioning disabled, an existing managed relayer still decrypts and signs through the trusted signer path.",
+    "With provisioning disabled and a valid keyring present, a new owner provisioning attempt fails with the sanitized provisioning_disabled state and publishes no address while the project remains available."
+  ],
+  "testReliabilityFix": "The project-creation test now explicitly waits for its queued provisioning action before asserting Ready, removing a scheduling race surfaced by the first full-suite run.",
+  "limitations": [
+    "Live rollback behavior, reconciliation, execution recovery, withdrawal access, and ledger outcomes were not tested in production.",
+    "This focused run does not replace complete package suites or hosted CI.",
+    "The working tree is not frozen; no production deployment or Testnet transaction was performed."
+  ]
+}

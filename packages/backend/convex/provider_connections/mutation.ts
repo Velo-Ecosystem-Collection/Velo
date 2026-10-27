@@ -16,6 +16,10 @@ export const upsertInternal = internalMutation({
     tokenExpiresAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const project = await ctx.db.get(args.projectId);
+    if (!project || project.retiredAt !== undefined) {
+      throw new Error("Project is retired or unavailable");
+    }
     const existing = await ctx.db
       .query("providerConnections")
       .withIndex("by_project_provider", (q) =>

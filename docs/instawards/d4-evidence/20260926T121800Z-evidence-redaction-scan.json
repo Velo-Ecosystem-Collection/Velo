@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "checkedAtUtc": "2026-09-26T12:18:00Z",
+  "scope": "docs/instawards/d4-evidence/*.json present before this scan report was written",
+  "filesChecked": 47,
+  "jsonParseErrors": 0,
+  "recognizedSecretShapedValuesFound": false,
+  "prohibitedSecretOrCustodyFieldNamesFound": false,
+  "historicalD2D3ReportsUnchanged": true,
+  "result": "passed"
+}

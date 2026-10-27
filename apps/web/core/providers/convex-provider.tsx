@@ -13,6 +13,7 @@ import {
 } from "../auth/convex-auth";
 import { WALLET_AUTH_KEY_ID } from "../auth/wallet-auth-constants";
 import { env } from "../config/env";
+import { WalletRequestScope } from "../wallet/wallet-connect-policy";
 
 const convex = new ConvexReactClient(env.NEXT_PUBLIC_CONVEX_URL!, {
   initialAuthTokenReuse: true,
@@ -83,23 +84,46 @@ function validTokenForWallet(
 }
 
 function useWalletConvexAuth() {
-  const { address: walletAddress, status: walletStatus, disconnect, signTransaction } = useWallet();
+  const { address: walletAddress, status: walletStatus, disconnect } = useWallet();
   const tokenRef = useRef<WalletToken | null>(null);
   const pendingPromiseRef = useRef<Promise<string | null> | null>(null);
+  const requestScope = useRef(new WalletRequestScope());
+  const identity = `${walletStatus}:${walletAddress ?? ""}`;
+  const previousIdentity = useRef(identity);
+  if (previousIdentity.current !== identity) {
+    previousIdentity.current = identity;
+    requestScope.current.invalidate();
+    tokenRef.current = null;
+    pendingPromiseRef.current = null;
+  }
   const pathname = usePathname();
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
 
   const [tokenState, setTokenState] = useState<WalletToken | null>(null);
 
+  useEffect(
+    () => () => {
+      requestScope.current.invalidate();
+      pendingPromiseRef.current = null;
+    },
+    [],
+  );
+
   // Sync tokenState with sessionStorage on mount / wallet address change
   useEffect(() => {
     setTokenState(walletAddress ? readStoredConvexToken() : null);
   }, [walletAddress]);
 
-  // Clear token if explicitly disconnected or rejected
+  // The connected wallet address identifies the session; retain its cached token while
+  // reconnecting and clear it on rejection, disconnect, or an unavailable/error state.
   useEffect(() => {
-    if (walletStatus === "disconnected" || walletStatus === "rejected") {
+    if (
+      walletStatus !== "connected" &&
+      walletStatus !== "initializing" &&
+      walletStatus !== "stale" &&
+      walletStatus !== "connecting"
+    ) {
       tokenRef.current = null;
       pendingPromiseRef.current = null;
       writeStoredConvexToken(null);
@@ -109,7 +133,7 @@ function useWalletConvexAuth() {
 
   const fetchAccessToken = useCallback(
     async ({ forceRefreshToken }: { forceRefreshToken: boolean }) => {
-      if (walletStatus === "initializing" || walletStatus === "connecting") {
+      if (walletStatus !== "connected") {
         return null;
       }
 
@@ -137,35 +161,20 @@ function useWalletConvexAuth() {
         return pendingPromiseRef.current;
       }
 
+      const isCurrent = requestScope.current.capture();
       const fetchPromise = (async () => {
         try {
-          const challengeResponse = await fetch("/api/auth/wallet/challenge", {
+          const sessionResponse = await fetch("/api/auth/wallet/session", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ address: walletAddress }),
           });
-          if (!challengeResponse.ok) {
-            throw new Error("Unable to create wallet auth challenge");
+          if (!sessionResponse.ok) {
+            throw new Error("Unable to create wallet session");
           }
-          const challenge = (await challengeResponse.json()) as {
-            challenge: string;
-          };
-          const signedTxXdr = await signTransaction(challenge.challenge);
-          const verifyResponse = await fetch("/api/auth/wallet/verify", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              address: walletAddress,
-              challenge: signedTxXdr,
-            }),
-          });
-          if (!verifyResponse.ok) {
-            const errorBody = (await verifyResponse.json().catch(() => null)) as {
-              error?: string;
-            } | null;
-            throw new Error(errorBody?.error ?? "Unable to verify wallet auth signature");
-          }
-          const authResult = (await verifyResponse.json()) as { token: string; address: string };
+          const authResult = (await sessionResponse.json()) as { token: string; address: string };
+          if (!isCurrent()) return null;
+          if (authResult.address !== walletAddress) throw new Error("Wallet auth address mismatch");
           const result: WalletToken = {
             ...authResult,
             keyId: WALLET_AUTH_KEY_ID,
@@ -175,19 +184,21 @@ function useWalletConvexAuth() {
           setTokenState(result);
           return result.token;
         } catch {
+          if (!isCurrent()) return null;
+          tokenRef.current = null;
           writeStoredConvexToken(null);
           setTokenState(null);
-          disconnect();
+          void disconnect().catch(() => {});
           return null;
         } finally {
-          pendingPromiseRef.current = null;
+          if (isCurrent()) pendingPromiseRef.current = null;
         }
       })();
 
       pendingPromiseRef.current = fetchPromise;
       return fetchPromise;
     },
-    [disconnect, signTransaction, walletAddress, walletStatus],
+    [disconnect, walletAddress, walletStatus],
   );
 
   const hasValidToken = validTokenForWallet(tokenState, walletAddress);

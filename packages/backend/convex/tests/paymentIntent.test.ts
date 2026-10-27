@@ -581,7 +581,7 @@ test("payment anchor resolution precedence and mismatch rejections", async () =>
   // Helper to generate scoped keys
   const createProjectWithAnchor = async (slug: string, defaultAnchor?: "inhouse" | "pdax") => {
     const projectId = await owner.mutation(api.projects.mutation.createDraft, {
-      name: "Anchor Test Project",
+      name: `Anchor Test Project ${slug}`,
       slug,
       description: "Testing payment anchors",
       metadataJson: "{}",

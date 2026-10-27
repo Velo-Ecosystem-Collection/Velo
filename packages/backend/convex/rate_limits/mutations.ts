@@ -4,6 +4,7 @@ import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
 import { env, internalMutation, mutation } from "../_generated/server";
+import { canUseGeneralApi } from "../api_keys/helpers";
 import { recordMetric } from "../telemetry_outbox/helpers";
 
 // One transactional bucket guarantees the advertised global capacity. Random
@@ -158,7 +159,9 @@ export const consume = mutation({
       .query("apiKeys")
       .withIndex("by_key_hash", (q) => q.eq("keyHash", args.apiKeyHash))
       .unique();
-    if (!apiKey || apiKey.revoked) return { authorized: false as const };
+    if (!apiKey || apiKey.revoked || !canUseGeneralApi(apiKey)) {
+      return { authorized: false as const };
+    }
     return {
       authorized: true as const,
       ...(await consumePaymentRateLimits(ctx, args.apiKeyHash, apiKey.projectId)),
@@ -180,6 +183,7 @@ export const consumeAuthorized = internalMutation({
     if (
       !apiKey ||
       apiKey.revoked ||
+      !canUseGeneralApi(apiKey) ||
       apiKey.keyHash !== args.apiKeyHash ||
       apiKey.projectId !== args.projectId ||
       !project ||

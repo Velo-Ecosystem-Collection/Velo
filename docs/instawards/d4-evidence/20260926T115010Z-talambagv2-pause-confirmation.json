@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "recordedAtUtc": "2026-09-26T11:50:10Z",
+  "projectAlias": "Talambagv2",
+  "aliasCorrection": "Earlier D4 notes used Talmbag; use Talambagv2 for the project discussed in this status thread.",
+  "ownerReportedBalance": "fresh_verified",
+  "ownerReportedSponsorship": "paused",
+  "pauseConfirmationSource": "owner_reported_dashboard_status",
+  "productionCustodyRowMappedToProject": false,
+  "deployedSourceProvenance": "unverified",
+  "productionMutationByAssistant": false,
+  "testnetTransactionByAssistant": false,
+  "decision": "NO_GO until custody mapping and deployed source provenance are verified."
+}

@@ -1,0 +1,40 @@
+{
+  "capturedAt": "2026-09-26T06:22:52Z",
+  "revision": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+  "workingTreeDirty": true,
+  "tests": {
+    "backend": { "status": "passed", "count": 336 },
+    "web": { "status": "passed", "count": 249 },
+    "sdk": { "status": "passed", "count": 71 },
+    "stellar": { "status": "passed", "count": 117 },
+    "observability": { "status": "passed", "count": 9 },
+    "nextjsExample": { "status": "passed", "count": 18 },
+    "expressExample": { "status": "passed", "count": 15 },
+    "d2D3AndCampaignRecorder": { "status": "passed", "count": 35 }
+  },
+  "typechecks": {
+    "convex": "passed",
+    "web": "passed",
+    "sdkBuild": "passed",
+    "stellar": "passed",
+    "observability": "passed",
+    "nextjsExample": "passed",
+    "expressExample": "passed"
+  },
+  "builds": {
+    "sdk": "passed",
+    "expressExample": "passed",
+    "nextjsExample": "passed",
+    "web": "passed with local loopback permission and local pnpm-store module resolution",
+    "workspacePnpmBuild": "blocked by package-manager identity verification"
+  },
+  "checks": {
+    "repositoryOxlint": "passed with five warnings in unchanged scripts/observability-assets.test.mjs",
+    "selectedChangedSourceFormatting": "39 of 40 passed; project-integration.tsx retains its known baseline class-order difference",
+    "gitDiffCheck": "passed",
+    "historicalD2D3Hashes": "unchanged"
+  },
+  "liveNetworkUsed": false,
+  "testnetTransactionSubmitted": false,
+  "productionDeploymentPerformed": false
+}

@@ -1,0 +1,25 @@
+{
+  "artifact": "velo_gas_d4_production_owner_panel_readiness_observation",
+  "recordedAtUtc": "2026-09-26T09:23:45Z",
+  "environment": "production",
+  "projectLabel": "Talmbag",
+  "observation": {
+    "relayerStatus": "ready",
+    "addressVisible": true,
+    "balanceStatus": "fresh_verified_balance_reported",
+    "sponsorshipEnabled": true,
+    "source": "operator_reported_project_gas_panel",
+    "independentlyVerified": false
+  },
+  "safety": {
+    "addressCaptured": false,
+    "balanceAmountCaptured": false,
+    "keyMaterialCaptured": false,
+    "testnetTransactionSubmitted": false
+  },
+  "limitations": [
+    "The production aggregate omits project identifiers, so it cannot be proven that Talmbag corresponds to the dev-tagged custody row.",
+    "The reported balance amount and a maximum campaign spend budget were not provided, so campaign funding sufficiency is unknown.",
+    "The status report does not independently verify signer decryption or a settled sponsored transaction."
+  ]
+}

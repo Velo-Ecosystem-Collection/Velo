@@ -18,7 +18,7 @@ test("every public route method uses the shared telemetry boundary", () => {
   for (const file of files) {
     const source = readFileSync(file, "utf8");
     const count = [
-      ...source.matchAll(/export (?:async function|const) (GET|POST|PUT|PATCH|DELETE)/g),
+      ...source.matchAll(/export (?:async function|const) (GET|POST|PUT|PATCH|DELETE|OPTIONS)/g),
     ].length;
     methods += count;
     assert.ok(

@@ -9,7 +9,7 @@ const MAX_SAFE_INTEGER_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
 const XLM_AMOUNT_PATTERN = /^\d+(?:\.\d{1,7})?$/;
 const NON_NEGATIVE_INTEGER_PATTERN = /^\d+$/;
 const XLM_MAX_VALUE = "922337203685.4775807";
-const MAX_ALLOWED_CONTRACT_IDS = 20;
+export const MAX_ALLOWED_CONTRACT_IDS = 20;
 export const GAS_POLICY_CAP_ERROR_CODE = "daily_cap_below_effective_usage" as const;
 export const GAS_RELAYER_BALANCE_MAX_AGE_MS = 5 * 60 * 1_000;
 export const GAS_RELAYER_LOCAL_COOLDOWN_MS = 30 * 1_000;
@@ -17,6 +17,9 @@ export const GAS_RELAYER_LOCAL_COOLDOWN_MS = 30 * 1_000;
 export type GasRelayerSnapshot = Exclude<
   FunctionReturnType<typeof api.gas.queries.getRelayerAccount>,
   null
+>;
+export type GasRelayerProvisioningSnapshot = FunctionReturnType<
+  typeof api.gas.queries.getProvisioningStatus
 >;
 export type GasRelayerStatus = GasRelayerSnapshot["status"];
 export type GasRelayerDraft = {
@@ -42,6 +45,7 @@ export type GasRelayerValidationResult =
 export type GasLogSnapshot = FunctionReturnType<
   typeof api.gas.queries.listLogsPage
 >["page"][number];
+export type GasLogPage = FunctionReturnType<typeof api.gas.queries.listLogsPage>;
 export type GasExecutionDetailSnapshot = Exclude<
   FunctionReturnType<typeof api.gas.queries.getExecutionDetail>,
   null
@@ -128,6 +132,54 @@ export function getGasExplorerLink(
 /** Keep an absent fee visibly unknown while preserving exact zero and seven-decimal formatting. */
 export function formatGasActivityFee(stroops: string | null | undefined): string {
   return stroops === null || stroops === undefined ? "Unknown" : formatStroopsAsXlm(stroops);
+}
+
+/** Serialize the safe 30-day Gas audit projection as spreadsheet-safe CSV. */
+export function createGasActivityCsv(logs: readonly GasLogSnapshot[]): string {
+  const header = [
+    "network",
+    "createdAtUtc",
+    "updatedAtUtc",
+    "requestId",
+    "innerTransactionHash",
+    "sourceWallet",
+    "targetContractIds",
+    "decisionCode",
+    "rejectionCode",
+    "lifecycle",
+    "expiresAtUtc",
+    "innerMaxFeeStroops",
+    "reservedStroops",
+    "actualFeeStroops",
+    "actualFeeXlm",
+  ];
+  const rows = logs.map((log) => [
+    "testnet",
+    formatGasActivityTimestamp(log.createdAt),
+    formatGasActivityTimestamp(log.updatedAt),
+    log.requestId,
+    log.transactionHash,
+    log.sourceWallet,
+    log.targetContractIds === null ? null : JSON.stringify(log.targetContractIds),
+    log.decisionCode,
+    log.rejectionCode,
+    log.lifecycle,
+    formatGasActivityTimestamp(log.expiresAt),
+    log.innerMaxFeeStroops,
+    log.reservedStroops,
+    log.actualFeeStroops,
+    formatGasActivityFee(log.actualFeeStroops),
+  ]);
+
+  return `\uFEFF${[header, ...rows]
+    .map((row) => row.map(escapeGasCsvCell).join(","))
+    .join("\r\n")}\r\n`;
+}
+
+function escapeGasCsvCell(value: string | null): string {
+  const cell = value ?? "";
+  const spreadsheetSafeCell = /^\s*[=+\-@]/.test(cell) ? `'${cell}` : cell;
+  return `"${spreadsheetSafeCell.replaceAll('"', '""')}"`;
 }
 
 /** Format activity and receipt dates as readable, unambiguous UTC timestamps. */

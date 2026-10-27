@@ -12,8 +12,9 @@ import type {
   TestnetFeeBumpRpcTransport,
 } from "@repo/stellar/fee-bump-rpc";
 
-import { env, internalAction } from "../_generated/server";
+import { internalAction } from "../_generated/server";
 import { type GasReconciliationClaim, type GasReconciliationOutcomeResult } from "./reconciliation";
+import { getGasRuntimeEnv } from "./runtime_env";
 import { GAS_RECONCILIATION_LOOKUP_CONCURRENCY } from "./types";
 
 const claimDueRef = makeFunctionReference<"mutation">("gas/reconciliation:claimDue");
@@ -78,7 +79,7 @@ function primaryRpcUrl(): string | undefined {
 }
 
 function fallbackRpcUrl(): string | undefined {
-  const configured = env.VELO_GAS_TESTNET_FALLBACK_RPC_URL?.trim();
+  const configured = getGasRuntimeEnv().VELO_GAS_TESTNET_FALLBACK_RPC_URL?.trim();
   return configured === "" ? undefined : configured;
 }
 

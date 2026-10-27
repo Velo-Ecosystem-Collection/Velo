@@ -7,6 +7,22 @@ function fixturePath(fileName) {
 }
 
 export function createNextConfig(phase, enabled = process.env[gasFixtureFlag] === "1") {
+  if (process.env.VELO_WALLET_AUTH_E2E_FIXTURES === "1") {
+    if (phase !== PHASE_DEVELOPMENT_SERVER || enabled) {
+      throw new Error("Wallet auth fixtures require an isolated development server");
+    }
+    return {
+      distDir: ".next-wallet-auth-e2e",
+      turbopack: {
+        resolveAlias: {
+          "@/core/app-shell": fixturePath("wallet-auth-shell.tsx"),
+          "@/core/wallet/wallet-kit": fixturePath("wallet-auth-kit.ts"),
+          "@creit-tech/stellar-wallets-kit": fixturePath("wallet-auth-kit.ts"),
+          "convex/react": fixturePath("wallet-auth-convex.tsx"),
+        },
+      },
+    };
+  }
   if (enabled && phase !== PHASE_DEVELOPMENT_SERVER) {
     throw new Error(`${gasFixtureFlag} is development-server-only and cannot be enabled here`);
   }

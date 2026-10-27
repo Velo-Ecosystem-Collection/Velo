@@ -1,0 +1,25 @@
+{
+  "artifact": "velo_gas_d4_production_custody_inventory_refresh",
+  "observedAtUtc": "2026-09-26T08:42:17Z",
+  "deployment": "agreeable-salmon-748",
+  "query": "internal read-only gas/custody_internal:getManagedCustodyInventorySummary",
+  "custodyInventory": {
+    "totalRecords": 1,
+    "byDeploymentId": [
+      {
+        "deploymentId": "dev:capable-kingfisher-697",
+        "totalRecords": 1,
+        "ready": 1,
+        "pending": 0,
+        "failed": 0
+      }
+    ]
+  },
+  "safety": {
+    "projectIdentifiersReturned": false,
+    "custodyPayloadReturned": false,
+    "provisioningAttempted": false,
+    "relayerFunded": false,
+    "testnetTransactionSubmitted": false
+  }
+}

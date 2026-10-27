@@ -133,6 +133,7 @@ docs/branding/velo-brand-positioning.md
 !docs/prds/
 docs/prds/*
 !docs/prds/velo-wallets-one-sprint-plan.md
+!docs/prds/velo-smart-wallets-mvp-sprint-plan.md
 
 # Obsidian knowledge vault: keep portable config, ignore machine-specific workspace state.
 !docs/obsidian/
@@ -193,3 +194,4 @@ docs/instawards/d4-evidence/*
 !docs/instawards/d4-evidence/campaign-metrics-template.md
 !docs/instawards/d4-evidence/session-validation-template.md
 !docs/instawards/d4-evidence/*.json
+docs/prds/velo-smart-wallets-mvp-sprint-plan.md

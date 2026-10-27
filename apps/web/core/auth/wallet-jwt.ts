@@ -27,7 +27,11 @@ function hmacSecret() {
 }
 
 function issuer() {
-  return process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+  return (
+    process.env.VELO_AUTH_ISSUER ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
 }
 
 function privateKeyPem() {
@@ -121,12 +125,13 @@ export function verifyWalletChallenge(input: { address: string; challenge: strin
 }
 
 export function createWalletJwt(address: string) {
+  const normalizedAddress = assertValidPublicKey(address);
   const now = Math.floor(Date.now() / 1000);
   const header = base64Url(JSON.stringify({ alg: "ES256", kid: WALLET_AUTH_KEY_ID, typ: "JWT" }));
   const payload = base64Url(
     JSON.stringify({
       iss: issuer(),
-      sub: address,
+      sub: normalizedAddress,
       aud: APPLICATION_ID,
       iat: now,
       exp: now + TOKEN_TTL_SECONDS,

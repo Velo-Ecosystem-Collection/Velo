@@ -1,6 +1,6 @@
 import { Networks } from "@stellar/stellar-sdk";
 
-import { env } from "../_generated/server";
+import { getGasRuntimeEnv } from "./runtime_env";
 import { assertValidStroopValue, normalizeWalletAddress } from "./validation";
 
 export const DEFAULT_TESTNET_HORIZON_URL = "https://horizon-testnet.stellar.org";
@@ -68,7 +68,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function configuredHorizonRoot(horizonUrl: string | undefined): string | null {
-  const configured = (horizonUrl ?? env.VELO_GAS_D2_HORIZON_URL)?.trim() ?? "";
+  const configured = (horizonUrl ?? getGasRuntimeEnv().VELO_GAS_D2_HORIZON_URL)?.trim() ?? "";
   if (configured === "") return DEFAULT_TESTNET_HORIZON_URL;
   if (configured.includes("?") || configured.includes("#")) return null;
 

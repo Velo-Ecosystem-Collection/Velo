@@ -2,6 +2,7 @@ import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 
 import { internalMutation, internalQuery } from "../_generated/server";
+import { canUseGeneralApi } from "../api_keys/helpers";
 import { verifyApiKeyForPayments } from "./helpers";
 
 const paymentIntentStatusValidator = v.union(
@@ -44,6 +45,7 @@ export const getAuthorized = internalQuery({
     if (
       !apiKey ||
       apiKey.revoked ||
+      !canUseGeneralApi(apiKey) ||
       apiKey.keyHash !== args.apiKeyHash ||
       apiKey.projectId !== args.projectId ||
       !project ||
@@ -79,6 +81,7 @@ export const listAuthorized = internalQuery({
     if (
       !apiKey ||
       apiKey.revoked ||
+      !canUseGeneralApi(apiKey) ||
       apiKey.keyHash !== args.apiKeyHash ||
       apiKey.projectId !== args.projectId ||
       !project ||
@@ -119,6 +122,7 @@ export const emptyAuthorizedMutation = internalMutation({
     return Boolean(
       apiKey &&
       !apiKey.revoked &&
+      canUseGeneralApi(apiKey) &&
       apiKey.keyHash === args.apiKeyHash &&
       apiKey.projectId === args.projectId &&
       project?.paymentAccessActive &&

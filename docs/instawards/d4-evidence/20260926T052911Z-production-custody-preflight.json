@@ -1,0 +1,24 @@
+{
+  "capturedAt": "2026-09-26T05:29:11Z",
+  "convexDeployment": "agreeable-salmon-748",
+  "stellarNetworkScope": "testnet",
+  "managedRelayerFunctionsAvailable": true,
+  "custodyInventorySummaryAvailable": false,
+  "custodyInventorySummaryStatus": "not_deployed",
+  "currentCustodyRecordCount": null,
+  "configuredCustodyDeploymentId": "dev:capable-kingfisher-697",
+  "targetCustodyDeploymentId": "prod:agreeable-salmon-748",
+  "deploymentIdentityMatchesTarget": false,
+  "keyringVariablePresent": true,
+  "provisioningFlagVariablePresent": true,
+  "keyringValueRead": false,
+  "provisioningFlagValueRead": false,
+  "priorInventorySnapshot": {
+    "capturedAt": "2026-09-26T03:48:00Z",
+    "recordCount": 0,
+    "precededLatestOperatorReportedProductionDeployment": true
+  },
+  "productionMutationPerformed": false,
+  "testnetTransactionSubmitted": false,
+  "decision": "Do not change the authenticated custody deployment identity until a current safe inventory is available and the operator explicitly approves the exact change."
+}

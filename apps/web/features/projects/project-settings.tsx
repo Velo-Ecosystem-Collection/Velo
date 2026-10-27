@@ -1,17 +1,35 @@
 "use client";
 
+import { useSelectedProject } from "@/core/app-shell";
 import { useWallet } from "@/core/wallet/wallet-provider";
 import { api } from "@repo/backend/convex/_generated/api";
 import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/ui/alert";
 import { Button } from "@repo/ui/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@repo/ui/components/ui/dialog";
 import { Input } from "@repo/ui/components/ui/input";
 import { Label } from "@repo/ui/components/ui/label";
 import { Skeleton } from "@repo/ui/components/ui/skeleton";
 import { Textarea } from "@repo/ui/components/ui/textarea";
 import { useMutation, useQuery } from "convex/react";
-import { AlertCircleIcon, CheckCircle2Icon, ImageIcon, Trash2Icon, WalletIcon } from "lucide-react";
+import {
+  AlertCircleIcon,
+  CheckCircle2Icon,
+  ImageIcon,
+  Loader2Icon,
+  Trash2Icon,
+  WalletIcon,
+} from "lucide-react";
 import { useTheme } from "next-themes";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Id } from "@repo/backend/convex/_generated/dataModel";
@@ -23,6 +41,7 @@ function errorMessage(error: unknown) {
 }
 
 export function ProjectSettings({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -31,6 +50,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   }, []);
 
   const wallet = useWallet();
+  const { clearSelectedProject } = useSelectedProject();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typedProjectId = projectId as Id<"projects">;
   const project = useQuery(
@@ -38,6 +58,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
     wallet.address ? { id: typedProjectId } : "skip",
   );
   const updateSettings = useMutation(api.projects.mutation.updateSettings);
+  const retireProject = useMutation(api.projects.mutation.retire);
   const generateLogoUploadUrl = useMutation(api.projects.mutation.generateLogoUploadUrl);
   const setLogo = useMutation(api.projects.mutation.setLogo);
   const removeLogo = useMutation(api.projects.mutation.removeLogo);
@@ -49,6 +70,10 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   const [isRemovingLogo, setIsRemovingLogo] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [retireDialogOpen, setRetireDialogOpen] = useState(false);
+  const [confirmationName, setConfirmationName] = useState("");
+  const [retireError, setRetireError] = useState<string | null>(null);
+  const [isRetiring, setIsRetiring] = useState(false);
 
   useEffect(() => {
     if (!project) return;
@@ -161,6 +186,23 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
     }
   }
 
+  async function handleRetireProject() {
+    if (!project || confirmationName !== project.name || isRetiring) return;
+    setRetireError(null);
+    setIsRetiring(true);
+
+    try {
+      await retireProject({ id: typedProjectId, confirmationName });
+      clearSelectedProject(project._id);
+      router.replace("/dashboard");
+    } catch (error) {
+      setRetireError(
+        error instanceof Error ? error.message : "Project could not be deleted. Try again.",
+      );
+      setIsRetiring(false);
+    }
+  }
+
   if (!wallet.address) {
     return (
       <section className="grid gap-4">
@@ -240,6 +282,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
               <Input
                 id="settings-project-name"
                 value={name}
+                disabled={isRetiring}
                 onChange={(event) => {
                   setName(event.target.value);
                   setSaved(false);
@@ -252,6 +295,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
               <Textarea
                 id="settings-project-description"
                 value={description}
+                disabled={isRetiring}
                 onChange={(event) => {
                   setDescription(event.target.value);
                   setSaved(false);
@@ -266,34 +310,133 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
                 id="settings-project-logo"
                 type="file"
                 accept="image/*"
+                disabled={isRetiring}
                 onChange={(event) => selectLogo(event.target.files?.[0] ?? null)}
               />
               <p className="text-xs text-zinc-500">Optional image, 2 MB maximum.</p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Button type="submit" disabled={isSaving || isRemovingLogo}>
+              <Button type="submit" disabled={isSaving || isRemovingLogo || isRetiring}>
                 {isSaving ? "Saving..." : selectedLogo ? "Save and upload logo" : "Save settings"}
               </Button>
-              <Button type="button" variant="outline" asChild>
+              <Button type="button" variant="outline" asChild disabled={isRetiring}>
                 <Link href="/dashboard">Dashboard</Link>
               </Button>
             </div>
           </div>
         </form>
 
+        {project.isOwner ? (
+          <section className="grid gap-4 rounded-lg border border-red-200 bg-red-50/50 p-5">
+            <div>
+              <h2 className="text-lg font-semibold tracking-normal text-red-950">Delete project</h2>
+              <p className="mt-1 max-w-3xl text-sm text-zinc-700">
+                Deleting retires this project and removes it from normal use. Historical data and
+                on-chain records remain stored, and existing checkouts and admitted Gas requests can
+                finish under their current rules. This project cannot be restored.
+              </p>
+            </div>
+            <Dialog
+              open={retireDialogOpen}
+              onOpenChange={(open) => {
+                if (isRetiring) return;
+                setRetireDialogOpen(open);
+                if (!open) {
+                  setConfirmationName("");
+                  setRetireError(null);
+                }
+              }}
+            >
+              <DialogTrigger asChild>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={isSaving || isRemovingLogo || isRetiring}
+                  className="w-fit"
+                >
+                  <Trash2Icon />
+                  Delete project
+                </Button>
+              </DialogTrigger>
+              <DialogContent showCloseButton={!isRetiring}>
+                <DialogHeader>
+                  <DialogTitle>Delete {project.name}?</DialogTitle>
+                  <DialogDescription>
+                    Enter the exact project name to retire this project. The match is
+                    case-sensitive.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="grid gap-3 rounded-md border bg-muted/40 p-3 text-sm">
+                  <div className="grid gap-1">
+                    <span className="text-muted-foreground">Project name</span>
+                    <code className="font-medium break-words">{project.name}</code>
+                  </div>
+                  <div className="grid gap-1">
+                    <span className="text-muted-foreground">Unique slug</span>
+                    <code className="break-all">/{project.slug}</code>
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="retire-project-confirmation">
+                    Type the project name to confirm
+                  </Label>
+                  <Input
+                    id="retire-project-confirmation"
+                    value={confirmationName}
+                    onChange={(event) => setConfirmationName(event.target.value)}
+                    autoComplete="off"
+                    aria-describedby={retireError ? "retire-project-error" : undefined}
+                    aria-invalid={Boolean(retireError)}
+                    disabled={isRetiring}
+                  />
+                  {retireError ? (
+                    <p
+                      id="retire-project-error"
+                      role="alert"
+                      aria-live="assertive"
+                      className="text-sm text-destructive"
+                    >
+                      {retireError}
+                    </p>
+                  ) : null}
+                </div>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isRetiring}
+                    onClick={() => setRetireDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    disabled={confirmationName !== project.name || isRetiring}
+                    onClick={handleRetireProject}
+                  >
+                    {isRetiring ? <Loader2Icon className="animate-spin" /> : <Trash2Icon />}
+                    {isRetiring ? "Deleting project..." : "Delete project"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </section>
+        ) : null}
+
         <div className="rounded-lg border border-zinc-200 bg-white p-5">
           <div>
             <h2 className="text-lg font-semibold tracking-normal">Appearance</h2>
             <p className="mt-1 text-sm text-zinc-600">Customize how Velo looks on your device.</p>
           </div>
-          <div className="mt-4 grid gap-2 max-w-xs">
+          <div className="mt-4 grid max-w-xs gap-2">
             <Label htmlFor="settings-theme">Theme</Label>
             <select
               id="settings-theme"
               value={mounted ? theme : "system"}
               onChange={(e) => setTheme(e.target.value)}
               disabled={!mounted}
-              className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-hidden focus-visible:ring-1 focus-visible:ring-zinc-400 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-xs transition-colors focus-visible:ring-1 focus-visible:ring-zinc-400 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50"
             >
               <option value="system">System preference</option>
               <option value="light">Light mode</option>
@@ -304,6 +447,18 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
       </div>
 
       <aside className="flex flex-col gap-4 rounded-lg border border-zinc-200 bg-white p-5">
+        <div className="grid gap-3 border-b border-zinc-200 pb-4">
+          <div className="grid gap-1">
+            <span className="text-xs font-medium tracking-wide text-zinc-500 uppercase">
+              Project ID
+            </span>
+            <code className="text-xs break-all">{project._id}</code>
+          </div>
+          <div className="grid gap-1">
+            <span className="text-xs font-medium tracking-wide text-zinc-500 uppercase">Slug</span>
+            <code className="text-xs break-all">/{project.slug}</code>
+          </div>
+        </div>
         <div>
           <h2 className="text-base font-semibold tracking-normal">Project logo</h2>
           <p className="mt-1 text-sm text-zinc-600">Shown in the sidebar project switcher.</p>
@@ -322,7 +477,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
             type="button"
             variant="outline"
             onClick={handleRemoveLogo}
-            disabled={isSaving || isRemovingLogo}
+            disabled={isSaving || isRemovingLogo || isRetiring}
             className="w-fit"
           >
             <Trash2Icon />

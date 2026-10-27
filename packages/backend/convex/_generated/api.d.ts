@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as api_keys_helpers from "../api_keys/helpers.js";
 import type * as authConfig from "../authConfig.js";
 import type * as billing_access from "../billing/access.js";
 import type * as billing_admin from "../billing/admin.js";
@@ -32,11 +33,11 @@ import type * as billing_reconciliation from "../billing/reconciliation.js";
 import type * as billing_scorecard from "../billing/scorecard.js";
 import type * as billing_shadow from "../billing/shadow.js";
 import type * as billing_topups from "../billing/topups.js";
-import type * as contractEventPolling from "../contractEventPolling.js";
 import type * as contract_events_helpers from "../contract_events/helpers.js";
 import type * as contract_events_mutation from "../contract_events/mutation.js";
 import type * as contract_events_query from "../contract_events/query.js";
 import type * as contract_events_types from "../contract_events/types.js";
+import type * as contractEventPolling from "../contractEventPolling.js";
 import type * as crons from "../crons.js";
 import type * as feedback_mutation from "../feedback/mutation.js";
 import type * as feedback_query from "../feedback/query.js";
@@ -46,9 +47,13 @@ import type * as gas_authorization from "../gas/authorization.js";
 import type * as gas_balance from "../gas/balance.js";
 import type * as gas_balance_action from "../gas/balance_action.js";
 import type * as gas_balance_internal from "../gas/balance_internal.js";
+import type * as gas_custody_crypto from "../gas/custody_crypto.js";
+import type * as gas_custody_internal from "../gas/custody_internal.js";
+import type * as gas_custody_provider from "../gas/custody_provider.js";
 import type * as gas_envelope from "../gas/envelope.js";
 import type * as gas_execution from "../gas/execution.js";
 import type * as gas_execution_action from "../gas/execution_action.js";
+import type * as gas_funding_utils from "../gas/funding_utils.js";
 import type * as gas_mutations from "../gas/mutations.js";
 import type * as gas_operator from "../gas/operator.js";
 import type * as gas_policy from "../gas/policy.js";
@@ -60,6 +65,7 @@ import type * as gas_reconciliation from "../gas/reconciliation.js";
 import type * as gas_reconciliation_action from "../gas/reconciliation_action.js";
 import type * as gas_relayer from "../gas/relayer.js";
 import type * as gas_retention from "../gas/retention.js";
+import type * as gas_runtime_env from "../gas/runtime_env.js";
 import type * as gas_settlement from "../gas/settlement.js";
 import type * as gas_submit from "../gas/submit.js";
 import type * as gas_telemetry from "../gas/telemetry.js";
@@ -134,7 +140,6 @@ import type * as wallet_configs_helpers from "../wallet_configs/helpers.js";
 import type * as wallet_configs_mutation from "../wallet_configs/mutation.js";
 import type * as wallet_configs_query from "../wallet_configs/query.js";
 import type * as wallet_configs_validators from "../wallet_configs/validators.js";
-import type * as webhookDelivery from "../webhookDelivery.js";
 import type * as webhook_deliveries_constants from "../webhook_deliveries/constants.js";
 import type * as webhook_deliveries_helpers from "../webhook_deliveries/helpers.js";
 import type * as webhook_deliveries_mutation from "../webhook_deliveries/mutation.js";
@@ -144,14 +149,11 @@ import type * as webhook_endpoints_helpers from "../webhook_endpoints/helpers.js
 import type * as webhook_endpoints_mutation from "../webhook_endpoints/mutation.js";
 import type * as webhook_endpoints_query from "../webhook_endpoints/query.js";
 import type * as webhook_endpoints_types from "../webhook_endpoints/types.js";
-
-import type {
-  ApiFromModules,
-  FilterApi,
-  FunctionReference,
-} from "convex/server";
+import type * as webhookDelivery from "../webhookDelivery.js";
+import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "api_keys/helpers": typeof api_keys_helpers;
   authConfig: typeof authConfig;
   "billing/access": typeof billing_access;
   "billing/admin": typeof billing_admin;
@@ -190,9 +192,13 @@ declare const fullApi: ApiFromModules<{
   "gas/balance": typeof gas_balance;
   "gas/balance_action": typeof gas_balance_action;
   "gas/balance_internal": typeof gas_balance_internal;
+  "gas/custody_crypto": typeof gas_custody_crypto;
+  "gas/custody_internal": typeof gas_custody_internal;
+  "gas/custody_provider": typeof gas_custody_provider;
   "gas/envelope": typeof gas_envelope;
   "gas/execution": typeof gas_execution;
   "gas/execution_action": typeof gas_execution_action;
+  "gas/funding_utils": typeof gas_funding_utils;
   "gas/mutations": typeof gas_mutations;
   "gas/operator": typeof gas_operator;
   "gas/policy": typeof gas_policy;
@@ -204,6 +210,7 @@ declare const fullApi: ApiFromModules<{
   "gas/reconciliation_action": typeof gas_reconciliation_action;
   "gas/relayer": typeof gas_relayer;
   "gas/retention": typeof gas_retention;
+  "gas/runtime_env": typeof gas_runtime_env;
   "gas/settlement": typeof gas_settlement;
   "gas/submit": typeof gas_submit;
   "gas/telemetry": typeof gas_telemetry;
@@ -298,10 +305,7 @@ declare const fullApi: ApiFromModules<{
  * const myFunctionReference = api.myModule.myFunction;
  * ```
  */
-export declare const api: FilterApi<
-  typeof fullApi,
-  FunctionReference<any, "public">
->;
+export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "public">>;
 
 /**
  * A utility for referencing Convex functions in your app's internal API.
@@ -311,10 +315,7 @@ export declare const api: FilterApi<
  * const myFunctionReference = internal.myModule.myFunction;
  * ```
  */
-export declare const internal: FilterApi<
-  typeof fullApi,
-  FunctionReference<any, "internal">
->;
+export declare const internal: FilterApi<typeof fullApi, FunctionReference<any, "internal">>;
 
 export declare const components: {
   migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;

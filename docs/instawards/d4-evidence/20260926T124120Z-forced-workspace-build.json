@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "observedAtUtc": "2026-09-26T12:41:20Z",
+  "revision": "e93dddc361da49ccd740ac6fd7b17f0cafaa4692",
+  "command": "./node_modules/.bin/turbo run build --force",
+  "scope": "all configured local workspace build tasks, with Turbo cache bypassed",
+  "tasks": {
+    "passed": 5,
+    "total": 5,
+    "cached": 0
+  },
+  "result": "passed",
+  "attemptNotes": [
+    "An initial pnpm argument placement forwarded --force to TypeScript and failed before builds.",
+    "A direct Turbo run without registry access failed when nested pnpm could not verify its pinned release.",
+    "The final run with registry access passed all tasks."
+  ],
+  "productionDeploymentPerformed": false,
+  "externalTestnetTransactionSubmitted": false
+}

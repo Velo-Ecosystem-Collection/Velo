@@ -1,0 +1,8 @@
+{
+  "verified": true,
+  "deploymentId": "prod:agreeable-salmon-748",
+  "environment": "production",
+  "network": "testnet",
+  "sourceCommit": "8b66da057e04fe25bef33ea999911513d80c101f",
+  "verification": "github-artifact-attestation"
+}

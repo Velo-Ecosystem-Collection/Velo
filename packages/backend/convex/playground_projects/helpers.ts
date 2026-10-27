@@ -68,6 +68,7 @@ export async function requireProjectRole(
   if (ROLE_RANK[role] < ROLE_RANK[minimum]) {
     throw new Error(`${minimum === "editor" ? "Editor" : "Owner"} access required`);
   }
+  if (project.retiredAt !== undefined) throw new Error("Project is retired");
   return { identity, project, address, role };
 }
 
@@ -100,6 +101,7 @@ export async function requireProjectRoleByToken(
   if (ROLE_RANK[role] < ROLE_RANK[minimum]) {
     throw new Error(`${minimum === "editor" ? "Editor" : "Owner"} access required`);
   }
+  if (project.retiredAt !== undefined) throw new Error("Project is retired");
   return { project, address, role };
 }
 

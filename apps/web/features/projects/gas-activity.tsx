@@ -29,10 +29,11 @@ import {
   TableHeader,
   TableRow,
 } from "@repo/ui/components/ui/table";
-import { useConvexConnectionState, usePaginatedQuery, useQuery } from "convex/react";
+import { useConvex, useConvexConnectionState, usePaginatedQuery, useQuery } from "convex/react";
 import {
   AlertCircleIcon,
   CheckCircle2Icon,
+  DownloadIcon,
   ExternalLinkIcon,
   FileTextIcon,
   InfoIcon,
@@ -44,6 +45,7 @@ import {
   type ErrorInfo,
   type MouseEvent,
   type ReactNode,
+  useEffect,
   useRef,
   useState,
 } from "react";
@@ -57,9 +59,11 @@ import {
   GAS_EXECUTION_STATUS_LABELS,
   GAS_LIFECYCLE_LABELS,
   GAS_REJECTION_LABELS,
+  createGasActivityCsv,
   getGasExplorerLink,
   type GasExecutionDetailSnapshot,
   type GasExecutionStatus,
+  type GasLogPage,
   type GasLifecycleState,
   type GasLogSnapshot,
 } from "./gas-ui";
@@ -87,6 +91,9 @@ export type GasActivityViewProps = {
   connectionState?: GasActivityConnectionState;
   readState?: "ready" | "error";
   onRetry?: () => void;
+  onExport?: () => void;
+  exportInProgress?: boolean;
+  exportFeedback?: string | null;
   renderExecutionDetail: (requestId: string, audit: GasLogSnapshot | null) => ReactNode;
 };
 
@@ -249,10 +256,10 @@ function ActivityRow({
       <TableCell className="hidden whitespace-nowrap sm:table-cell">
         {formatActivityDate(log.createdAt)}
       </TableCell>
-      <TableCell className="max-w-48 whitespace-normal break-all font-mono text-xs">
+      <TableCell className="max-w-48 font-mono text-xs break-all whitespace-normal">
         {log.requestId}
       </TableCell>
-      <TableCell className="max-w-52 whitespace-normal break-all font-mono text-xs">
+      <TableCell className="max-w-52 font-mono text-xs break-all whitespace-normal">
         {formatIdentifier(log.sourceWallet)}
       </TableCell>
       <TableCell>
@@ -260,7 +267,7 @@ function ActivityRow({
           {GAS_LIFECYCLE_LABELS[log.lifecycle]}
         </Badge>
       </TableCell>
-      <TableCell className="max-w-44 whitespace-normal break-words text-xs">
+      <TableCell className="max-w-44 text-xs break-words whitespace-normal">
         {log.rejectionCode ? GAS_REJECTION_LABELS[log.rejectionCode] : "—"}
       </TableCell>
       <TableCell className="font-mono text-xs whitespace-nowrap">
@@ -633,6 +640,9 @@ export function GasActivityView({
   connectionState = DEFAULT_CONNECTION_STATE,
   readState = "ready",
   onRetry,
+  onExport,
+  exportInProgress = false,
+  exportFeedback,
   renderExecutionDetail,
 }: GasActivityViewProps) {
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
@@ -673,14 +683,37 @@ export function GasActivityView({
                   ledger.
                 </CardDescription>
               </div>
-              <Badge variant={isConnected ? "info" : "warning"}>
-                {activityStatusLabel(paginationStatus, isConnected)}
-              </Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                {onExport && logs.length > 0 ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={onExport}
+                    disabled={exportInProgress || !isConnected}
+                    aria-label="Export all retained Gas activity as CSV"
+                  >
+                    {exportInProgress ? (
+                      <Loader2Icon className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <DownloadIcon aria-hidden="true" />
+                    )}
+                    <span>{exportInProgress ? "Preparing CSV…" : "Export CSV"}</span>
+                  </Button>
+                ) : null}
+                <Badge variant={isConnected ? "info" : "warning"}>
+                  {activityStatusLabel(paginationStatus, isConnected)}
+                </Badge>
+              </div>
             </div>
             <p className="text-sm text-muted-foreground">
-              Records are retained for 30 days. Fees remain exact seven-decimal XLM values; an
-              unavailable fee is unknown, not zero.
+              Records are retained for 30 days. Export includes all retained audit pages; fees
+              remain exact seven-decimal XLM values, and an unavailable fee is unknown, not zero.
             </p>
+            {exportFeedback ? (
+              <p className="text-sm text-muted-foreground" role="status" aria-live="polite">
+                {exportFeedback}
+              </p>
+            ) : null}
           </CardHeader>
           <CardContent className="grid min-w-0 gap-0 p-0">
             {!isConnected ? (
@@ -742,15 +775,98 @@ export function GasActivityView({
 }
 
 function GasActivityContent({ projectId }: GasActivityProps) {
+  const convex = useConvex();
   const connectionState = useConvexConnectionState();
   const activityPage = usePaginatedQuery(
     api.gas.queries.listLogsPage,
     { projectId },
     { initialNumItems: ACTIVITY_PAGE_SIZE },
   );
+  const [exportInProgress, setExportInProgress] = useState(false);
+  const [exportFeedback, setExportFeedback] = useState<string | null>(null);
+  const exportRunRef = useRef(0);
+  const activeExportRef = useRef(false);
+  const connectedRef = useRef(connectionState.isWebSocketConnected);
+  connectedRef.current = connectionState.isWebSocketConnected;
+
+  useEffect(
+    () => () => {
+      exportRunRef.current += 1;
+      activeExportRef.current = false;
+    },
+    [],
+  );
 
   function handleLoadMore() {
     activityPage.loadMore(ACTIVITY_PAGE_SIZE);
+  }
+
+  async function handleExport() {
+    if (activeExportRef.current || !connectionState.isWebSocketConnected) return;
+
+    activeExportRef.current = true;
+    const exportRun = ++exportRunRef.current;
+    setExportInProgress(true);
+    setExportFeedback("Loading all retained Gas activity before creating the CSV…");
+
+    try {
+      const logs: GasLogSnapshot[] = [];
+      let cursor: string | null = null;
+
+      for (;;) {
+        if (exportRunRef.current !== exportRun) return;
+        if (!connectedRef.current) {
+          setExportFeedback("Reconnect before exporting so the downloaded activity is current.");
+          return;
+        }
+
+        const page: GasLogPage = await convex.query(api.gas.queries.listLogsPage, {
+          projectId,
+          paginationOpts: { numItems: ACTIVITY_PAGE_SIZE, cursor },
+        });
+        logs.push(...page.page);
+
+        if (page.isDone) break;
+        if (page.continueCursor === cursor) {
+          throw new Error("Gas activity pagination did not advance.");
+        }
+        cursor = page.continueCursor;
+      }
+
+      if (exportRunRef.current !== exportRun) return;
+      if (!connectedRef.current) {
+        setExportFeedback("Reconnect before exporting so the downloaded activity is current.");
+        return;
+      }
+      if (logs.length === 0) {
+        setExportFeedback("There is no retained Gas activity to export.");
+        return;
+      }
+
+      const csv = createGasActivityCsv(logs);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `velo-gas-activity-${new Date().toISOString().replaceAll(/[:.]/g, "-")}.csv`;
+      document.body.append(link);
+      try {
+        link.click();
+      } finally {
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+      }
+      setExportFeedback(`Exported ${logs.length} retained Gas activity records as CSV.`);
+    } catch {
+      if (exportRunRef.current === exportRun) {
+        setExportFeedback("Gas activity export failed. Reconnect and try again.");
+      }
+    } finally {
+      if (exportRunRef.current === exportRun) {
+        activeExportRef.current = false;
+        setExportInProgress(false);
+      }
+    }
   }
 
   function renderLiveExecutionDetail(requestId: string, audit: GasLogSnapshot | null) {
@@ -769,6 +885,9 @@ function GasActivityContent({ projectId }: GasActivityProps) {
       logs={activityPage.results}
       paginationStatus={activityPage.status}
       onLoadMore={handleLoadMore}
+      onExport={handleExport}
+      exportInProgress={exportInProgress}
+      exportFeedback={exportFeedback}
       connectionState={{ isWebSocketConnected: connectionState.isWebSocketConnected }}
       renderExecutionDetail={renderLiveExecutionDetail}
     />

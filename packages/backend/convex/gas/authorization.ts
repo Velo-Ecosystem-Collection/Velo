@@ -4,7 +4,9 @@ import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { ProjectRole } from "../playground_projects/helpers";
 
+import { canUseGasApi } from "../api_keys/helpers";
 import { requireProjectRole } from "../playground_projects/helpers";
+import { requireIdentity } from "../projects/helpers";
 
 /** Capabilities available to authenticated Gas console callers. */
 export type GasConsoleCapability = "read" | "updatePolicy" | "updateRelayer";
@@ -58,6 +60,25 @@ export async function requireGasConsoleAccess(
   return await requireProjectRole(ctx, projectId, minimumRole);
 }
 
+/** Owner funds access remains available after retirement so managed relayers can be emptied. */
+export async function requireGasFundsOwnerAccess(
+  ctx: QueryCtx | MutationCtx,
+  projectId: Id<"projects">,
+) {
+  const identity = await requireIdentity(ctx);
+  const project = await ctx.db.get(projectId);
+  if (!project) throw new Error("Project not found");
+  const address = String(identity.subject).trim().toUpperCase();
+  if (!/^G[A-Z2-7]{55}$/.test(address)) throw new Error("Unauthorized");
+  if (
+    project.ownerAddress !== address &&
+    project.ownerTokenIdentifier !== identity.tokenIdentifier
+  ) {
+    throw new Error("Owner access required");
+  }
+  return { identity, project, address, role: "owner" as const };
+}
+
 /**
  * Resolves a Gas API key to its stored project scope without exposing credentials
  * or the stored key document. The server boundary is expected to provide the
@@ -80,7 +101,7 @@ export async function verifyApiKeyForGas(
   if (matchingApiKeys.length !== 1) return { authorized: false };
   const [apiKey] = matchingApiKeys;
 
-  if (!apiKey || apiKey.revoked) return { authorized: false };
+  if (!apiKey || apiKey.revoked || !canUseGasApi(apiKey)) return { authorized: false };
 
   const project = await ctx.db.get(apiKey.projectId);
   if (!project) return { authorized: false };
@@ -120,6 +141,7 @@ export async function revalidateGasApiKeyScope(
     keyedApiKey._id === apiKey._id &&
     apiKey.keyHash === args.apiKeyHash &&
     apiKey.projectId === args.projectId &&
+    canUseGasApi(apiKey) &&
     !apiKey.revoked,
   );
 }

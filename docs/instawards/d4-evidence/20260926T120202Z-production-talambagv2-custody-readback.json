@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "observedAtUtc": "2026-09-26T12:02:02Z",
+  "deployment": {
+    "name": "agreeable-salmon-748",
+    "configuredCustodyIdentity": "prod:agreeable-salmon-748",
+    "network": "testnet",
+    "provisioningEnabled": true,
+    "keyringStatus": "valid",
+    "activeKeyVersion": "v1",
+    "keyVersionCount": 1
+  },
+  "projectMatch": {
+    "label": "Talambagv2",
+    "slug": "talambagv2",
+    "matchCount": 1,
+    "retired": false
+  },
+  "custody": {
+    "recordCount": 1,
+    "network": "testnet",
+    "status": "ready",
+    "keyVersion": "v1",
+    "ciphertextStored": true,
+    "matchesProductionIdentity": false
+  },
+  "sponsorship": {
+    "ownerReported": "paused",
+    "internalReadinessStatus": "metadata_disabled",
+    "publicKeyReturned": false,
+    "successfulSigningReadinessVerified": false
+  },
+  "sourceProvenance": "unverified",
+  "productionMutationByAssistant": false,
+  "testnetTransactionByAssistant": false,
+  "decision": "NO_GO: keep sponsorship paused until custody identity is reconciled and signing readiness can be verified."
+}

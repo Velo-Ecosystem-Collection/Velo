@@ -64,6 +64,68 @@ test("concurrent action retries without a caller idempotency key create one inte
   expect(counts).toEqual({ intents: 1, idempotency: 1, routeJobs: 0 });
 });
 
+test("retirement blocks new payment intents but preserves checkout replay and authenticated reads", async () => {
+  const t = convexTest(schema, modules);
+  const scope = await seedPaymentScope(t);
+  const ownerAddress = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+  const owner = t.withIdentity({
+    subject: ownerAddress,
+    issuer: "http://localhost:3000",
+    tokenIdentifier: "http://localhost:3000|" + ownerAddress,
+  });
+  const args = {
+    apiKeyHash: scope.apiKeyHash,
+    admissionId: "retirement-existing-checkout",
+    correlationId: "retirement-checkout-0001",
+    amount: "10.00",
+    asset: "USDC",
+    idempotencyKey: "checkout-before-retirement",
+  };
+  const created = await t.action(api.payment_intents.public_api.create, args);
+  expect(created.status).toBe("success");
+  if (created.status !== "success") throw new Error("Expected a created payment intent");
+
+  await owner.mutation(api.projects.mutation.retire, {
+    id: scope.projectId,
+    confirmationName: "Action Merchant",
+  });
+
+  const replay = await t.action(api.payment_intents.public_api.create, args);
+  expect(replay.status).toBe("idempotency_replay");
+  const newIntent = await t.action(api.payment_intents.public_api.create, {
+    ...args,
+    admissionId: "retirement-new-checkout",
+    correlationId: "retirement-checkout-0002",
+    idempotencyKey: "checkout-after-retirement",
+  });
+  expect(newIntent.status).toBe("unauthorized");
+
+  const retrieved = await t.action(api.payment_intents.public_api.retrieve, {
+    apiKeyHash: scope.apiKeyHash,
+    admissionId: "retirement-checkout-read",
+    paymentIntentId: created.intent._id,
+  });
+  expect(retrieved.status).toBe("success");
+  if (retrieved.status === "success") expect(retrieved.intent?._id).toBe(created.intent._id);
+
+  await t.mutation(api.payment_intents.mutations.updateStatus, {
+    paymentIntentId: created.intent._id,
+    status: "pending",
+    payerAddress: "GDFX...PAYER",
+  });
+  const intent = await t.query(api.payment_intents.queries.getPaymentIntent, {
+    paymentIntentId: created.intent._id,
+  });
+  expect(intent?.status).toBe("pending");
+
+  const state = await t.run(async (ctx) => ({
+    intents: await ctx.db.query("paymentIntents").collect(),
+    revocations: await ctx.db.query("apiKeys").collect(),
+  }));
+  expect(state.intents).toHaveLength(1);
+  expect(state.revocations[0]?.revoked).toBe(false);
+});
+
 test("migrating and unconfigured Upstash projects fail closed", async () => {
   const t = convexTest(schema, modules);
   const migrating = await seedPaymentScope(t, "migrating");

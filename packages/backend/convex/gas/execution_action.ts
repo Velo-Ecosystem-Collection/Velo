@@ -28,10 +28,11 @@ import type {
 } from "./execution";
 
 import { internal } from "../_generated/api";
-import { env, internalAction } from "../_generated/server";
+import { internalAction } from "../_generated/server";
 import { deriveGasTransactionFacts } from "./envelope";
 import { gasSubmitResultProjectionValidator } from "./projections";
 import { RelayerCustodyError, withTestnetRelayerSigner } from "./relayer";
+import { getGasRuntimeEnv } from "./runtime_env";
 import { GAS_MAX_SEND_COUNT } from "./types";
 import {
   GAS_MAX_TRANSACTION_XDR_BYTES,
@@ -386,7 +387,7 @@ function rpcUrl(): string | undefined {
 }
 
 function fallbackRpcUrl(): string | undefined {
-  const configured = env.VELO_GAS_TESTNET_FALLBACK_RPC_URL?.trim();
+  const configured = getGasRuntimeEnv().VELO_GAS_TESTNET_FALLBACK_RPC_URL?.trim();
   return configured === "" ? undefined : configured;
 }
 

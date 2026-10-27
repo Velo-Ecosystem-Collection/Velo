@@ -4,6 +4,7 @@ import { v } from "convex/values";
 export default defineTable({
   organizationId: v.optional(v.id("organizations")),
   name: v.string(),
+  normalizedName: v.optional(v.string()),
   slug: v.string(),
   description: v.string(),
   website: v.optional(v.string()),
@@ -12,6 +13,8 @@ export default defineTable({
   logoStorageId: v.optional(v.id("_storage")),
   ownerAddress: v.string(),
   ownerTokenIdentifier: v.optional(v.string()),
+  retiredAt: v.optional(v.number()),
+  retiredByTokenIdentifier: v.optional(v.string()),
   status: v.union(
     v.literal("draft"),
     v.literal("pending_registration"),
@@ -40,6 +43,11 @@ export default defineTable({
   .index("by_owner", ["ownerAddress"])
   .index("by_organization_id", ["organizationId"])
   .index("by_owner_token_identifier", ["ownerTokenIdentifier"])
+  .index("by_owner_token_identifier_and_normalized_name", [
+    "ownerTokenIdentifier",
+    "normalizedName",
+  ])
+  .index("by_owner_address_and_normalized_name", ["ownerAddress", "normalizedName"])
   .index("by_slug", ["slug"])
   .index("by_owner_status", ["ownerAddress", "status"])
   .index("by_owner_token_identifier_status", ["ownerTokenIdentifier", "status"])

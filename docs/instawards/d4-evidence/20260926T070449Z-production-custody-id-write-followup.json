@@ -1,0 +1,26 @@
+{
+  "capturedAt": "2026-09-26T07:04:49Z",
+  "deployment": "agreeable-salmon-748",
+  "approvedEnvironmentMutation": {
+    "name": "VELO_GAS_CUSTODY_DEPLOYMENT_ID",
+    "value": "prod:agreeable-salmon-748",
+    "cliSet": "succeeded",
+    "cliReadback": "prod:agreeable-salmon-748"
+  },
+  "runtimeCustodyStatus": {
+    "deploymentId": "dev:capable-kingfisher-697",
+    "network": "testnet",
+    "provisioningEnabled": true,
+    "keyringStatus": "valid",
+    "activeKeyVersion": "v1",
+    "keyVersionCount": 1
+  },
+  "custodyInventory": {
+    "totalRecords": 0,
+    "byDeploymentId": []
+  },
+  "runtimeConfigurationVerified": false,
+  "relayerProvisioned": false,
+  "testnetTransactionSubmitted": false,
+  "secretsOrCiphertextRead": false
+}

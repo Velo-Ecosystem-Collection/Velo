@@ -2,6 +2,8 @@ import { ConvexError } from "convex/values";
 
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
+import { canUseGeneralApi } from "../api_keys/helpers";
+
 /**
  * Validates an API key hash and returns the associated project if authorized.
  * Checks that the key exists, is not revoked, and the project has payment access active.
@@ -12,7 +14,7 @@ export async function verifyApiKeyForPayments(ctx: QueryCtx | MutationCtx, apiKe
     .withIndex("by_key_hash", (q) => q.eq("keyHash", apiKeyHash))
     .unique();
 
-  if (!apiKey || apiKey.revoked) {
+  if (!apiKey || apiKey.revoked || !canUseGeneralApi(apiKey)) {
     return { authorized: false as const };
   }
 

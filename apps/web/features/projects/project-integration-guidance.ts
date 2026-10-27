@@ -10,10 +10,10 @@ const STATUS_TIMEOUT_MS = 5_000;
 
 function createGasClient(): Velo {
   const apiKey = process.env.VELO_GAS_API_KEY?.trim();
-  const baseUrl = process.env.VELO_BASE_URL?.trim();
+  const baseUrl = process.env.VELO_GAS_BASE_URL?.trim();
 
   if (!apiKey || !baseUrl) {
-    throw new Error("Configure VELO_GAS_API_KEY and VELO_BASE_URL on the server.");
+    throw new Error("Configure VELO_GAS_API_KEY and VELO_GAS_BASE_URL on the server.");
   }
 
   return new Velo({ apiKey, baseUrl, timeoutMs: GAS_TIMEOUT_MS });
@@ -59,10 +59,10 @@ const GAS_TIMEOUT_MS = 10_000;
 
 function createGasClient(): Velo {
   const apiKey = process.env.VELO_GAS_API_KEY?.trim();
-  const baseUrl = process.env.VELO_BASE_URL?.trim();
+  const baseUrl = process.env.VELO_GAS_BASE_URL?.trim();
 
   if (!apiKey || !baseUrl) {
-    throw new Error("Configure VELO_GAS_API_KEY and VELO_BASE_URL on the server.");
+    throw new Error("Configure VELO_GAS_API_KEY and VELO_GAS_BASE_URL on the server.");
   }
 
   return new Velo({ apiKey, baseUrl, timeoutMs: GAS_TIMEOUT_MS });

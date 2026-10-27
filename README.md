@@ -290,6 +290,37 @@ NEXT_PUBLIC_VELO_PAY_ACCESS_CONTRACT_ID=CBHDLZYSYWETHPC6KDGH35S4SNBU5P7QWLNNDWYX
 
 Authentication, backend, hosted deployment, and PDAX UAT flows require additional server-side configuration. See the [full environment reference](docs/velo-master-context.md#environment-variables) and [demo setup guide](docs/demo-setup.md).
 
+#### Optional WalletConnect login
+
+Create a project in the [Reown dashboard](https://dashboard.reown.com/), configure its
+allowed origins for your local and hosted Velo URLs, and set
+`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` in the web environment. This is a public
+WalletConnect relay project identifier, not a private API key. Set
+`NEXT_PUBLIC_APP_URL` to the actual app origin so the wallet sees matching Velo
+metadata. For phone testing over Wi-Fi, add the exact LAN origin, such as
+`http://192.168.1.20:3000`, to the project's allowed origins; localhost does not
+cover a LAN IP, and scheme, host, and port must match. See the [Reown relay
+origin rules](https://docs.reown.com/walletkit/ios/cloud/relay).
+
+The signed login JWT must use the same issuer as Convex. Set `VELO_AUTH_ISSUER`
+to that value in both the web server and Convex environment. If unset, Velo uses
+`NEXT_PUBLIC_APP_URL`. Convex Cloud must receive `VELO_AUTH_JWKS` through an
+HTTPS URL or a `data:` URI; it cannot fetch a JWKS from a phone's local network.
+Restart development or rebuild/redeploy the web app after changing these values.
+
+When configured, Velo's wallet selector includes WalletConnect for Stellar
+Testnet. Without it, the existing wallet options remain available. Authentication
+uses a signed challenge, never an on-chain transaction. This integration applies
+to Velo login/sign-up; it does not enable WalletConnect in the Velo Wallets widget.
+See the [Stellar Wallets Kit module documentation](https://stellarwalletskit.dev/wallets/wallet-connect.html).
+
+Run `pnpm --filter web test:e2e:wallet-auth` for simulated Chromium authentication
+tests. Before enabling a deployment, qualify Freighter mobile with desktop QR
+pairing and mobile handoff: sign-up, returning login, rejected signing, cancellation,
+disconnect, reload/reconnect, and Testnet selection. Also check Freighter extension
+login. Automated fixtures do not establish real-device compatibility; that live
+acceptance remains unverified.
+
 ### 3. Start the development workspace
 
 ```bash

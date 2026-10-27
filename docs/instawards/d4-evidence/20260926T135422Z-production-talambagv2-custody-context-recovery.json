@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "observedAtUtc": "2026-09-26T13:54:22Z",
+  "deployment": {
+    "name": "agreeable-salmon-748",
+    "custodyIdentity": "prod:agreeable-salmon-748",
+    "network": "testnet"
+  },
+  "operatorReportedSourceCommit": "33beb38d5d1b8590accc2ec9d7fecbf9ad357ad7",
+  "sourceCommitIndependentlyAttested": false,
+  "projectMatch": {
+    "label": "Talambagv2",
+    "slug": "talambagv2",
+    "matchCount": 1,
+    "retired": false
+  },
+  "preflight": {
+    "custodyRecordCount": 1,
+    "custodyStatus": "ready",
+    "storedContextMatchedProductionBefore": false,
+    "storedKeyVersion": "v1",
+    "productionKeyringStatus": "valid",
+    "productionActiveKeyVersion": "v1",
+    "policyEnabled": false,
+    "maintenanceLockActive": false
+  },
+  "recovery": {
+    "verifyBeforeMigration": "verified",
+    "migration": "migrated",
+    "verifyAfterMigration": "verified",
+    "storedContextMatchesProductionAfter": true,
+    "custodyStatusAfter": "ready",
+    "keyVersionAfter": "v1",
+    "publicAddressPreserved": true,
+    "policyEnabledAfter": false,
+    "maintenanceLockActiveAfter": false
+  },
+  "effects": {
+    "productionCustodyMutationPerformed": true,
+    "stellarTransactionSubmitted": false,
+    "fundsMoved": false,
+    "sponsorshipResumed": false
+  },
+  "decision": "CUSTODY_CONTEXT_RECOVERED; keep sponsorship paused; overall D4 campaign remains NO-GO pending remaining acceptance gates."
+}

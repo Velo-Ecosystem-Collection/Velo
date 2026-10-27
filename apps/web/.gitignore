@@ -8,9 +8,12 @@
 
 # testing
 /coverage
+/test-results/
+/playwright-report/
 
 # next.js
 /.next/
+/.next-gas-e2e/
 /out/
 
 # production

@@ -150,7 +150,7 @@ export function NavUser({
                     }}
                   >
                     <SettingsIcon className="size-4" />
-                    <span>Settings</span>
+                    <span>Project Settings</span>
                   </a>
                 </DropdownMenuItem>
               ) : null}
@@ -183,7 +183,7 @@ export function NavUser({
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onClick={onDisconnect}
-                  className="cursor-pointer gap-2 text-red-600 focus:text-red-600 focus:bg-red-50"
+                  className="cursor-pointer gap-2 text-red-600 focus:bg-red-50 focus:text-red-600"
                 >
                   <LogOut className="size-4" />
                   <span>Disconnect Wallet</span>

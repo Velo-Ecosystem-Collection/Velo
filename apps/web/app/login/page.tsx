@@ -36,19 +36,34 @@ export default function LoginPage() {
     }
   };
 
+  const isConnecting = wallet.status === "connecting" || wallet.status === "initializing";
+  const isStartingSession = wallet.status === "connected" && isConvexLoading;
+  const isBusy = isConnecting || isConvexLoading || isLoading;
+  const buttonLabel = isConnecting
+    ? "Connecting wallet…"
+    : isStartingSession
+      ? "Starting your Velo session…"
+      : isLoading
+        ? "Loading your Velo account…"
+        : "Connect Wallet";
+
   return (
     <AppShell>
       <div className="flex flex-col items-center justify-center py-12 md:py-24">
         <div className="w-full max-w-md space-y-6">
           {/* Login Card */}
           <div className="rounded-lg border border-zinc-200 bg-white p-8 shadow-sm">
-            <div className="space-y-2 mb-6">
+            <div className="mb-6 space-y-2">
               <h1 className="text-2xl font-semibold tracking-normal text-zinc-900">
                 Connect to Console
               </h1>
               <p className="text-sm text-zinc-600">
                 Log in to manage developer projects, verify smart contracts, and view real-time
                 Stellar events.
+              </p>
+              <p className="pt-2 text-sm text-zinc-600">
+                Approve the wallet connection once. Velo will use the approved public address to
+                start your session; there is no separate sign-in request or network fee.
               </p>
             </div>
 
@@ -65,21 +80,14 @@ export default function LoginPage() {
             <Button
               onClick={handleConnect}
               disabled={
-                wallet.status === "connecting" ||
-                wallet.status === "connected" ||
-                wallet.status === "initializing" ||
-                isConvexLoading ||
-                isLoading
+                isConnecting || wallet.status === "connected" || isConvexLoading || isLoading
               }
-              className="w-full flex items-center justify-center gap-2"
+              className="flex w-full items-center justify-center gap-2"
             >
-              {wallet.status === "connecting" ||
-              wallet.status === "initializing" ||
-              isConvexLoading ||
-              isLoading ? (
+              {isBusy ? (
                 <>
                   <Loader2Icon className="h-4 w-4 animate-spin" />
-                  <span>Connecting...</span>
+                  <span>{buttonLabel}</span>
                 </>
               ) : (
                 <>
@@ -89,8 +97,14 @@ export default function LoginPage() {
               )}
             </Button>
 
+            {isStartingSession && (
+              <p role="status" className="mt-3 text-center text-sm text-zinc-600">
+                Your wallet is connected. Velo is starting your session.
+              </p>
+            )}
+
             {wallet.status === "stale" && wallet.staleAddress && (
-              <p className="mt-4 text-center text-xs text-zinc-500 font-mono">
+              <p className="mt-4 text-center font-mono text-xs text-zinc-500">
                 Reconnecting to {wallet.staleAddress.slice(0, 6)}...{wallet.staleAddress.slice(-6)}
               </p>
             )}
@@ -98,7 +112,7 @@ export default function LoginPage() {
 
           {/* Back Link */}
           <div className="text-center">
-            <Link href="/" className="text-xs text-zinc-500 hover:text-zinc-700 transition-colors">
+            <Link href="/" className="text-xs text-zinc-500 transition-colors hover:text-zinc-700">
               ← Back to Landing Page
             </Link>
           </div>

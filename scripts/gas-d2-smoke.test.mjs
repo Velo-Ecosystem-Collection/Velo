@@ -6,13 +6,19 @@ import {
   GAS_TEST_SOURCE_KEYPAIR,
 } from "../packages/stellar/src/test-fixtures.ts";
 import {
+  CONVEX_PRODUCTION_DEPLOYMENT_ID,
+  CONVEX_PRODUCTION_VERIFICATION,
+} from "./convex-deployment-provenance.mjs";
+import {
+  createSmokeDependencies,
   runPreflight,
   runSmokeExecution,
+  loadSmokeConfig,
   verifySmokeReport,
   writeSmokeReport,
 } from "./gas-d2-smoke.mjs";
 
-const API_KEY = `tk_live_${"a".repeat(32)}`;
+const API_KEY = `tg_test_${"a".repeat(32)}`;
 const PROJECT_ID = "project-d2-smoke";
 const USER_PUBLIC_KEY = GAS_TEST_SOURCE_KEYPAIR.publicKey();
 const RELAYER_PUBLIC_KEY = GAS_TEST_SOURCE_KEYPAIR.publicKey();
@@ -33,6 +39,7 @@ const CONFIG = {
   allowedXdr: "allowed-xdr-is-never-persisted",
   deniedXdr: "denied-xdr-is-never-persisted",
   deploymentName: "dev:capable-kingfisher-697",
+  expectedEnvironment: "development",
   expectedSourceCommit: DEPLOYED_SOURCE_COMMIT,
   timeoutMs: 1_000,
   pollLimit: 3,
@@ -91,8 +98,8 @@ function snapshotFor(scope, options = {}) {
       ...(scope.idempotencyKeyHash ? { idempotencyKeyHash: scope.idempotencyKeyHash } : {}),
     },
     deployment: {
-      deploymentId: CONFIG.deploymentName,
-      environment: "development",
+      deploymentId: options.deploymentId ?? CONFIG.deploymentName,
+      environment: options.environment ?? "development",
       network: "testnet",
     },
     signer: {
@@ -268,6 +275,248 @@ test("blocks wrong-network and missing signer readiness before sponsorship", asy
   );
 });
 
+test("loads an explicit production environment and accepts a matching Testnet deployment", async () => {
+  const loaded = await loadSmokeConfig({
+    VELO_GAS_D2_MODE: "preflight",
+    VELO_GAS_D2_API_ORIGIN: "https://api.example.test",
+    VELO_GAS_D2_PROJECT_ID: PROJECT_ID,
+    VELO_GAS_D2_RPC_URL: "https://rpc.example.test",
+    VELO_GAS_D2_OPERATOR_SNAPSHOT_URL: "https://operator.example.test/snapshot",
+    VELO_GAS_D2_PROVENANCE_URL: "https://operator.example.test/provenance",
+    VELO_GAS_D2_OPERATOR_TOKEN: "operator-token",
+    VELO_GAS_D2_ALLOWED_XDR: "allowed-xdr",
+    VELO_GAS_D2_DENIED_XDR: "denied-xdr",
+    VELO_GAS_D2_DEPLOYMENT_NAME: "prod:agreeable-salmon-748",
+    VELO_GAS_D2_EXPECTED_ENVIRONMENT: "production",
+    VELO_GAS_D2_EXPECTED_SOURCE_COMMIT: DEPLOYED_SOURCE_COMMIT,
+    VELO_GAS_D2_DEPLOYMENT_ATTESTATION_FILE: "/tmp/convex-production-deployment.json",
+  });
+  assert.equal(loaded.ok, true);
+  assert.equal(loaded.config.expectedEnvironment, "production");
+  assert.equal(loaded.config.deploymentName, "prod:agreeable-salmon-748");
+
+  const productionConfig = {
+    ...CONFIG,
+    deploymentName: "prod:agreeable-salmon-748",
+    expectedEnvironment: "production",
+  };
+  const report = await runSmokeExecution({
+    config: productionConfig,
+    dependencies: makeDependencies({
+      snapshot: (_config, scope) =>
+        snapshotFor(scope, {
+          deploymentId: productionConfig.deploymentName,
+          environment: "production",
+        }),
+      provenance: {
+        schemaVersion: 1,
+        deploymentId: productionConfig.deploymentName,
+        environment: "production",
+        network: "testnet",
+        verified: true,
+        deployedSourceCommit: DEPLOYED_SOURCE_COMMIT,
+        verification: "operator-attestation",
+      },
+    }),
+    pollLimit: 3,
+    pollIntervalMs: 0,
+  });
+  assert.equal(report.status, "passed", JSON.stringify(report));
+  assert.equal(report.deployment.deploymentId, productionConfig.deploymentName);
+  assert.equal(report.deployment.environment, "production");
+  assert.equal(verifySmokeReport(report).ok, true);
+});
+
+test("rejects deployment identity or environment disagreement, Mainnet, and source mismatch", async () => {
+  const productionConfig = {
+    ...CONFIG,
+    deploymentName: "prod:agreeable-salmon-748",
+    expectedEnvironment: "production",
+  };
+  const productionProvenance = {
+    schemaVersion: 1,
+    deploymentId: productionConfig.deploymentName,
+    environment: "production",
+    network: "testnet",
+    verified: true,
+    deployedSourceCommit: DEPLOYED_SOURCE_COMMIT,
+    verification: "operator-attestation",
+  };
+  const mismatchedEnvironment = await runPreflight({
+    config: productionConfig,
+    dependencies: makeDependencies({
+      snapshot: (_config, scope) =>
+        snapshotFor(scope, {
+          deploymentId: productionConfig.deploymentName,
+          environment: "development",
+        }),
+      provenance: productionProvenance,
+    }),
+  });
+  assert.equal(mismatchedEnvironment.ok, false);
+  assert.equal(
+    mismatchedEnvironment.checks.find((check) => check.name === "deployment_identity")?.failure,
+    "deployment_identity_mismatch",
+  );
+  assert.equal(
+    mismatchedEnvironment.checks.find((check) => check.name === "deployment_provenance_agreement")
+      ?.failure,
+    "deployment_provenance_mismatch",
+  );
+
+  const mismatchedIdentity = await runPreflight({
+    config: productionConfig,
+    dependencies: makeDependencies({
+      snapshot: (_config, scope) =>
+        snapshotFor(scope, {
+          deploymentId: "prod:other-deployment",
+          environment: "production",
+        }),
+      provenance: productionProvenance,
+    }),
+  });
+  assert.equal(mismatchedIdentity.ok, false);
+  assert.equal(
+    mismatchedIdentity.checks.find((check) => check.name === "deployment_provenance_agreement")
+      ?.failure,
+    "deployment_provenance_mismatch",
+  );
+
+  const mainnet = await runPreflight({
+    config: productionConfig,
+    dependencies: makeDependencies({
+      snapshot: (_config, scope) => {
+        const snapshot = snapshotFor(scope, {
+          deploymentId: productionConfig.deploymentName,
+          environment: "production",
+        });
+        snapshot.deployment.network = "mainnet";
+        return snapshot;
+      },
+      provenance: { ...productionProvenance, network: "mainnet" },
+    }),
+  });
+  assert.equal(mainnet.ok, false);
+
+  const sourceMismatch = await runPreflight({
+    config: productionConfig,
+    dependencies: makeDependencies({
+      snapshot: (_config, scope) =>
+        snapshotFor(scope, {
+          deploymentId: productionConfig.deploymentName,
+          environment: "production",
+        }),
+      provenance: { ...productionProvenance, deployedSourceCommit: "f".repeat(40) },
+    }),
+  });
+  assert.equal(sourceMismatch.ok, false);
+  assert.equal(
+    sourceMismatch.checks.find((check) => check.name === "source_provenance_verified")?.failure,
+    "source_provenance_mismatch",
+  );
+});
+
+test("rejects unsupported expected environments and malformed report evidence", async () => {
+  const loaded = await loadSmokeConfig({
+    VELO_GAS_D2_MODE: "preflight",
+    VELO_GAS_D2_EXPECTED_ENVIRONMENT: "staging",
+  });
+  assert.equal(loaded.ok, false);
+  assert.deepEqual(loaded.invalid, ["VELO_GAS_D2_EXPECTED_ENVIRONMENT"]);
+  const legacyDefault = await loadSmokeConfig({ VELO_GAS_D2_MODE: "preflight" });
+  assert.equal(legacyDefault.config.expectedEnvironment, "development");
+  const productionWithoutSource = await loadSmokeConfig({
+    VELO_GAS_D2_MODE: "preflight",
+    VELO_GAS_D2_EXPECTED_ENVIRONMENT: "production",
+  });
+  assert.equal(
+    productionWithoutSource.invalid.includes("VELO_GAS_D2_EXPECTED_SOURCE_COMMIT"),
+    true,
+  );
+  assert.equal(
+    productionWithoutSource.missing.includes("VELO_GAS_D2_DEPLOYMENT_ATTESTATION_FILE"),
+    true,
+  );
+  assert.equal(verifySmokeReport({ status: "passed" }).ok, false);
+});
+
+test("production smoke provenance accepts only an attestation matching the live marker", async () => {
+  const productionConfig = {
+    ...CONFIG,
+    deploymentName: CONVEX_PRODUCTION_DEPLOYMENT_ID,
+    expectedEnvironment: "production",
+    deploymentAttestationFile: "/tmp/convex-production-deployment.json",
+  };
+  let verificationCount = 0;
+  const dependencies = createSmokeDependencies({
+    fetchImpl: async () =>
+      Response.json({
+        schemaVersion: 1,
+        deploymentId: CONVEX_PRODUCTION_DEPLOYMENT_ID,
+        environment: "production",
+        network: "testnet",
+        verified: false,
+        deployedSourceCommit: DEPLOYED_SOURCE_COMMIT,
+        verification: "operator-configured-deployed-commit",
+      }),
+    verifyDeploymentAttestation: async ({
+      manifestPath,
+      expectedDeploymentId,
+      expectedSourceCommit,
+    }) => {
+      verificationCount += 1;
+      assert.equal(manifestPath, productionConfig.deploymentAttestationFile);
+      assert.equal(expectedDeploymentId, CONVEX_PRODUCTION_DEPLOYMENT_ID);
+      assert.equal(expectedSourceCommit, DEPLOYED_SOURCE_COMMIT);
+      return {
+        ok: true,
+        value: {
+          deploymentId: CONVEX_PRODUCTION_DEPLOYMENT_ID,
+          environment: "production",
+          network: "testnet",
+          sourceCommit: DEPLOYED_SOURCE_COMMIT,
+        },
+      };
+    },
+  });
+
+  const result = await dependencies.readProvenance(productionConfig);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value, {
+    deploymentId: CONVEX_PRODUCTION_DEPLOYMENT_ID,
+    environment: "production",
+    network: "testnet",
+    verified: true,
+    deployedSourceCommit: DEPLOYED_SOURCE_COMMIT,
+    verification: CONVEX_PRODUCTION_VERIFICATION,
+  });
+  assert.equal(verificationCount, 1);
+
+  const mismatchedDependencies = createSmokeDependencies({
+    fetchImpl: async () =>
+      Response.json({
+        schemaVersion: 1,
+        deploymentId: CONVEX_PRODUCTION_DEPLOYMENT_ID,
+        environment: "production",
+        network: "testnet",
+        verified: false,
+        deployedSourceCommit: "f".repeat(40),
+        verification: "operator-configured-deployed-commit",
+      }),
+    verifyDeploymentAttestation: async () => ({
+      ok: true,
+      value: {
+        deploymentId: CONVEX_PRODUCTION_DEPLOYMENT_ID,
+        environment: "production",
+        network: "testnet",
+        sourceCommit: DEPLOYED_SOURCE_COMMIT,
+      },
+    }),
+  });
+  const mismatch = await mismatchedDependencies.readProvenance(productionConfig);
+  assert.deepEqual(mismatch, { ok: false, code: "source_provenance_mismatch" });
+});
+
 test("blocks a previously submitted invocation during preflight", async () => {
   const preflight = await runPreflight({
     config: CONFIG,
@@ -436,11 +685,35 @@ test("reports polling exhaustion as incomplete and never invents a receipt", asy
   assert.equal(report.execution.actualFeeStroops, null);
 });
 
+test("requires Gas Testnet API keys and rejects payment API keys before sponsorship", async () => {
+  let sponsorCalls = 0;
+  const report = await runSmokeExecution({
+    config: { ...CONFIG, apiKey: `tk_live_${"b".repeat(32)}` },
+    dependencies: makeDependencies({
+      fetchImpl: async (url, init) => {
+        if (new URL(url).pathname.endsWith("/sponsor")) sponsorCalls += 1;
+        return fakeFetch(url, init);
+      },
+    }),
+  });
+  assert.equal(report.status, "incomplete");
+  assert.equal(report.failure, "api_credentials_unavailable");
+  assert.equal(sponsorCalls, 0);
+});
+
 test("refuses sensitive smoke report content", async () => {
   await assert.rejects(
     writeSmokeReport(
       { status: "incomplete", leaked: "transactionXdr=secret" },
       "gas-d2-smoke-secret-test.json",
+      "/private/tmp",
+    ),
+    /unsafe smoke report/,
+  );
+  await assert.rejects(
+    writeSmokeReport(
+      { status: "incomplete", leaked: `tg_test_${"c".repeat(32)}` },
+      "gas-d2-smoke-gas-key-test.json",
       "/private/tmp",
     ),
     /unsafe smoke report/,

@@ -1,6 +1,7 @@
 import { Migrations } from "@convex-dev/migrations";
 
 import { components, internal } from "./_generated/api";
+import { normalizeProjectName } from "./projects/helpers";
 import schema from "./schema";
 
 export const migrations = new Migrations(components.migrations, { schema });
@@ -9,6 +10,14 @@ export const backfillProjectRateLimitBackend = migrations.define({
   table: "projects",
   migrateOne: (_ctx, project) =>
     project.rateLimitBackend === undefined ? { rateLimitBackend: "convex" as const } : undefined,
+});
+
+export const backfillProjectNormalizedNames = migrations.define({
+  table: "projects",
+  migrateOne: (_ctx, project) =>
+    project.normalizedName === undefined
+      ? { normalizedName: normalizeProjectName(project.name) }
+      : undefined,
 });
 
 export const backfillProjectOrganizations = migrations.define({
@@ -97,6 +106,7 @@ export const backfillBillingExceptionOperations = migrations.define({
 
 export const runAll = migrations.runner([
   internal.migrations.backfillProjectRateLimitBackend,
+  internal.migrations.backfillProjectNormalizedNames,
   internal.migrations.backfillProjectOrganizations,
   internal.migrations.backfillBillingExceptionOperations,
 ]);

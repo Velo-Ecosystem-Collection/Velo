@@ -1,0 +1,36 @@
+{
+  "artifact": "velo_gas_d4_production_runtime_status_readback",
+  "recordedAtUtc": "2026-09-26T08:36:55Z",
+  "deployment": "agreeable-salmon-748",
+  "statusSource": "internal-only gas/relayer:custodyConfigurationStatus action",
+  "statusReads": [
+    {
+      "observedAtUtc": "2026-09-26T08:36:35Z",
+      "deploymentId": "prod:agreeable-salmon-748",
+      "network": "testnet",
+      "provisioningEnabled": true,
+      "keyringStatus": "valid",
+      "activeKeyVersion": "v1",
+      "keyVersionCount": 1
+    },
+    {
+      "observedAtUtc": "2026-09-26T08:36:55Z",
+      "deploymentId": "prod:agreeable-salmon-748",
+      "network": "testnet",
+      "provisioningEnabled": true,
+      "keyringStatus": "valid",
+      "activeKeyVersion": "v1",
+      "keyVersionCount": 1
+    }
+  ],
+  "sourceProvenance": {
+    "verified": false,
+    "deployedSourceSha": null
+  },
+  "safety": {
+    "keyMaterialReturned": false,
+    "provisioningAttempted": false,
+    "relayerFunded": false,
+    "testnetTransactionSubmitted": false
+  }
+}

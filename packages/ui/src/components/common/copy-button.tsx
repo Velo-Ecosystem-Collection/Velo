@@ -8,11 +8,13 @@ import { Button } from "../ui/button";
 export function CopyButton({
   value,
   label,
+  visibleText,
   size = "icon-xs",
   className,
 }: {
   value: string;
   label: string;
+  visibleText?: string;
   size?: "icon-xs" | "xs" | "sm";
   className?: string;
 }) {
@@ -59,7 +61,9 @@ export function CopyButton({
         title={`Copy ${label}`}
       >
         {status === "copied" ? <CheckIcon /> : <CopyIcon />}
-        {size !== "icon-xs" ? <span>{status === "copied" ? "Copied" : "Copy"}</span> : null}
+        {size !== "icon-xs" ? (
+          <span>{status === "copied" ? "Copied" : (visibleText ?? "Copy")}</span>
+        ) : null}
       </Button>
       <span className="sr-only" aria-live="polite">
         {status === "idle" ? "" : statusLabel}

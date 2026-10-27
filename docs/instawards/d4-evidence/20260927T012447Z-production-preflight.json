@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "mode": "preflight",
+  "status": "passed",
+  "startedAt": "2026-09-27T01:26:01.534Z",
+  "completedAt": "2026-09-27T01:26:09.755Z",
+  "repository": {
+    "before": {
+      "head": "36591f6ee4ee944de4465039ec54df7f81042510",
+      "workingTree": {
+        "status": "modified",
+        "changedPathCount": 5
+      }
+    },
+    "after": {
+      "head": "36591f6ee4ee944de4465039ec54df7f81042510",
+      "workingTree": {
+        "status": "modified",
+        "changedPathCount": 5
+      }
+    }
+  },
+  "deployment": {
+    "deploymentId": "prod:agreeable-salmon-748",
+    "environment": "production",
+    "network": "testnet",
+    "deployedSourceCommit": "8b66da057e04fe25bef33ea999911513d80c101f",
+    "provenanceVerified": true,
+    "provenanceVerification": "github-artifact-attestation"
+  },
+  "preflight": {
+    "status": "passed",
+    "checks": [
+      {
+        "name": "allowed_invocation_valid",
+        "status": "passed"
+      },
+      {
+        "name": "denied_invocation_valid",
+        "status": "passed"
+      },
+      {
+        "name": "operator_snapshot_available",
+        "status": "passed"
+      },
+      {
+        "name": "deployment_identity",
+        "status": "passed"
+      },
+      {
+        "name": "deployment_provenance_agreement",
+        "status": "passed"
+      },
+      {
+        "name": "backend_signer_ready",
+        "status": "passed"
+      },
+      {
+        "name": "testnet_custody_and_funding",
+        "status": "passed"
+      },
+      {
+        "name": "testnet_rpc_network",
+        "status": "passed"
+      },
+      {
+        "name": "source_provenance_verified",
+        "status": "passed"
+      },
+      {
+        "name": "allowed_policy_eligible",
+        "status": "passed"
+      },
+      {
+        "name": "denied_target_not_whitelisted",
+        "status": "passed"
+      },
+      {
+        "name": "user_wallet_matches_invocations",
+        "status": "passed"
+      },
+      {
+        "name": "distinct_test_transactions",
+        "status": "passed"
+      },
+      {
+        "name": "allowed_transaction_fresh",
+        "status": "passed"
+      },
+      {
+        "name": "denied_transaction_fresh",
+        "status": "passed"
+      }
+    ],
+    "allowedTransactionHash": "2fc06f47eae581e6655262fc08ec8691fbf410638114be6ce4541ef6ab69a195",
+    "deniedTransactionHash": "9ed6ca8bcd2ecf3477a0280618ea08b491753330e5a13f37c51cda14b9bfd8e1"
+  },
+  "failure": null
+}

@@ -135,8 +135,24 @@ jobs:
       - name: Build Convex Workspace Dependencies
         run: pnpm --filter @carts1024/velo-wallets build
 
+      - name: Verify Convex generated code is current
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          pnpm --filter @repo/backend exec convex codegen --typecheck disable
+          pnpm exec oxfmt --write packages/backend/convex/_generated
+
+          dirty_files="$(git status --porcelain --untracked-files=all)"
+          if [[ -n "$dirty_files" ]]; then
+            echo "::error::Convex code generation does not match the checked-in source. Regenerate it, run pnpm lint:fix, and commit the result before deploying."
+            printf '%s\n' "$dirty_files"
+            git diff -- packages/backend/convex/_generated
+            exit 1
+          fi
+
       - name: Deploy Convex Production Backend
-        run: pnpm --filter @repo/backend exec convex deploy --typecheck enable --codegen enable --message "$GITHUB_SHA"
+        run: pnpm --filter @repo/backend exec convex deploy --typecheck enable --codegen disable --message "$GITHUB_SHA"
 
       - name: Bind source revision to the deployed Convex target
         id: convex-deployment
@@ -147,8 +163,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
+          dirty_files="$(git status --porcelain --untracked-files=all)"
+          if [[ -n "$dirty_files" ]]; then
             echo "::error::Convex deploy modified the checked-out source tree; refusing to attest a different working tree."
+            printf '%s\n' "$dirty_files"
             exit 1
           fi
 

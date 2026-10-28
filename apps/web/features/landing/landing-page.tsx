@@ -17,7 +17,20 @@ export function LandingPage() {
 
     let isNavigating = false;
     let navigationTimeout: number | undefined;
-    let touchStart: { y: number; target: EventTarget | null } | null = null;
+    let touchStart: {
+      y: number;
+      target: EventTarget | null;
+      section: HTMLElement | null;
+    } | null = null;
+
+    const finishNavigation = () => {
+      isNavigating = false;
+      if (navigationTimeout !== undefined) {
+        window.clearTimeout(navigationTimeout);
+        navigationTimeout = undefined;
+      }
+      document.removeEventListener("scrollend", finishNavigation);
+    };
 
     const getSections = () =>
       Array.from(
@@ -26,14 +39,28 @@ export function LandingPage() {
         ),
       );
 
-    const getAdjacentSection = (direction: number) => {
+    const getCurrentSection = () => {
       const sections = getSections();
-      const activeIndex = sections.findIndex(
-        (section) => section.getBoundingClientRect().bottom > 1,
-      );
+      const activeSection = sections.find((section) => section.getBoundingClientRect().bottom > 1);
+
+      return activeSection ?? sections.at(-1) ?? null;
+    };
+
+    const getAdjacentSection = (direction: number, currentSection: HTMLElement | null) => {
+      const sections = getSections();
+      const activeIndex = currentSection ? sections.indexOf(currentSection) : -1;
       const currentIndex = activeIndex < 0 ? sections.length - 1 : activeIndex;
 
       return sections[currentIndex + direction] ?? null;
+    };
+
+    const hasRemainingSectionContent = (direction: number, currentSection: HTMLElement | null) => {
+      if (!currentSection) return false;
+
+      const bounds = currentSection.getBoundingClientRect();
+      if (bounds.height <= window.innerHeight + 1) return false;
+
+      return direction > 0 ? bounds.bottom > window.innerHeight + 1 : bounds.top < -1;
     };
 
     const canScrollTarget = (target: EventTarget | null, direction: number) => {
@@ -62,13 +89,19 @@ export function LandingPage() {
 
     const navigateToSection = (section: HTMLElement) => {
       isNavigating = true;
+      document.addEventListener("scrollend", finishNavigation);
       const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches
         ? "auto"
         : "smooth";
       section.scrollIntoView({ behavior, block: "start" });
-      navigationTimeout = window.setTimeout(() => {
-        isNavigating = false;
-      }, 850);
+      navigationTimeout = window.setTimeout(finishNavigation, 1400);
+    };
+
+    const handleScrollProgress = () => {
+      if (!isNavigating) return;
+
+      if (navigationTimeout !== undefined) window.clearTimeout(navigationTimeout);
+      navigationTimeout = window.setTimeout(finishNavigation, 180);
     };
 
     const handleWheel = (event: WheelEvent) => {
@@ -80,8 +113,10 @@ export function LandingPage() {
         return;
       }
       if (canScrollTarget(event.target, direction)) return;
+      const currentSection = getCurrentSection();
+      if (hasRemainingSectionContent(direction, currentSection)) return;
 
-      const nextSection = getAdjacentSection(direction);
+      const nextSection = getAdjacentSection(direction, currentSection);
       if (!nextSection) return;
 
       event.preventDefault();
@@ -90,7 +125,9 @@ export function LandingPage() {
 
     const handleTouchStart = (event: TouchEvent) => {
       const touch = event.touches[0];
-      touchStart = touch ? { y: touch.clientY, target: event.target } : null;
+      touchStart = touch
+        ? { y: touch.clientY, target: event.target, section: getCurrentSection() }
+        : null;
     };
 
     const handleTouchEnd = (event: TouchEvent) => {
@@ -99,26 +136,37 @@ export function LandingPage() {
 
       const deltaY = touchStart.y - touch.clientY;
       const startTarget = touchStart.target;
+      const currentSection = touchStart.section;
       touchStart = null;
 
       if (Math.abs(deltaY) < 4 || isNavigating) return;
 
       const direction = deltaY > 0 ? 1 : -1;
       if (canScrollTarget(startTarget, direction)) return;
+      if (hasRemainingSectionContent(direction, currentSection)) return;
 
-      const nextSection = getAdjacentSection(direction);
+      const nextSection = getAdjacentSection(direction, currentSection);
       if (nextSection) navigateToSection(nextSection);
+    };
+
+    const handleTouchCancel = () => {
+      touchStart = null;
     };
 
     window.addEventListener("wheel", handleWheel, { passive: false });
     window.addEventListener("touchstart", handleTouchStart, { passive: true });
     window.addEventListener("touchend", handleTouchEnd, { passive: true });
+    window.addEventListener("touchcancel", handleTouchCancel, { passive: true });
+    document.addEventListener("scroll", handleScrollProgress, { passive: true });
 
     return () => {
       root.classList.remove("landing-scroll-snap");
       window.removeEventListener("wheel", handleWheel);
       window.removeEventListener("touchstart", handleTouchStart);
       window.removeEventListener("touchend", handleTouchEnd);
+      window.removeEventListener("touchcancel", handleTouchCancel);
+      document.removeEventListener("scroll", handleScrollProgress);
+      document.removeEventListener("scrollend", finishNavigation);
       if (navigationTimeout !== undefined) window.clearTimeout(navigationTimeout);
     };
   }, []);

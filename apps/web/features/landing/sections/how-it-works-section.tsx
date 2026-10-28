@@ -25,43 +25,51 @@ const steps = [
 
 export function HowItWorksSection() {
   return (
-    <section className="py-24 px-6 bg-zinc-950 text-zinc-50 border-b border-zinc-900 relative">
-      <div className="max-w-7xl mx-auto">
+    <section className="relative border-b border-zinc-900 bg-zinc-950 px-6 py-24 text-zinc-50">
+      <div className="mx-auto max-w-7xl">
         {/* Title block */}
-        <div className="text-center max-w-2xl mx-auto mb-20">
-          <h2 className="text-zinc-500 font-mono text-xs uppercase tracking-widest mb-3">
+        <div className="mx-auto mb-20 max-w-2xl text-center">
+          <h2 className="mb-3 font-mono text-xs tracking-widest text-zinc-500 uppercase">
             How Velo Works
           </h2>
-          <h3 className="text-3xl md:text-5xl font-bold tracking-tight mb-4">
+          <h3 className="mb-4 text-3xl font-bold tracking-tight md:text-5xl">
             From application action to on-chain outcome.
           </h3>
-          <p className="text-zinc-400 text-sm font-light">
+          <p className="text-sm font-light text-zinc-400">
             Keep the operational steps around a supported Stellar transaction connected to your
             application.
           </p>
         </div>
 
         {/* Steps display */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12 relative">
+        <div className="relative grid grid-cols-1 gap-12 md:grid-cols-2 lg:grid-cols-3">
           {/* Connector Line (Desktop) */}
-          <div className="hidden lg:block absolute top-16 left-[15%] right-[15%] h-[1px] bg-gradient-to-r from-zinc-800 via-zinc-700/50 to-zinc-800 z-0 border-t border-dashed border-zinc-800" />
+          <div className="absolute top-16 right-[15%] left-[15%] z-0 hidden h-[1px] border-t border-dashed border-zinc-800 bg-gradient-to-r from-zinc-800 via-zinc-700/50 to-zinc-800 lg:block" />
 
           {steps.map((item, idx) => {
             const Icon = item.icon;
+            const animationDelay = `${idx * 0.8}s`;
+
             return (
-              <div key={idx} className="flex flex-col items-center text-center relative z-10 group">
+              <div key={idx} className="group relative z-10 flex flex-col items-center text-center">
                 {/* Step Circle with Icon */}
-                <div className="w-16 h-16 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-400 group-hover:text-zinc-100 group-hover:border-zinc-500/50 group-hover:bg-zinc-900/60 shadow-[0_0_15px_rgba(0,0,0,0.3)] transition-all duration-300 mb-6">
+                <div
+                  className="how-it-works-step-icon mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-400 shadow-[0_0_15px_rgba(0,0,0,0.3)] transition-all duration-300 group-hover:border-zinc-500/50 group-hover:bg-zinc-900/60 group-hover:text-zinc-100"
+                  style={{ animationDelay }}
+                >
                   <Icon size={24} />
                 </div>
 
                 {/* Step Number Badge */}
-                <span className="font-mono text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-b from-zinc-700 to-zinc-900 mb-3 select-none">
+                <span
+                  className="how-it-works-step-number mb-3 bg-gradient-to-b from-zinc-700 to-zinc-900 bg-clip-text font-mono text-5xl font-extrabold text-transparent select-none"
+                  style={{ animationDelay }}
+                >
                   {item.number}
                 </span>
 
-                <h4 className="text-xl font-bold text-zinc-100 mb-2">{item.title}</h4>
-                <p className="text-zinc-400 text-sm max-w-sm leading-relaxed font-light">
+                <h4 className="mb-2 text-xl font-bold text-zinc-100">{item.title}</h4>
+                <p className="max-w-sm text-sm leading-relaxed font-light text-zinc-400">
                   {item.description}
                 </p>
               </div>

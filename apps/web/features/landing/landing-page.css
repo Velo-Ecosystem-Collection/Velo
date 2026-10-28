@@ -2,6 +2,7 @@
 
 .landing-container {
   min-height: 100vh;
+  min-height: 100dvh;
   background-color: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), sans-serif;
@@ -32,7 +33,7 @@ html.landing-scroll-snap {
 .landing-container > section:not(.landing-hero) {
   display: flex;
   min-height: 100vh;
-  min-height: 100svh;
+  min-height: 100dvh;
   flex-direction: column;
   justify-content: center;
 }
@@ -55,7 +56,43 @@ html.landing-scroll-snap {
 
 .landing-hero {
   min-height: 100vh;
-  min-height: 100svh;
+  min-height: 100dvh;
+}
+
+@keyframes how-it-works-icon-loop {
+  0%,
+  12%,
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
+  }
+
+  6% {
+    transform: translateY(-5px) scale(1.04);
+    box-shadow: 0 0 24px rgba(161, 161, 170, 0.24);
+  }
+}
+
+@keyframes how-it-works-number-loop {
+  0%,
+  12%,
+  100% {
+    opacity: 0.68;
+    transform: translateY(0);
+  }
+
+  6% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+.how-it-works-step-icon {
+  animation: how-it-works-icon-loop 2.8s ease-in-out infinite;
+}
+
+.how-it-works-step-number {
+  animation: how-it-works-number-loop 2.8s ease-in-out infinite;
 }
 
 .landing-hero__pixel-blast {
@@ -71,6 +108,11 @@ html.landing-scroll-snap {
 @media (prefers-reduced-motion: reduce) {
   .landing-hero__pixel-blast {
     display: none;
+  }
+
+  .how-it-works-step-icon,
+  .how-it-works-step-number {
+    animation: none;
   }
 }
 

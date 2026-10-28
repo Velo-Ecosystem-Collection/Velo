@@ -59,40 +59,110 @@ html.landing-scroll-snap {
   min-height: 100dvh;
 }
 
+/* Shared timing lets each connector fill as emphasis reaches the next step. */
+.how-it-works {
+  --step-accent: #6d28d9;
+  --step-muted: #71717a;
+  --step-track: #d4d4d8;
+  --step-surface: #fafafa;
+  --step-active-surface: #ede9fe;
+}
+
+.dark .how-it-works {
+  --step-accent: #c4b5fd;
+  --step-muted: #a1a1aa;
+  --step-track: #3f3f46;
+  --step-surface: #18181b;
+  --step-active-surface: #2e2049;
+}
+
 @keyframes how-it-works-icon-loop {
   0%,
-  12%,
+  33%,
   100% {
-    transform: translateY(0) scale(1);
-    box-shadow: 0 0 15px rgba(0, 0, 0, 0.3);
+    border-color: var(--step-track);
+    color: var(--step-muted);
+    background-color: var(--step-surface);
+    box-shadow: 0 0 0 0 transparent;
   }
-
-  6% {
-    transform: translateY(-5px) scale(1.04);
-    box-shadow: 0 0 24px rgba(161, 161, 170, 0.24);
+  5%,
+  22% {
+    border-color: var(--step-accent);
+    color: var(--step-accent);
+    background-color: var(--step-active-surface);
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--step-accent) 15%, transparent);
   }
 }
 
 @keyframes how-it-works-number-loop {
   0%,
-  12%,
+  33%,
   100% {
-    opacity: 0.68;
-    transform: translateY(0);
+    color: var(--step-muted);
   }
+  5%,
+  22% {
+    color: var(--step-accent);
+  }
+}
 
-  6% {
+@keyframes how-it-works-connector-loop {
+  0%,
+  22% {
+    transform: scaleX(0);
     opacity: 1;
-    transform: translateY(-4px);
+  }
+  33%,
+  85% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
   }
 }
 
 .how-it-works-step-icon {
-  animation: how-it-works-icon-loop 2.8s ease-in-out infinite;
+  border-color: var(--step-track);
+  color: var(--step-muted);
+  background: var(--step-surface);
+  animation: how-it-works-icon-loop 9s ease-in-out infinite;
 }
 
 .how-it-works-step-number {
-  animation: how-it-works-number-loop 2.8s ease-in-out infinite;
+  color: var(--step-muted);
+  animation: how-it-works-number-loop 9s ease-in-out infinite;
+}
+
+.how-it-works-connector {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  width: 32px;
+  height: 2px;
+  transform: rotate(90deg);
+  transform-origin: left center;
+  background: var(--step-track);
+}
+
+.how-it-works-connector > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--step-accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation: how-it-works-connector-loop 9s ease-in-out infinite;
+}
+
+@media (min-width: 1024px) {
+  .how-it-works-connector {
+    top: 31px;
+    left: calc(50% + 40px);
+    width: calc(100% - 32px);
+    transform: none;
+  }
 }
 
 .landing-hero__pixel-blast {
@@ -111,8 +181,10 @@ html.landing-scroll-snap {
   }
 
   .how-it-works-step-icon,
-  .how-it-works-step-number {
+  .how-it-works-step-number,
+  .how-it-works-connector > span {
     animation: none;
+    opacity: 1;
   }
 }
 

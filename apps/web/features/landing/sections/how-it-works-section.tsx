@@ -25,7 +25,7 @@ const steps = [
 
 export function HowItWorksSection() {
   return (
-    <section className="relative border-b border-zinc-900 bg-zinc-950 px-6 py-24 text-zinc-50">
+    <section className="how-it-works relative border-b border-zinc-900 bg-zinc-950 px-6 py-24 text-zinc-50">
       <div className="mx-auto max-w-7xl">
         {/* Title block */}
         <div className="mx-auto mb-20 max-w-2xl text-center">
@@ -42,19 +42,21 @@ export function HowItWorksSection() {
         </div>
 
         {/* Steps display */}
-        <div className="relative grid grid-cols-1 gap-12 md:grid-cols-2 lg:grid-cols-3">
-          {/* Connector Line (Desktop) */}
-          <div className="absolute top-16 right-[15%] left-[15%] z-0 hidden h-[1px] border-t border-dashed border-zinc-800 bg-gradient-to-r from-zinc-800 via-zinc-700/50 to-zinc-800 lg:block" />
-
+        <div className="relative grid grid-cols-1 gap-12 lg:grid-cols-3">
           {steps.map((item, idx) => {
             const Icon = item.icon;
-            const animationDelay = `${idx * 0.8}s`;
+            const animationDelay = `${idx * 3}s`;
 
             return (
               <div key={idx} className="group relative z-10 flex flex-col items-center text-center">
+                {idx < steps.length - 1 && (
+                  <div className="how-it-works-connector" aria-hidden="true">
+                    <span style={{ animationDelay }} />
+                  </div>
+                )}
                 {/* Step Circle with Icon */}
                 <div
-                  className="how-it-works-step-icon mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-400 shadow-[0_0_15px_rgba(0,0,0,0.3)] transition-all duration-300 group-hover:border-zinc-500/50 group-hover:bg-zinc-900/60 group-hover:text-zinc-100"
+                  className="how-it-works-step-icon mb-6 flex h-16 w-16 items-center justify-center rounded-full border"
                   style={{ animationDelay }}
                 >
                   <Icon size={24} />
@@ -62,7 +64,7 @@ export function HowItWorksSection() {
 
                 {/* Step Number Badge */}
                 <span
-                  className="how-it-works-step-number mb-3 bg-gradient-to-b from-zinc-700 to-zinc-900 bg-clip-text font-mono text-5xl font-extrabold text-transparent select-none"
+                  className="how-it-works-step-number mb-3 font-mono text-5xl font-extrabold select-none"
                   style={{ animationDelay }}
                 >
                   {item.number}

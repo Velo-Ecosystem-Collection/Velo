@@ -13,6 +13,30 @@ html {
   scroll-behavior: smooth;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+html.landing-scroll-snap {
+  scroll-snap-type: y mandatory;
+}
+
+.landing-container > section,
+.landing-container > footer {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.landing-container > section:not(.landing-hero) {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100svh;
+  flex-direction: column;
+  justify-content: center;
+}
+
 /* Custom animations */
 @keyframes fadeIn {
   from {
@@ -27,6 +51,27 @@ html {
 
 .animate-fade-in {
   animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.landing-hero {
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
+.landing-hero__pixel-blast {
+  position: absolute;
+  inset: 0;
+  opacity: 0.42;
+}
+
+.dark .landing-hero__pixel-blast {
+  opacity: 0.34;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-hero__pixel-blast {
+    display: none;
+  }
 }
 
 /* Selection custom color */

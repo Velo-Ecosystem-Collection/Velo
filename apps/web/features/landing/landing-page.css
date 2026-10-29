@@ -6,7 +6,7 @@
   background-color: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), sans-serif;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* Custom smooth scrolling */
@@ -20,6 +20,7 @@ html {
   }
 }
 
+/* Let the browser resolve wheel/trackpad momentum into section transitions. */
 html.landing-scroll-snap {
   scroll-snap-type: y mandatory;
 }

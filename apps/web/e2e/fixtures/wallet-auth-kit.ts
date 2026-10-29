@@ -1,5 +1,6 @@
 // Development-only browser fixture. No real wallet or backend credentials.
 const address = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+const approvedAddressKey = "velo:fixture-wallet-approved-address";
 export const KitEventType = {
   STATE_UPDATED: "state",
   WALLET_SELECTED: "selected",
@@ -8,7 +9,16 @@ export const KitEventType = {
 const listeners = new Map<string, Set<(event: { payload: Record<string, string> }) => void>>();
 let close: (() => void) | undefined;
 export const StellarWalletsKit = {
-  selectedModule: { productId: "wallet_connect" },
+  selectedModule: {
+    productId: "wallet_connect",
+    async restoreSession(expectedAddress: string) {
+      const approvedAddress = window.localStorage.getItem(approvedAddressKey);
+      return approvedAddress === expectedAddress ? { address: approvedAddress } : null;
+    },
+  },
+  setWallet(id: string) {
+    if (id !== "wallet_connect") throw new Error(`Unknown fixture wallet: ${id}`);
+  },
   async refreshSupportedWallets() {
     return [{ id: "wallet_connect", name: "WalletConnect", isAvailable: true }];
   },
@@ -36,6 +46,7 @@ export const StellarWalletsKit = {
       pair.onclick = () => {
         dialog.remove();
         close = undefined;
+        window.localStorage.setItem(approvedAddressKey, address);
         resolve({ address });
       };
       cancel.onclick = () => close?.();
@@ -48,6 +59,7 @@ export const StellarWalletsKit = {
   },
   async disconnect() {
     close?.();
+    window.localStorage.removeItem(approvedAddressKey);
     for (const fn of listeners.get(KitEventType.DISCONNECT) ?? []) fn({ payload: {} });
   },
 };

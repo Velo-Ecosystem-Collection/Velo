@@ -66,7 +66,9 @@ test("disconnect invalidates a pending wallet session response", async ({ page }
   expect(await page.evaluate(() => sessionStorage.getItem("velo:convex-token"))).toBeNull();
 });
 
-test("reload requires reconnect and then reuses a valid address-bound token", async ({ page }) => {
+test("reload restores the selected wallet and reuses its valid address-bound token", async ({
+  page,
+}) => {
   let sessions = 0;
   await page.route("**/api/auth/wallet/session", async (route) => {
     sessions++;
@@ -76,10 +78,30 @@ test("reload requires reconnect and then reuses a valid address-bound token", as
   await page.getByText("Approve simulated pairing").click();
   await expect(page.getByTestId("auth-status")).toHaveText("authenticated");
   await page.reload();
-  await expect(page.getByTestId("wallet-status")).toHaveText("stale");
-  await expect(page.getByTestId("auth-status")).toHaveText("unauthenticated");
+  await expect(page.getByTestId("wallet-status")).toHaveText("connected");
+  await expect(page.getByTestId("auth-status")).toHaveText("authenticated");
+  expect(sessions).toBe(1);
+});
+
+test("reload does not restore a wallet when its active account differs", async ({ page }) => {
+  await page.route("**/api/auth/wallet/session", (route) => route.fulfill({ json: result() }));
   await page.getByRole("button", { name: "Connect wallet", exact: true }).click();
   await page.getByText("Approve simulated pairing").click();
   await expect(page.getByTestId("auth-status")).toHaveText("authenticated");
-  expect(sessions).toBe(1);
+
+  await page.evaluate(() => {
+    const saved = JSON.parse(localStorage.getItem("velo:last-wallet-session") ?? "{}");
+    localStorage.setItem(
+      "velo:last-wallet-session",
+      JSON.stringify({
+        ...saved,
+        address: "GA54SPC34JL3I57ENALTO2V26XOFFG4VGQLFQXDGF6KJ5TJY7ODY56ST",
+      }),
+    );
+  });
+  await page.reload();
+
+  await expect(page.getByTestId("wallet-status")).toHaveText("stale");
+  await expect(page.getByTestId("auth-status")).toHaveText("unauthenticated");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });

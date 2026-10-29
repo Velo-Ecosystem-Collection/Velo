@@ -20,6 +20,7 @@ const geistMono = localFont({
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://velo.local"),
+  icons: { icon: { url: "/velo-favicon.png", type: "image/png", sizes: "184x174" } },
   title: "Velo",
   description: "Verified developer infrastructure for Stellar apps",
   keywords: ["stellar", "soroban", "developer tools", "verification", "debugging"],

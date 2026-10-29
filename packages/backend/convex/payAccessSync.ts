@@ -46,6 +46,10 @@ export const syncPayAccessEvents = internalAction({
       return { eventCount: 0, processedCount: 0, retryable: true };
     }
 
+    if (result.historyGap) {
+      console.warn("pay_access_event_history_gap_recovered", result.historyGap);
+    }
+
     if (result.events.length === 0) {
       if (result.latestLedger !== undefined) {
         await ctx.runMutation(internal.payAccessSync.updatePollerState, {

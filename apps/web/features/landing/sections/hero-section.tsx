@@ -8,6 +8,8 @@ import { useEffect, useState } from "react";
 
 import type { PixelBlastProps } from "@repo/ui/components/ui-customs/pixel-blast/PixelBlast";
 
+import { LandingLogo } from "../landing-logo";
+
 const PixelBlast = dynamic<PixelBlastProps>(
   () => import("@repo/ui/components/ui-customs/pixel-blast/PixelBlast"),
   { ssr: false },
@@ -37,7 +39,6 @@ export function HeroSection() {
   }, []);
 
   const pixelColor = mounted && resolvedTheme === "light" ? "#71717a" : "#ffffff";
-  const logoSrc = mounted && resolvedTheme === "light" ? "/iconv2-light.png" : "/iconv2.png";
 
   return (
     <section className="landing-hero relative flex flex-col justify-between overflow-hidden border-b border-border bg-background text-foreground">
@@ -69,12 +70,7 @@ export function HeroSection() {
 
       {/* Header / Mini Nav inside Hero */}
       <header className="relative z-20 mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6">
-        <div className="flex items-center gap-3">
-          <img src={logoSrc} alt="Velo Logo" className="h-12 w-12 object-contain" />
-          <div>
-            <span className="font-sans text-2xl font-bold tracking-tight text-zinc-100">Velo</span>
-          </div>
-        </div>
+        <LandingLogo />
 
         <nav className="flex items-center gap-4 sm:gap-6">
           <Link

@@ -2,6 +2,7 @@
 
 .landing-container {
   min-height: 100vh;
+  min-height: 100dvh;
   background-color: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), sans-serif;
@@ -11,6 +12,30 @@
 /* Custom smooth scrolling */
 html {
   scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+html.landing-scroll-snap {
+  scroll-snap-type: y mandatory;
+}
+
+.landing-container > section,
+.landing-container > footer {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.landing-container > section:not(.landing-hero) {
+  display: flex;
+  min-height: 100vh;
+  min-height: 100dvh;
+  flex-direction: column;
+  justify-content: center;
 }
 
 /* Custom animations */
@@ -27,6 +52,140 @@ html {
 
 .animate-fade-in {
   animation: fadeIn 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.landing-hero {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Shared timing lets each connector fill as emphasis reaches the next step. */
+.how-it-works {
+  --step-accent: #6d28d9;
+  --step-muted: #71717a;
+  --step-track: #d4d4d8;
+  --step-surface: #fafafa;
+  --step-active-surface: #ede9fe;
+}
+
+.dark .how-it-works {
+  --step-accent: #c4b5fd;
+  --step-muted: #a1a1aa;
+  --step-track: #3f3f46;
+  --step-surface: #18181b;
+  --step-active-surface: #2e2049;
+}
+
+@keyframes how-it-works-icon-loop {
+  0%,
+  33%,
+  100% {
+    border-color: var(--step-track);
+    color: var(--step-muted);
+    background-color: var(--step-surface);
+    box-shadow: 0 0 0 0 transparent;
+  }
+  5%,
+  22% {
+    border-color: var(--step-accent);
+    color: var(--step-accent);
+    background-color: var(--step-active-surface);
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--step-accent) 15%, transparent);
+  }
+}
+
+@keyframes how-it-works-number-loop {
+  0%,
+  33%,
+  100% {
+    color: var(--step-muted);
+  }
+  5%,
+  22% {
+    color: var(--step-accent);
+  }
+}
+
+@keyframes how-it-works-connector-loop {
+  0%,
+  22% {
+    transform: scaleX(0);
+    opacity: 1;
+  }
+  33%,
+  85% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+.how-it-works-step-icon {
+  border-color: var(--step-track);
+  color: var(--step-muted);
+  background: var(--step-surface);
+  animation: how-it-works-icon-loop 9s ease-in-out infinite;
+}
+
+.how-it-works-step-number {
+  color: var(--step-muted);
+  animation: how-it-works-number-loop 9s ease-in-out infinite;
+}
+
+.how-it-works-connector {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  width: 32px;
+  height: 2px;
+  transform: rotate(90deg);
+  transform-origin: left center;
+  background: var(--step-track);
+}
+
+.how-it-works-connector > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--step-accent);
+  transform: scaleX(0);
+  transform-origin: left center;
+  animation: how-it-works-connector-loop 9s ease-in-out infinite;
+}
+
+@media (min-width: 1024px) {
+  .how-it-works-connector {
+    top: 31px;
+    left: calc(50% + 40px);
+    width: calc(100% - 32px);
+    transform: none;
+  }
+}
+
+.landing-hero__pixel-blast {
+  position: absolute;
+  inset: 0;
+  opacity: 0.42;
+}
+
+.dark .landing-hero__pixel-blast {
+  opacity: 0.34;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-hero__pixel-blast {
+    display: none;
+  }
+
+  .how-it-works-step-icon,
+  .how-it-works-step-number,
+  .how-it-works-connector > span {
+    animation: none;
+    opacity: 1;
+  }
 }
 
 /* Selection custom color */

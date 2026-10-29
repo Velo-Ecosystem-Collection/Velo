@@ -17,6 +17,8 @@ import {
 import { ChevronsUpDown, Plus, FolderIcon } from "lucide-react";
 import * as React from "react";
 
+const projectSwitcherTriggerId = "velo-project-switcher-trigger";
+
 export type SwitcherProject = {
   id: string;
   name: string;
@@ -48,6 +50,7 @@ export function ProjectSwitcher({
         <DropdownMenu modal={!isMobile}>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton
+              id={projectSwitcherTriggerId}
               size="lg"
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
@@ -78,6 +81,7 @@ export function ProjectSwitcher({
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
+            aria-labelledby={projectSwitcherTriggerId}
             className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
             align="start"
             side={isMobile ? "bottom" : "right"}

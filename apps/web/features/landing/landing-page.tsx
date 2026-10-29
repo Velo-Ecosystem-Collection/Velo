@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+
 import "./landing-page.css";
 import { CTASection } from "./sections/cta-section";
 import { DeveloperSection } from "./sections/developer-section";
@@ -9,8 +11,14 @@ import { HeroSection } from "./sections/hero-section";
 import { HowItWorksSection } from "./sections/how-it-works-section";
 
 export function LandingPage() {
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.add("landing-scroll-snap");
+    return () => root.classList.remove("landing-scroll-snap");
+  }, []);
+
   return (
-    <main className="landing-container flex flex-col min-h-screen">
+    <main className="landing-container flex min-h-screen flex-col">
       {/* Hero section with WebGL dot-matrix background */}
       <HeroSection />
 

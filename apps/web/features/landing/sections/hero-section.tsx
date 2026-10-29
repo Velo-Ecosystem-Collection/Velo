@@ -8,6 +8,8 @@ import { useEffect, useState } from "react";
 
 import type { PixelBlastProps } from "@repo/ui/components/ui-customs/pixel-blast/PixelBlast";
 
+import { LandingLogo } from "../landing-logo";
+
 const PixelBlast = dynamic<PixelBlastProps>(
   () => import("@repo/ui/components/ui-customs/pixel-blast/PixelBlast"),
   { ssr: false },
@@ -16,33 +18,51 @@ const PixelBlast = dynamic<PixelBlastProps>(
 export function HeroSection() {
   const { resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const [showAnimatedBackground, setShowAnimatedBackground] = useState(false);
 
   useEffect(() => {
     setMounted(true);
+
+    const animationQuery = window.matchMedia(
+      "(min-width: 48rem) and (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)",
+    );
+    const updateAnimationPreference = () => {
+      setShowAnimatedBackground(animationQuery.matches);
+    };
+
+    updateAnimationPreference();
+    animationQuery.addEventListener("change", updateAnimationPreference);
+
+    return () => {
+      animationQuery.removeEventListener("change", updateAnimationPreference);
+    };
   }, []);
 
-  const pixelColor = mounted && resolvedTheme === "light" ? "#18181b" : "#ffffff";
-  const logoSrc = mounted && resolvedTheme === "light" ? "/iconv2-light.png" : "/iconv2.png";
+  const pixelColor = mounted && resolvedTheme === "light" ? "#71717a" : "#ffffff";
 
   return (
-    <section className="relative flex min-h-[90vh] flex-col justify-between overflow-hidden border-b border-border bg-background text-foreground">
-      {/* Background PixelBlast Canvas */}
-      <div className="pointer-events-auto absolute inset-0 z-0 opacity-80">
-        <PixelBlast
-          variant="circle"
-          pixelSize={5}
-          color={pixelColor}
-          patternScale={3.5}
-          patternDensity={1.1}
-          pixelSizeJitter={0.3}
-          enableRipples={true}
-          rippleSpeed={0.35}
-          rippleThickness={0.1}
-          rippleIntensityScale={1.2}
-          speed={0.4}
-          edgeFade={0.3}
-          transparent={true}
-        />
+    <section className="landing-hero relative flex flex-col justify-between overflow-hidden border-b border-border bg-background text-foreground">
+      <div className="pointer-events-none absolute inset-0 z-0" aria-hidden="true">
+        {showAnimatedBackground ? (
+          <PixelBlast
+            className="landing-hero__pixel-blast pointer-events-auto"
+            variant="circle"
+            pixelSize={5}
+            color={pixelColor}
+            patternScale={3.5}
+            patternDensity={1.1}
+            pixelSizeJitter={0.3}
+            enableRipples
+            rippleSpeed={0.35}
+            rippleThickness={0.1}
+            rippleIntensityScale={1.2}
+            speed={0.4}
+            edgeFade={0.3}
+            transparent
+            antialias={false}
+            liquid={false}
+          />
+        ) : null}
       </div>
 
       {/* Floating Decorative Grid or Glow overlay */}
@@ -50,12 +70,7 @@ export function HeroSection() {
 
       {/* Header / Mini Nav inside Hero */}
       <header className="relative z-20 mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6">
-        <div className="flex items-center gap-3">
-          <img src={logoSrc} alt="Velo Logo" className="h-12 w-12 object-contain" />
-          <div>
-            <span className="font-sans text-2xl font-bold tracking-tight text-zinc-100">Velo</span>
-          </div>
-        </div>
+        <LandingLogo />
 
         <nav className="flex items-center gap-4 sm:gap-6">
           <Link
@@ -96,7 +111,7 @@ export function HeroSection() {
         {/* Headings */}
         <h1 className="mb-6 text-4xl leading-none font-bold tracking-tight text-zinc-100 md:text-7xl">
           Build on Stellar. <br />
-          <span className="bg-gradient-to-r from-zinc-950 to-zinc-500 dark:from-white dark:to-zinc-400 bg-clip-text text-transparent">
+          <span className="bg-gradient-to-r from-zinc-950 to-zinc-500 bg-clip-text text-transparent dark:from-white dark:to-zinc-400">
             Operate with Velo.
           </span>
         </h1>

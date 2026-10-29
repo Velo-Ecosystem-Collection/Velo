@@ -131,7 +131,7 @@ Those jobs often end up fragmented across scripts, dashboards, providers, and ma
 
 | Capability     | What Velo helps you do                                                                                      | Alpha status               |
 | -------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------- |
-| 🛠️ **Build**   | Connect supported Stellar operations through APIs, SDKs, project workspaces, and reusable workflows.        | Implemented alpha          |
+| 🛠️ **Build**   | Connect supported Stellar operations through APIs, SDKs, project workspaces, Gas Station, and Playground.    | Implemented alpha          |
 | ✅ **Verify**  | Link wallet authorization and on-chain provenance to the project and contracts an owner claims as official. | Live validation pending    |
 | 📡 **Observe** | Inspect Testnet transactions, monitor contract events, and review signed webhook delivery.                  | Live qualification pending |
 | 💳 **Pay**     | Create hosted Stellar checkout flows and return ledger-verified payment state to an application.            | Code-complete; E2E pending |
@@ -141,13 +141,22 @@ Start with Velo Pay, then use the wider platform as your Stellar application gro
 
 ## ✨ What You Can Do Today
 
-- **Register verifiable projects** with wallet-owned identity and official contract references stored through `VeloRegistry`.
+- **Manage project identity and lifecycle** with Registry-backed identity, official contract references,
+  owner-scoped names, and owner-only retirement.
 - **Activate payment access** through `VeloPayAccess`, which checks project state through the Registry contract.
+- **Sponsor eligible Stellar Testnet fees** with Gas Station: owners fund a managed relayer, set a daily XLM
+  cap, per-wallet hourly request quota, and allowed-contract list, then explicitly activate or pause
+  sponsorship. dApps integrate through the server-side API, SDK, or Express and Next.js examples.
+- **Explore Soroban contracts** in Playground by loading live specs, simulating calls, reviewing exact XDR,
+  and invoking eligible calls on Testnet with a wallet. Mainnet is limited to inspection and simulation.
 - **Create PaymentIntents** through the Velo API or the server-side `@carts1024/velo-sdk`, with idempotency and anchor-aware routing.
 - **Send customers to hosted checkout** where they connect a wallet and submit a Stellar Testnet payment.
 - **Trust ledger evidence, not browser callbacks**: only the backend scanner can promote a payment to `paid` after verification.
 - **Deliver signed webhooks** with HMAC-SHA256 signatures, retries, secret rotation, and delivery logs.
 - **Debug transactions and monitor contracts** from the same project workspace.
+- **Use project-configured wallets** through `@carts1024/velo-wallets` browser, React, and custom-element
+  integrations.
+- **Track Velo credits and top-ups** through policy-gated billing controls; Mainnet enforcement remains gated.
 - **Demonstrate regional settlement** with PDAX UAT balances, quotes, trades, InstaPay withdrawals, callbacks, and normalized merchant events.
 
 ## 🌐 How Velo Uses Stellar
@@ -157,10 +166,11 @@ Testnet operating loop.
 
 | Stellar capability                  | How Velo uses it today                                                                                                                                                                                                            |
 | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Wallets and signatures**          | Stellar Wallets Kit connects supported wallets for authentication and transaction signing. Velo's current authentication flow uses a wallet-signed, SEP-10-style challenge; broader SEP-10 infrastructure remains on the roadmap. |
+| **Wallets and signatures**          | Stellar Wallets Kit connects supported wallets and signs transactions. Dashboard login requests a Velo JWT for the connected address after checking its Stellar key format; it does not independently prove address ownership. SEP-10 authentication remains on the roadmap. |
 | **Classic transactions and assets** | `@stellar/stellar-sdk` and Horizon prepare and submit checkout transactions, inspect accounts and trustlines, and support native XLM and issued-asset payment flows.                                                              |
-| **Stellar RPC and ledger data**     | Backend workers verify submitted transactions, reconcile pending payments, debug transaction results, and poll supported Soroban contract events.                                                                                 |
-| **Soroban contracts**               | `VeloRegistry` records wallet-owned project identity and official contract references. `VeloPayAccess` reads Registry state to control payment activation and checkout credits.                                                   |
+| **Stellar RPC and ledger data**     | Backend workers verify submitted transactions, reconcile pending payments, debug transaction results, poll supported Soroban contract events, and power Playground simulation.                                                |
+| **Testnet fee sponsorship**         | Managed relayers submit eligible FeeBump transactions under project limits and contract allowlists. Owners control funding and activation; the signing key stays on the server.                                                  |
+| **Soroban contracts**               | `VeloRegistry` records project identity and official contract references. `VeloPayAccess` reads Registry state to control payment activation and checkout credits. Playground supports Testnet invocation and Mainnet simulation. |
 | **Ledger-verified payments**        | A browser submission never marks a PaymentIntent as paid. The backend checks the transaction against the intended source, destination, asset, and amount before updating state and scheduling `payment.succeeded`.                |
 | **Stablecoin settlement**           | The current PDAX UAT workflow demonstrates how Stellar stablecoin collection can continue into quotes, trades, and Philippine local-payout flows. It is a sandbox integration, not production settlement.                         |
 
@@ -227,7 +237,11 @@ flowchart LR
   Checkout --> Backend
 
   Console --> Contracts[VeloRegistry and VeloPayAccess]
+  Console --> Playground[Contract Playground]
+  SDK --> Gas[Gas Station API]
+  Gas --> Backend
   Checkout --> Stellar[Stellar Testnet]
+  Playground --> Stellar
   Contracts --> Stellar
   Backend --> Stellar
 
@@ -241,19 +255,20 @@ The browser can submit a payment, but it cannot declare success. Velo verifies t
 
 | Contract        | Address                                                    | Explorer                                                                                                                            |
 | --------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `VeloRegistry`  | `CBSR5LFHR5Q2X3PO3HSMGXI43YEUYGFTHUPGNVGW6XH2VNOQUEUHIEJR` | [View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/CBSR5LFHR5Q2X3PO3HSMGXI43YEUYGFTHUPGNVGW6XH2VNOQUEUHIEJR) |
-| `VeloPayAccess` | `CBHDLZYSYWETHPC6KDGH35S4SNBU5P7QWLNNDWYXJRHZMZDTQSKYVOXJ` | [View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/CBHDLZYSYWETHPC6KDGH35S4SNBU5P7QWLNNDWYXJRHZMZDTQSKYVOXJ) |
+| `VeloRegistry`  | `CDIWR3WQ7DKQORRRAZOTWFQ2AOZZOFFNA3CUTL5CJPL4JVZ2GMF27V37` | [View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/CDIWR3WQ7DKQORRRAZOTWFQ2AOZZOFFNA3CUTL5CJPL4JVZ2GMF27V37) |
+| `VeloPayAccess` | `CAXMXAWM7QSW57TE3MG2DQI6ZG4UQPYK3VGPMF5K7XO5ASEEJ7IXL7RH` | [View on Stellar Expert](https://stellar.expert/explorer/testnet/contract/CAXMXAWM7QSW57TE3MG2DQI6ZG4UQPYK3VGPMF5K7XO5ASEEJ7IXL7RH) |
 
-These are alpha Testnet deployments and may be replaced as Velo evolves. After a redeployment,
-update this table, the application environment, and the contract-specific READMEs together.
+These alpha Testnet addresses come from [`deployments/testnet.json`](deployments/testnet.json) and may be
+replaced as Velo evolves. After a redeployment, update this table, the application environment, and the
+contract-specific READMEs together.
 
 ## 🛠️ Tech Stack
 
 - **Web:** Next.js 16, React 19, TypeScript 5.9, App Router, Tailwind CSS.
-- **Backend:** Convex queries, mutations, actions, crons, and wallet-challenge authentication.
+- **Backend:** Convex queries, mutations, actions, crons, and wallet-address sessions verified through Convex custom JWTs.
 - **Stellar:** Stellar Wallets Kit, `@stellar/stellar-sdk`, Horizon, Stellar RPC, and Testnet.
 - **Smart contracts:** Rust, `soroban-sdk`, `VeloRegistry`, and `VeloPayAccess`.
-- **Developer experience:** `@carts1024/velo-sdk`, REST APIs, signed webhooks, Express and Next.js examples.
+- **Developer experience:** `@carts1024/velo-sdk`, `@carts1024/velo-wallets`, REST APIs, signed webhooks, and Express and Next.js examples.
 - **Settlement:** Server-only PDAX UAT client for sandbox quotes, trades, withdrawals, and callbacks.
 - **Tooling:** pnpm workspaces, Turborepo, oxlint, oxfmt, Husky, and GitHub Actions.
 
@@ -284,8 +299,8 @@ NEXT_PUBLIC_CONVEX_URL=<convex_deployment_url>
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_STELLAR_NETWORK=testnet
 NEXT_PUBLIC_STELLAR_RPC_URL=https://soroban-testnet.stellar.org
-NEXT_PUBLIC_VELO_REGISTRY_CONTRACT_ID=CBSR5LFHR5Q2X3PO3HSMGXI43YEUYGFTHUPGNVGW6XH2VNOQUEUHIEJR
-NEXT_PUBLIC_VELO_PAY_ACCESS_CONTRACT_ID=CBHDLZYSYWETHPC6KDGH35S4SNBU5P7QWLNNDWYXJRHZMZDTQSKYVOXJ
+NEXT_PUBLIC_VELO_REGISTRY_CONTRACT_ID=CDIWR3WQ7DKQORRRAZOTWFQ2AOZZOFFNA3CUTL5CJPL4JVZ2GMF27V37
+NEXT_PUBLIC_VELO_PAY_ACCESS_CONTRACT_ID=CAXMXAWM7QSW57TE3MG2DQI6ZG4UQPYK3VGPMF5K7XO5ASEEJ7IXL7RH
 ```
 
 Authentication, backend, hosted deployment, and PDAX UAT flows require additional server-side configuration. See the [full environment reference](docs/velo-master-context.md#environment-variables) and [demo setup guide](docs/demo-setup.md).
@@ -309,9 +324,12 @@ HTTPS URL or a `data:` URI; it cannot fetch a JWKS from a phone's local network.
 Restart development or rebuild/redeploy the web app after changing these values.
 
 When configured, Velo's wallet selector includes WalletConnect for Stellar
-Testnet. Without it, the existing wallet options remain available. Authentication
-uses a signed challenge, never an on-chain transaction. This integration applies
-to Velo login/sign-up; it does not enable WalletConnect in the Velo Wallets widget.
+Testnet. Without it, the existing wallet options remain available. Login uses
+the Testnet address returned by the connected wallet to request a Velo-issued
+JWT. The session endpoint checks the address format but does not independently
+verify wallet ownership, so this is not SEP-10 authentication. Login does not
+submit a Stellar transaction. This integration applies to Velo login/sign-up;
+it does not enable WalletConnect in the Velo Wallets widget.
 See the [Stellar Wallets Kit module documentation](https://stellarwalletskit.dev/wallets/wallet-connect.html).
 
 Run `pnpm --filter web test:e2e:wallet-auth` for simulated Chromium authentication
@@ -499,13 +517,11 @@ claims of present availability.
 - SEP-10 authentication infrastructure.
 - Smart-account infrastructure.
 - SEP-24 deposit and withdrawal infrastructure.
-- Gas-station infrastructure for sponsored transactions.
 
 ### Standards and developer tooling
 
 - SDK support for SEP-6, SEP-10, SEP-24, SEP-31, SEP-38, and SEP-45.
 - Broader developer-operations infrastructure.
-- Smart-contract playground.
 
 ### Network and operations infrastructure
 
@@ -529,6 +545,7 @@ claims of present availability.
 ├── packages/stellar         # Stellar transaction and contract helpers
 ├── packages/ui              # Shared React components and styles
 ├── packages/velo-sdk        # Public alpha server-side SDK
+├── packages/velo-wallets    # Browser, React, and custom-element wallet package
 ├── contracts/registry       # Soroban project registry contract
 ├── contracts/pay_access     # Soroban payment-access contract
 ├── examples                 # Express and Next.js merchant integrations
@@ -542,6 +559,7 @@ claims of present availability.
 - [Velo Gas Station](docs/velo-gas-station.md) — server-side SDK integration, relayer setup, policy, recovery, and Testnet validation.
 - [E2E demo guide](docs/demo-setup.md) — merchant onboarding, payment, webhook, and PDAX UAT walkthrough.
 - [Velo SDK reference](packages/velo-sdk/README.md) — client setup, payment APIs, pagination, errors, and webhook verification.
+- [Velo Wallets package](packages/velo-wallets/README.md) — browser, React, and custom-element wallet integrations.
 - [Registry contract](contracts/registry/README.md) and [PayAccess contract](contracts/pay_access/README.md) — Soroban interfaces and tests.
 - [Observability architecture](docs/architecture/sprint-10-end-to-end-observability-and-redaction.md) — correlation, telemetry export, and safe redaction.
 - [Performance qualification architecture](docs/architecture/sprint-11-comparative-throughput-certification.md) — benchmark evidence and release gating.

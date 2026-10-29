@@ -223,8 +223,9 @@ export class HttpClient {
             ? error.retryAfterMs
             : Math.min(this.retryMaxDelayMs, this.retryBaseDelayMs * 2 ** attempt) *
               (0.5 + Math.random());
-        const delay = Math.min(retryDelay, Math.max(0, deadline - Date.now()));
-        if (Date.now() >= deadline) {
+        const delay = Math.ceil(retryDelay);
+        const remaining = deadline - Date.now();
+        if (remaining <= 0 || delay >= remaining) {
           throw new VeloTimeoutError(`Request timed out after ${timeoutMs}ms`);
         }
         if (delay > 0) {

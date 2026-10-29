@@ -44,10 +44,10 @@ export class VeloWalletConnectModule extends WalletConnectModule {
     }
   }
 
-  private reusableTestnetSession() {
+  private reusableTestnetSession(address?: string) {
     return this.signClient.session.values.find((session) => {
       try {
-        assertValidPublicKey(testnetSessionAddress(session));
+        assertValidPublicKey(testnetSessionAddress(session, address));
         return true;
       } catch {
         return false;
@@ -65,6 +65,13 @@ export class VeloWalletConnectModule extends WalletConnectModule {
         .map((topic) => this.closeSession(topic)),
     );
     return { address };
+  }
+
+  /** Restores an existing Testnet pairing without opening the pairing modal. */
+  async restoreSession(address: string) {
+    await this.ready();
+    const session = this.reusableTestnetSession(address);
+    return session ? this.activateSession(session) : null;
   }
 
   override async getAddress(): Promise<{ address: string }> {

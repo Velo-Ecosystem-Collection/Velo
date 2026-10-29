@@ -54,6 +54,12 @@ async function pollTarget(ctx: ActionCtx, target: PollTarget): Promise<PollResul
         cursor: currentCursor,
         afterLedger: currentCursor ? undefined : currentLedger, // Omit startLedger if cursor is present
       });
+      if (result.historyGap) {
+        console.warn("contract_event_history_gap_recovered", {
+          projectId: target.projectId,
+          ...result.historyGap,
+        });
+      }
 
       if (result.events.length === 0) {
         // Idempotent checkpointing of the latest cursor/ledger

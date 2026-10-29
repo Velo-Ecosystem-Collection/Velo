@@ -50,6 +50,17 @@ export type ContractEventFilters = {
   ledger?: number;
 };
 
+export type RecentContractEventsResult = {
+  events: NormalizedContractEvent[];
+  latestLedger?: number;
+  cursor?: string;
+  startLedger?: number;
+  historyGap?: {
+    requestedStartLedger: number;
+    availableStartLedger: number;
+  };
+};
+
 type FilterableContractEvent = Pick<
   NormalizedContractEvent,
   "contractId" | "transactionHash" | "ledger" | "topic" | "type"
@@ -172,7 +183,7 @@ export async function fetchRecentContractEvents(input: {
   afterLedger?: number;
   ledgerWindow?: number;
   limit?: number;
-}) {
+}): Promise<RecentContractEventsResult> {
   const contractIds = Array.from(new Set(input.contractIds)).slice(0, MAX_CONTRACT_IDS);
 
   if (contractIds.length === 0) {
@@ -183,6 +194,13 @@ export async function fetchRecentContractEvents(input: {
   const limit = Math.min(DEFAULT_EVENT_LIMIT, Math.max(1, input.limit ?? DEFAULT_EVENT_LIMIT));
 
   let response;
+  let startLedger: number | undefined;
+  let historyGap:
+    | {
+        requestedStartLedger: number;
+        availableStartLedger: number;
+      }
+    | undefined;
   if (input.cursor) {
     response = await server.getEvents({
       filters: [{ type: "contract", contractIds }],
@@ -190,12 +208,35 @@ export async function fetchRecentContractEvents(input: {
       limit,
     });
   } else {
-    const latest = await server.getLatestLedger();
+    // RPC exposes its retained ledger range through getHealth. Keep old saved
+    // checkpoints inside that range instead of repeatedly requesting pruned
+    // history and failing every poll.
+    const health = await server.getHealth();
+    const healthWithLedgerRange = health as typeof health & {
+      latestLedger?: number;
+      oldestLedger?: number;
+    };
+    const healthLatestLedger = healthWithLedgerRange.latestLedger;
+    const latestLedger =
+      typeof healthLatestLedger === "number" &&
+      Number.isSafeInteger(healthLatestLedger) &&
+      healthLatestLedger > 0
+        ? healthLatestLedger
+        : (await server.getLatestLedger()).sequence;
     const ledgerWindow = Math.max(1, input.ledgerWindow ?? DEFAULT_LEDGER_WINDOW);
-    const startLedger = Math.max(
+    const requestedStartLedger = Math.max(
       1,
-      input.afterLedger !== undefined ? input.afterLedger + 1 : latest.sequence - ledgerWindow + 1,
+      input.afterLedger !== undefined ? input.afterLedger + 1 : latestLedger - ledgerWindow + 1,
     );
+    const oldestLedger =
+      typeof healthWithLedgerRange.oldestLedger === "number" &&
+      Number.isSafeInteger(healthWithLedgerRange.oldestLedger)
+        ? Math.max(1, healthWithLedgerRange.oldestLedger)
+        : 1;
+    startLedger = Math.min(latestLedger, Math.max(oldestLedger, requestedStartLedger));
+    if (startLedger > requestedStartLedger) {
+      historyGap = { requestedStartLedger, availableStartLedger: startLedger };
+    }
     response = await server.getEvents({
       startLedger,
       filters: [{ type: "contract", contractIds }],
@@ -207,5 +248,7 @@ export async function fetchRecentContractEvents(input: {
     events: response.events.map((event) => normalizeRpcEvent(event)),
     latestLedger: response.latestLedger,
     cursor: response.cursor,
+    startLedger,
+    historyGap,
   };
 }

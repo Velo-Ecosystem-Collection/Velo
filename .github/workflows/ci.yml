@@ -230,6 +230,111 @@ jobs:
             echo "- Provenance: signed deployment manifest attached and uploaded as `convex-production-deployment-provenance`."
           } >> "$GITHUB_STEP_SUMMARY"
 
+  deploy-vercel:
+    name: Deploy Web to Vercel
+    needs: [test-js, deploy-convex]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+    concurrency:
+      group: vercel-production
+      cancel-in-progress: false
+    env:
+      VERCEL_ACTIONS_DEPLOYMENT_ENABLED: ${{ vars.VERCEL_ACTIONS_DEPLOYMENT_ENABLED }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Check Vercel deployment opt-in
+        id: vercel-opt-in
+        shell: bash
+        run: |
+          if [[ "$VERCEL_ACTIONS_DEPLOYMENT_ENABLED" != "true" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Vercel deployment skipped. Set VERCEL_ACTIONS_DEPLOYMENT_ENABLED=true in the production environment after disabling duplicate Vercel Git production deployments." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Vercel credentials
+        if: steps.vercel-opt-in.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          for name in VERCEL_TOKEN VERCEL_ORG_ID VERCEL_PROJECT_ID; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::$name is required in the GitHub production environment."
+              exit 1
+            fi
+          done
+
+      - name: Check whether this commit is the latest main revision
+        id: main-head
+        if: steps.vercel-opt-in.outputs.enabled == 'true'
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin refs/heads/main
+          latest_main_sha="$(git rev-parse FETCH_HEAD)"
+          if [[ "$GITHUB_SHA" != "$latest_main_sha" ]]; then
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "Vercel deployment skipped because $GITHUB_SHA is no longer the latest main commit ($latest_main_sha)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
+
+      - name: Setup pnpm
+        if: steps.main-head.outputs.deploy == 'true'
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        if: steps.main-head.outputs.deploy == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install Dependencies
+        if: steps.main-head.outputs.deploy == 'true'
+        run: pnpm install --frozen-lockfile
+
+      - name: Install pinned Vercel CLI
+        if: steps.main-head.outputs.deploy == 'true'
+        run: npm install --global vercel@63.1.2
+
+      - name: Pull Vercel Production Configuration
+        if: steps.main-head.outputs.deploy == 'true'
+        run: vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+
+      - name: Build Vercel Production Output
+        if: steps.main-head.outputs.deploy == 'true'
+        run: vercel build --prod --token="$VERCEL_TOKEN"
+
+      - name: Deploy Current Build to Vercel Production
+        if: steps.main-head.outputs.deploy == 'true'
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 origin refs/heads/main
+          latest_main_sha="$(git rev-parse FETCH_HEAD)"
+          if [[ "$GITHUB_SHA" != "$latest_main_sha" ]]; then
+            echo "Vercel deployment skipped because main advanced during the build ($latest_main_sha)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          deployment_url="$(vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN")"
+          if [[ -z "$deployment_url" ]]; then
+            echo "::error::Vercel did not return a deployment URL."
+            exit 1
+          fi
+          {
+            echo "## Vercel Production Deployment"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- URL: $deployment_url"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   deploy-contracts:
     name: Deploy Smart Contracts
     needs: test-rust

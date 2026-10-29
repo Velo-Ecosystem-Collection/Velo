@@ -104,6 +104,7 @@ export function NavMain({
       ) : null}
       {groups.map((group) => {
         const isOpen = openGroups[group.title] ?? group.isActive ?? false;
+        const contentId = `velo-sidebar-group-${encodeURIComponent(group.title)}`;
 
         if (group.items.length === 0) {
           return (
@@ -138,14 +139,14 @@ export function NavMain({
             >
               <SidebarMenu>
                 <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
+                  <CollapsibleTrigger asChild aria-controls={contentId}>
                     <SidebarMenuButton tooltip={group.title} isActive={group.isActive}>
                       {group.icon && <group.icon />}
                       <span className="group-data-[collapsible=icon]:hidden">{group.title}</span>
                       <ChevronRight className="ml-auto transition-transform duration-200 group-data-[collapsible=icon]:hidden group-data-[state=open]/principle:rotate-90" />
                     </SidebarMenuButton>
                   </CollapsibleTrigger>
-                  <CollapsibleContent>
+                  <CollapsibleContent id={contentId}>
                     <SidebarMenuSub>
                       {group.items.map((item) => (
                         <SidebarMenuSubItem key={item.title}>

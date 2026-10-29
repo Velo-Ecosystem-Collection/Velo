@@ -2,6 +2,7 @@
 
 import { stellarConfig, STELLAR_TESTNET_NETWORK_PASSPHRASE } from "@/core/config/stellar";
 import { initializeWalletKit } from "@/core/wallet/wallet-kit";
+import { assertValidPublicKey } from "@repo/stellar/validation";
 import {
   createContext,
   ReactNode,
@@ -14,6 +15,7 @@ import {
 } from "react";
 
 import { WalletRequestScope, walletErrorMessage } from "./wallet-connect-policy";
+import { restoreWalletSession } from "./wallet-session";
 
 type WalletStatus =
   | "initializing"
@@ -91,7 +93,21 @@ function readStoredSession() {
   }
 
   try {
-    return JSON.parse(storedSession) as { address?: string; walletId?: string };
+    const value: unknown = JSON.parse(storedSession);
+    if (!value || typeof value !== "object") throw new Error("Invalid wallet session");
+    const session = value as Record<string, unknown>;
+    if (
+      typeof session.address !== "string" ||
+      session.address.length > 56 ||
+      (typeof session.walletId === "string" && session.walletId.length > 100)
+    ) {
+      throw new Error("Invalid wallet session");
+    }
+    assertValidPublicKey(session.address);
+    return {
+      address: session.address,
+      walletId: typeof session.walletId === "string" ? session.walletId : null,
+    };
   } catch {
     window.localStorage.removeItem(LAST_SESSION_KEY);
     return null;
@@ -136,14 +152,6 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         );
 
         const storedSession = readStoredSession();
-        if (storedSession) {
-          setStaleAddress(storedSession.address ?? null);
-          setWalletId(storedSession.walletId ?? null);
-          setStatus("stale");
-          setErrorCode("WALLET_STALE_SESSION");
-        } else {
-          setStatus("ready");
-        }
 
         unsubscribers.push(
           StellarWalletsKit.on(KitEventType.STATE_UPDATED, (event) => {
@@ -178,6 +186,47 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             window.localStorage.removeItem(LAST_SESSION_KEY);
           }),
         );
+
+        if (!storedSession) {
+          setStatus("ready");
+          return;
+        }
+
+        setStaleAddress(storedSession.address);
+        setWalletId(storedSession.walletId);
+        connecting.current = true;
+        const isCurrent = requestScope.current.capture();
+        try {
+          const restoredAddress = storedSession.walletId
+            ? await restoreWalletSession(
+                storedSession.walletId,
+                storedSession.address,
+                initializeWalletKit,
+                STELLAR_TESTNET_NETWORK_PASSPHRASE,
+              )
+            : null;
+          if (!isMounted || !isCurrent()) return;
+
+          if (restoredAddress) {
+            connectedAddress.current = restoredAddress;
+            setAddress(restoredAddress);
+            setStaleAddress(null);
+            setStatus("connected");
+            setError(null);
+            setErrorCode(null);
+          } else {
+            setStatus("stale");
+            setErrorCode("WALLET_STALE_SESSION");
+            setError(`Reconnect a wallet on ${stellarConfig.networkLabel}.`);
+          }
+        } catch {
+          if (!isMounted || !isCurrent()) return;
+          setStatus("stale");
+          setErrorCode("WALLET_STALE_SESSION");
+          setError(`Reconnect a wallet on ${stellarConfig.networkLabel}.`);
+        } finally {
+          if (isCurrent()) connecting.current = false;
+        }
       } catch (initError) {
         if (!isMounted) {
           return;

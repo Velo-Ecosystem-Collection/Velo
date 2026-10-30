@@ -36,7 +36,7 @@ export function InstawardsSection() {
             service for Stellar applications.
           </p>
           <Link
-            href="#gas-station"
+            href="#velo-gas-station"
             className="group inline-flex items-center gap-2 text-sm font-semibold text-zinc-100 transition-colors hover:text-violet-200"
           >
             Explore Gas Station

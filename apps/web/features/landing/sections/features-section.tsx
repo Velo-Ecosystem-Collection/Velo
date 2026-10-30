@@ -78,7 +78,6 @@ export function FeaturesSection() {
             const Icon = item.icon;
             return (
               <div
-                id={item.title === "Gas Station" ? "gas-station" : undefined}
                 key={item.title}
                 className="group relative flex flex-col items-center rounded-2xl border border-zinc-800/60 bg-zinc-900/30 p-5 text-center backdrop-blur-sm transition-all duration-300 hover:border-zinc-700/60 hover:bg-zinc-900/50 hover:shadow-[0_4px_30px_rgba(0,0,0,0.4)]"
               >

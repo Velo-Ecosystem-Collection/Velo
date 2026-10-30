@@ -7,6 +7,7 @@ import { CTASection } from "./sections/cta-section";
 import { DeveloperSection } from "./sections/developer-section";
 import { FeaturesSection } from "./sections/features-section";
 import { FooterSection } from "./sections/footer-section";
+import { GasStationSection } from "./sections/gas-station-section";
 import { HeroSection } from "./sections/hero-section";
 import { HowItWorksSection } from "./sections/how-it-works-section";
 import { InstawardsSection } from "./sections/instawards-section";
@@ -34,6 +35,9 @@ export function LandingPage() {
 
       {/* Smart contract developer showcase */}
       <DeveloperSection />
+
+      {/* Testnet fee sponsorship showcase */}
+      <GasStationSection />
 
       {/* Conversion footer section */}
       <CTASection />

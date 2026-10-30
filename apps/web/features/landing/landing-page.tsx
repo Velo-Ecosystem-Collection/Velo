@@ -9,6 +9,7 @@ import { FeaturesSection } from "./sections/features-section";
 import { FooterSection } from "./sections/footer-section";
 import { HeroSection } from "./sections/hero-section";
 import { HowItWorksSection } from "./sections/how-it-works-section";
+import { InstawardsSection } from "./sections/instawards-section";
 
 export function LandingPage() {
   useEffect(() => {
@@ -21,6 +22,9 @@ export function LandingPage() {
     <main className="landing-container flex min-h-screen flex-col">
       {/* Hero section with WebGL dot-matrix background */}
       <HeroSection />
+
+      {/* Stellar Development Foundation Instawards recognition */}
+      <InstawardsSection />
 
       {/* Feature matrix grids */}
       <FeaturesSection />

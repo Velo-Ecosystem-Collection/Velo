@@ -52,7 +52,7 @@ export function CTASection() {
           <span className="text-zinc-800">•</span>
           <span>PAY</span>
           <span className="text-zinc-800">•</span>
-          <span>SETTLEMENT · UNAVAILABLE</span>
+          <span>GAS STATION · TESTNET</span>
         </div>
       </div>
     </section>

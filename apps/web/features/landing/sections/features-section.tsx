@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Code2, Fingerprint, Network, WalletCards } from "lucide-react";
+import { Activity, Code2, Fingerprint, WalletCards, Zap } from "lucide-react";
 
 const features = [
   {
@@ -28,16 +28,16 @@ const features = [
     badge: "E2E pending",
   },
   {
-    icon: Network,
-    title: "Settle",
+    icon: Zap,
+    title: "Gas Station",
     description:
-      "Integration with a new Philippine payment provider is underway. Settlement is not available yet.",
-    badge: "Integration underway",
+      "Sponsor eligible Stellar Testnet transaction fees with project policies and managed relayers.",
+    badge: "Implemented · Testnet",
   },
 ];
 
 function getBadgeClassName(badge: string) {
-  if (badge === "Implemented") {
+  if (badge.startsWith("Implemented")) {
     return "border-zinc-300 bg-zinc-900 text-zinc-100";
   }
 
@@ -74,11 +74,12 @@ export function FeaturesSection() {
 
         {/* Feature Grid */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {features.map((item, idx) => {
+          {features.map((item) => {
             const Icon = item.icon;
             return (
               <div
-                key={idx}
+                id={item.title === "Gas Station" ? "gas-station" : undefined}
+                key={item.title}
                 className="group relative flex flex-col items-center rounded-2xl border border-zinc-800/60 bg-zinc-900/30 p-5 text-center backdrop-blur-sm transition-all duration-300 hover:border-zinc-700/60 hover:bg-zinc-900/50 hover:shadow-[0_4px_30px_rgba(0,0,0,0.4)]"
               >
                 {/* Glow outline decoration */}

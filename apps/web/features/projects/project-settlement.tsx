@@ -26,8 +26,8 @@ export function ProjectSettlement({ projectId }: { projectId: string }) {
         <CardHeader>
           <CardTitle>Settlement integration unavailable</CardTitle>
           <CardDescription>
-            Velo does not currently offer an external settlement provider or Philippine payment
-            rail.
+            Integration with a new payment provider for the Philippines is currently underway.
+            Settlement is not available yet.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -36,8 +36,8 @@ export function ProjectSettlement({ projectId }: { projectId: string }) {
             <AlertTitle>In-house Stellar checkout remains available</AlertTitle>
             <AlertDescription>
               In-house payments continue to use Stellar ledger verification and merchant webhooks.
-              Existing settlement history remains stored for authorized project owners. No
-              replacement settlement rail is implemented.
+              Existing settlement history remains stored for authorized project owners. The new
+              provider integration is not available yet.
             </AlertDescription>
           </Alert>
         </CardContent>

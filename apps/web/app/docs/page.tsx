@@ -1652,8 +1652,9 @@ const session = await velo.checkout.sessions.create({
                     <strong>Settlement integration unavailable</strong>
                     <p className="mt-1 text-amber-800 dark:text-amber-300">
                       Velo currently provides in-house Stellar checkout, ledger verification, and
-                      merchant webhooks. The Settlement page is a placeholder; no settlement rail is
-                      available. Historical settlement events remain decodable by the SDK.
+                      merchant webhooks. Integration with a new Philippine payment provider is
+                      underway, but settlement is not available yet. Historical settlement events
+                      remain decodable by the SDK.
                     </p>
                   </div>
                 </div>

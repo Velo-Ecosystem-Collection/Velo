@@ -26,7 +26,7 @@ Velo connects the workflows teams use to build, verify, observe, pay, and settle
 </div>
 
 > [!IMPORTANT]
-> **Velo is alpha software for Stellar Testnet.** In-house Stellar checkout, ledger verification, and merchant webhooks are implemented, with live end-to-end qualification still in progress. Settlement integration is unavailable; the Settlement page is a placeholder for a future Philippine payment rail.
+> **Velo is alpha software for Stellar Testnet.** In-house Stellar checkout, ledger verification, and merchant webhooks are implemented, with live end-to-end qualification still in progress. Integration with a new Philippine payment provider is underway; settlement is not available yet.
 
 ---
 
@@ -135,7 +135,7 @@ Those jobs often end up fragmented across scripts, dashboards, providers, and ma
 | ✅ **Verify**  | Link wallet authorization and on-chain provenance to the project and contracts an owner claims as official. | Live validation pending    |
 | 📡 **Observe** | Inspect Testnet transactions, monitor contract events, and review signed webhook delivery.                  | Live qualification pending |
 | 💳 **Pay**     | Create hosted Stellar checkout flows and return ledger-verified payment state to an application.            | Code-complete; E2E pending |
-| 🏦 **Settlement route** | Reserved for a future Philippine payment rail. No settlement integration is available. | Placeholder |
+| 🏦 **Settlement route** | Integration with a new Philippine payment provider is underway; settlement is not available yet. | Integration underway |
 
 Start with Velo Pay, then use the wider platform as your Stellar application grows.
 
@@ -171,7 +171,7 @@ Testnet operating loop.
 | **Testnet fee sponsorship**         | Managed relayers submit eligible FeeBump transactions under project limits and contract allowlists. Owners control funding and activation; the signing key stays on the server.                                                  |
 | **Soroban contracts**               | `VeloRegistry` records project identity and official contract references. `VeloPayAccess` reads Registry state to control payment activation and checkout credits. Playground supports Testnet invocation and Mainnet simulation. |
 | **Ledger-verified payments**        | A browser submission never marks a PaymentIntent as paid. The backend checks the transaction against the intended source, destination, asset, and amount before updating state and scheduling `payment.succeeded`.                |
-| **Provider settlement**             | Unavailable. Historical provider and settlement records remain readable; the Settlement route is a provider-neutral placeholder.                                                                                                  |
+| **Provider settlement**             | Integration with a new Philippine payment provider is underway but unavailable. Historical provider and settlement records remain readable.                                                                                     |
 
 ## 💡 Innovation and Differentiation
 
@@ -267,7 +267,7 @@ contract-specific READMEs together.
 - **Stellar:** Stellar Wallets Kit, `@stellar/stellar-sdk`, Horizon, Stellar RPC, and Testnet.
 - **Smart contracts:** Rust, `soroban-sdk`, `VeloRegistry`, and `VeloPayAccess`.
 - **Developer experience:** `@carts1024/velo-sdk`, `@carts1024/velo-wallets`, REST APIs, signed webhooks, and Express and Next.js examples.
-- **Settlement:** No provider integration is available. The Settlement route remains a placeholder.
+- **Settlement:** Integration with a new Philippine payment provider is underway; the Settlement route remains unavailable until it is ready.
 - **Tooling:** pnpm workspaces, Turborepo, oxlint, oxfmt, Husky, and GitHub Actions.
 
 ## 🚀 Run Velo Locally
@@ -569,7 +569,7 @@ Before evaluating Velo, keep these constraints in view:
 - Payment flows target Stellar Testnet.
 - The Testnet contract IDs above still require explicit configuration and validation in each hosted environment.
 - Checkout code is implemented, but the full wallet-to-webhook path still needs live rehearsal on target devices.
-- Provider settlement is unavailable. Historical PDAX records remain accessible; no replacement rail is implemented.
+- Provider settlement is not available yet. Integration with a new Philippine payment provider is underway; historical PDAX records remain accessible.
 - Mainnet settlement, production compliance workflows, and production custody are not implemented.
 - Public API rate limiting still needs distributed production hardening.
 

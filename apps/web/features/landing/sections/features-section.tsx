@@ -30,8 +30,9 @@ const features = [
   {
     icon: Network,
     title: "Settle",
-    description: "A provider-neutral placeholder for a future Philippine payment rail.",
-    badge: "Unavailable",
+    description:
+      "Integration with a new Philippine payment provider is underway. Settlement is not available yet.",
+    badge: "Integration underway",
   },
 ];
 

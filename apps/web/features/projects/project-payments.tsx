@@ -272,11 +272,6 @@ export function ProjectPayments({ projectId }: ProjectPaymentsProps) {
     api.payment_intents.queries.getProjectStats,
     wallet.address && project ? { projectId: typedProjectId } : "skip",
   );
-  const pdaxConnection = useQuery(
-    api.provider_connections.query.getByProject,
-    wallet.address && project ? { projectId: typedProjectId } : "skip",
-  );
-
   const [statusFilter, setStatusFilter] = useState<"all" | PaymentStatus>("all");
   const [search, setSearch] = useState("");
   const searchTerm = search.trim();
@@ -301,7 +296,6 @@ export function ProjectPayments({ projectId }: ProjectPaymentsProps) {
   const [createOpen, setCreateOpen] = useState(false);
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
-  const [anchor, setAnchor] = useState<"inhouse" | "pdax">("inhouse");
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   const [createError, setCreateError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -320,7 +314,6 @@ export function ProjectPayments({ projectId }: ProjectPaymentsProps) {
   function resetCreateForm() {
     setAmount("");
     setDescription("");
-    setAnchor(project?.defaultPaymentAnchor ?? "inhouse");
     setRequestId(crypto.randomUUID());
     setCreateError(null);
     setCreatedIntentId(null);
@@ -348,7 +341,7 @@ export function ProjectPayments({ projectId }: ProjectPaymentsProps) {
         amount: amount.trim(),
         asset: stellarConfig.checkoutAsset,
         description: description.trim() || undefined,
-        anchor,
+        anchor: "inhouse",
       });
       setCreatedIntentId(result.intent._id);
     } catch (error) {
@@ -405,7 +398,7 @@ export function ProjectPayments({ projectId }: ProjectPaymentsProps) {
     );
   }
 
-  if (stats === undefined || pdaxConnection === undefined) {
+  if (stats === undefined) {
     return (
       <section className="grid gap-6">
         <Skeleton className="h-12 w-64" />
@@ -426,7 +419,7 @@ export function ProjectPayments({ projectId }: ProjectPaymentsProps) {
           .map(({ asset, volume }) => `${new Intl.NumberFormat().format(volume)} ${asset}`)
           .join(" · ") ?? "0");
   const isSearchLoading = Boolean(searchTerm) && searchResult === undefined;
-  const pdaxConnected = pdaxConnection?.status === "connected";
+  const legacyPdaxDefault = project.defaultPaymentAnchor === "pdax";
 
   return (
     <section className="grid min-w-0 gap-6">
@@ -444,7 +437,7 @@ export function ProjectPayments({ projectId }: ProjectPaymentsProps) {
         </div>
         <Dialog open={createOpen} onOpenChange={handleCreateOpen}>
           <DialogTrigger asChild>
-            <Button disabled={!project.paymentAccessActive}>
+            <Button disabled={!project.paymentAccessActive || legacyPdaxDefault}>
               <PlusIcon />
               Create payment
             </Button>
@@ -512,35 +505,6 @@ export function ProjectPayments({ projectId }: ProjectPaymentsProps) {
                     placeholder="Invoice or order reference"
                   />
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="payment-route">Payment route</Label>
-                  <Select
-                    value={anchor}
-                    onValueChange={(value) => setAnchor(value as "inhouse" | "pdax")}
-                  >
-                    <SelectTrigger id="payment-route">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="inhouse">In-house Stellar</SelectItem>
-                      <SelectItem value="pdax" disabled={!pdaxConnected}>
-                        PDAX {pdaxConnected ? "" : "— connect in Settlement"}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {!pdaxConnected ? (
-                    <p className="text-xs text-muted-foreground">
-                      Connect PDAX under{" "}
-                      <Link
-                        href={`/projects/${projectId}/settlement`}
-                        className="font-medium underline underline-offset-2"
-                      >
-                        Settlement
-                      </Link>{" "}
-                      to use that route.
-                    </p>
-                  ) : null}
-                </div>
                 {createError ? (
                   <Alert variant="destructive">
                     <AlertCircleIcon />
@@ -559,6 +523,17 @@ export function ProjectPayments({ projectId }: ProjectPaymentsProps) {
           </DialogContent>
         </Dialog>
       </div>
+
+      {legacyPdaxDefault ? (
+        <Alert variant="destructive">
+          <AlertCircleIcon />
+          <AlertTitle>Switch this project to in-house routing</AlertTitle>
+          <AlertDescription>
+            New payments are disabled while this project uses a legacy PDAX default. Switch the
+            project to in-house under Settings before creating a checkout.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       {!project.paymentAccessActive ? (
         <Alert>

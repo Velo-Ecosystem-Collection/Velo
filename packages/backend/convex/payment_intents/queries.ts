@@ -6,9 +6,9 @@ import type { Doc } from "../_generated/dataModel";
 import { internalQuery, query } from "../_generated/server";
 import { projectOwnerOrNull, requireProjectOwner } from "../projects/helpers";
 import {
-  verifyApiKeyForPayments,
-  resolvePaymentAnchor,
   createPaymentIntentFingerprint,
+  resolveActivePaymentAnchor,
+  verifyApiKeyForPayments,
 } from "./helpers";
 
 const paymentIntentStatusValidator = v.union(
@@ -353,20 +353,11 @@ export const resolveIntentRequest = internalQuery({
       return { authorized: false as const, reason: auth.reason };
     }
 
-    const resolvedAnchor = resolvePaymentAnchor({
+    const resolvedAnchor = resolveActivePaymentAnchor({
       requestedAnchor: args.anchor,
       apiKeyAnchor: auth.apiKey.paymentAnchor,
       projectDefaultAnchor: auth.project.defaultPaymentAnchor,
     });
-
-    const connection = await ctx.db
-      .query("providerConnections")
-      .withIndex("by_project_provider", (q) =>
-        q.eq("projectId", auth.project._id).eq("provider", "pdax"),
-      )
-      .unique();
-
-    const hasPdaxConnection = connection ? connection.status === "connected" : false;
 
     if (args.idempotencyKey !== undefined) {
       const existing = await ctx.db
@@ -404,23 +395,7 @@ export const resolveIntentRequest = internalQuery({
       resolvedAnchor,
       projectId: auth.project._id,
       ownerAddress: auth.project.ownerAddress,
-      hasPdaxConnection,
     };
-  },
-});
-
-/**
- * Internal query to fetch all paid PDAX payment intents for a given project.
- */
-export const getPaidPdaxIntents = internalQuery({
-  args: { projectId: v.id("projects") },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("paymentIntents")
-      .withIndex("by_project_status_created_at", (q) =>
-        q.eq("projectId", args.projectId).eq("status", "paid"),
-      )
-      .collect();
   },
 });
 

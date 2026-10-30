@@ -33,11 +33,11 @@ import type * as billing_reconciliation from "../billing/reconciliation.js";
 import type * as billing_scorecard from "../billing/scorecard.js";
 import type * as billing_shadow from "../billing/shadow.js";
 import type * as billing_topups from "../billing/topups.js";
+import type * as contractEventPolling from "../contractEventPolling.js";
 import type * as contract_events_helpers from "../contract_events/helpers.js";
 import type * as contract_events_mutation from "../contract_events/mutation.js";
 import type * as contract_events_query from "../contract_events/query.js";
 import type * as contract_events_types from "../contract_events/types.js";
-import type * as contractEventPolling from "../contractEventPolling.js";
 import type * as crons from "../crons.js";
 import type * as feedback_mutation from "../feedback/mutation.js";
 import type * as feedback_query from "../feedback/query.js";
@@ -103,7 +103,6 @@ import type * as projects_helpers from "../projects/helpers.js";
 import type * as projects_mutation from "../projects/mutation.js";
 import type * as projects_query from "../projects/query.js";
 import type * as projects_types from "../projects/types.js";
-import type * as provider_connections_mutation from "../provider_connections/mutation.js";
 import type * as provider_connections_query from "../provider_connections/query.js";
 import type * as provider_events_mutation from "../provider_events/mutation.js";
 import type * as provider_events_processing from "../provider_events/processing.js";
@@ -116,10 +115,7 @@ import type * as rate_limits_mutations from "../rate_limits/mutations.js";
 import type * as rate_limits_upstash from "../rate_limits/upstash.js";
 import type * as seedBenchmarkKey from "../seedBenchmarkKey.js";
 import type * as settlement_actions from "../settlement/actions.js";
-import type * as settlement_helpers from "../settlement/helpers.js";
-import type * as settlement_quotes_mutation from "../settlement_quotes/mutation.js";
 import type * as settlement_quotes_query from "../settlement_quotes/query.js";
-import type * as settlement_transactions_mutation from "../settlement_transactions/mutation.js";
 import type * as settlement_transactions_query from "../settlement_transactions/query.js";
 import type * as sprint8_migrations from "../sprint8_migrations.js";
 import type * as telemetry_outbox_actions from "../telemetry_outbox/actions.js";
@@ -140,6 +136,7 @@ import type * as wallet_configs_helpers from "../wallet_configs/helpers.js";
 import type * as wallet_configs_mutation from "../wallet_configs/mutation.js";
 import type * as wallet_configs_query from "../wallet_configs/query.js";
 import type * as wallet_configs_validators from "../wallet_configs/validators.js";
+import type * as webhookDelivery from "../webhookDelivery.js";
 import type * as webhook_deliveries_constants from "../webhook_deliveries/constants.js";
 import type * as webhook_deliveries_helpers from "../webhook_deliveries/helpers.js";
 import type * as webhook_deliveries_mutation from "../webhook_deliveries/mutation.js";
@@ -149,8 +146,12 @@ import type * as webhook_endpoints_helpers from "../webhook_endpoints/helpers.js
 import type * as webhook_endpoints_mutation from "../webhook_endpoints/mutation.js";
 import type * as webhook_endpoints_query from "../webhook_endpoints/query.js";
 import type * as webhook_endpoints_types from "../webhook_endpoints/types.js";
-import type * as webhookDelivery from "../webhookDelivery.js";
-import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
+
+import type {
+  ApiFromModules,
+  FilterApi,
+  FunctionReference,
+} from "convex/server";
 
 declare const fullApi: ApiFromModules<{
   "api_keys/helpers": typeof api_keys_helpers;
@@ -248,7 +249,6 @@ declare const fullApi: ApiFromModules<{
   "projects/mutation": typeof projects_mutation;
   "projects/query": typeof projects_query;
   "projects/types": typeof projects_types;
-  "provider_connections/mutation": typeof provider_connections_mutation;
   "provider_connections/query": typeof provider_connections_query;
   "provider_events/mutation": typeof provider_events_mutation;
   "provider_events/processing": typeof provider_events_processing;
@@ -261,10 +261,7 @@ declare const fullApi: ApiFromModules<{
   "rate_limits/upstash": typeof rate_limits_upstash;
   seedBenchmarkKey: typeof seedBenchmarkKey;
   "settlement/actions": typeof settlement_actions;
-  "settlement/helpers": typeof settlement_helpers;
-  "settlement_quotes/mutation": typeof settlement_quotes_mutation;
   "settlement_quotes/query": typeof settlement_quotes_query;
-  "settlement_transactions/mutation": typeof settlement_transactions_mutation;
   "settlement_transactions/query": typeof settlement_transactions_query;
   sprint8_migrations: typeof sprint8_migrations;
   "telemetry_outbox/actions": typeof telemetry_outbox_actions;
@@ -305,7 +302,10 @@ declare const fullApi: ApiFromModules<{
  * const myFunctionReference = api.myModule.myFunction;
  * ```
  */
-export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "public">>;
+export declare const api: FilterApi<
+  typeof fullApi,
+  FunctionReference<any, "public">
+>;
 
 /**
  * A utility for referencing Convex functions in your app's internal API.
@@ -315,7 +315,10 @@ export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "publ
  * const myFunctionReference = internal.myModule.myFunction;
  * ```
  */
-export declare const internal: FilterApi<typeof fullApi, FunctionReference<any, "internal">>;
+export declare const internal: FilterApi<
+  typeof fullApi,
+  FunctionReference<any, "internal">
+>;
 
 export declare const components: {
   migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;

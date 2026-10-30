@@ -94,7 +94,8 @@ export function ProjectIntegration({ projectId }: ProjectIntegrationProps) {
       : "skip",
   );
 
-  const activeKeys = apiKeys?.filter((k) => !k.revoked && k.purpose !== "gas") ?? [];
+  const activeKeys =
+    apiKeys?.filter((k) => !k.revoked && k.purpose !== "gas" && k.paymentAnchor !== "pdax") ?? [];
 
   useEffect(() => {
     const firstKey = activeKeys[0];
@@ -169,6 +170,25 @@ export function ProjectIntegration({ projectId }: ProjectIntegrationProps) {
             Switch to {shortenAddress(project.ownerAddress)} to view this page.
           </AlertDescription>
         </Alert>
+      </section>
+    );
+  }
+
+  if (project.defaultPaymentAnchor === "pdax") {
+    return (
+      <section className="grid gap-4">
+        <h1 className="text-3xl font-semibold tracking-normal">Developer Integration</h1>
+        <Alert variant="destructive">
+          <AlertCircleIcon />
+          <AlertTitle>Switch this project to in-house checkout</AlertTitle>
+          <AlertDescription>
+            Its legacy PDAX default cannot create payments. Update the project setting before using
+            these integration examples.
+          </AlertDescription>
+        </Alert>
+        <Button asChild className="w-fit">
+          <Link href={`/projects/${projectId}/settings`}>Open project settings</Link>
+        </Button>
       </section>
     );
   }

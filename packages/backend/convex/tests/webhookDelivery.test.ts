@@ -58,6 +58,67 @@ test("webhook endpoint secret rotation", async () => {
   expect(settingsRotated!.signingSecret).not.toBe(initialSecret);
 });
 
+test("new webhook settings reject provider events while existing historical subscriptions remain editable", async () => {
+  const t = convexTest(schema, modules);
+  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const owner = asWallet(t, ownerAddress);
+  const projectId = await owner.mutation(api.projects.mutation.createDraft, {
+    name: "Historical Provider Webhooks",
+    slug: "historical-provider-webhooks",
+    description: "Retain historical event subscriptions",
+    metadataJson: "{}",
+    metadataHash: "0000000000000000000000000000000000000000000000000000000000000000",
+    ownerAddress,
+  });
+
+  await owner.mutation(api.webhook_endpoints.mutation.saveSettings, {
+    projectId,
+    url: "https://api.example.com/webhook",
+    enabled: true,
+    eventTypes: ["payment.succeeded"],
+  });
+  await t.run(async (ctx) => {
+    const endpoint = await ctx.db
+      .query("webhookEndpoints")
+      .withIndex("by_project", (q) => q.eq("projectId", projectId))
+      .unique();
+    expect(endpoint).toBeDefined();
+    if (endpoint) {
+      await ctx.db.patch(endpoint._id, {
+        eventTypes: ["payment.succeeded", "provider.pdax.event.received"],
+      });
+    }
+  });
+
+  await owner.mutation(api.webhook_endpoints.mutation.saveSettings, {
+    projectId,
+    url: "https://api.example.com/webhook",
+    enabled: true,
+    eventTypes: ["payment.succeeded", "provider.pdax.event.received"],
+  });
+  const retainedSettings = await owner.query(api.webhook_endpoints.query.getSettings, {
+    projectId,
+  });
+  expect(retainedSettings?.eventTypes).toContain("provider.pdax.event.received");
+
+  const newProjectId = await owner.mutation(api.projects.mutation.createDraft, {
+    name: "New Merchant Webhooks",
+    slug: "new-merchant-webhooks",
+    description: "New endpoints cannot subscribe to retired provider events",
+    metadataJson: "{}",
+    metadataHash: "0000000000000000000000000000000000000000000000000000000000000000",
+    ownerAddress,
+  });
+  await expect(
+    owner.mutation(api.webhook_endpoints.mutation.saveSettings, {
+      projectId: newProjectId,
+      url: "https://api.example.com/webhook",
+      enabled: true,
+      eventTypes: ["provider.pdax.event.received"],
+    }),
+  ).rejects.toThrow("Unsupported webhook event type");
+});
+
 test("webhook delivery retry and backoff lifecycle", async () => {
   const t = convexTest(schema, modules);
 

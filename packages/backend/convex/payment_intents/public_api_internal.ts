@@ -3,7 +3,7 @@ import { v } from "convex/values";
 
 import { internalMutation, internalQuery } from "../_generated/server";
 import { canUseGeneralApi } from "../api_keys/helpers";
-import { verifyApiKeyForPayments } from "./helpers";
+import { resolvePaymentAnchor, verifyApiKeyForPayments } from "./helpers";
 
 const paymentIntentStatusValidator = v.union(
   v.literal("awaiting_route"),
@@ -25,6 +25,11 @@ export const authorize = internalQuery({
       apiKeyId: auth.apiKey._id,
       projectId: auth.project._id,
       rateLimitBackend: auth.project.rateLimitBackend ?? ("convex" as const),
+      apiKeyAnchor: auth.apiKey.paymentAnchor,
+      resolvedAnchor: resolvePaymentAnchor({
+        apiKeyAnchor: auth.apiKey.paymentAnchor,
+        projectDefaultAnchor: auth.project.defaultPaymentAnchor,
+      }),
     };
   },
 });

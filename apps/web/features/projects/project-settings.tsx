@@ -67,6 +67,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
   const [description, setDescription] = useState("");
   const [selectedLogo, setSelectedLogo] = useState<File | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSwitchingPaymentRoute, setIsSwitchingPaymentRoute] = useState(false);
   const [isRemovingLogo, setIsRemovingLogo] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -166,6 +167,27 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
       setFormError(errorMessage(error));
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function switchPaymentRouteToInhouse() {
+    if (!project || isSwitchingPaymentRoute) return;
+    setFormError(null);
+    setSaved(false);
+    setIsSwitchingPaymentRoute(true);
+
+    try {
+      await updateSettings({
+        id: typedProjectId,
+        name: project.name,
+        description: project.description,
+        defaultPaymentAnchor: "inhouse",
+      });
+      setSaved(true);
+    } catch (error) {
+      setFormError(errorMessage(error));
+    } finally {
+      setIsSwitchingPaymentRoute(false);
     }
   }
 
@@ -274,6 +296,36 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
             <AlertDescription>Project configuration has been updated.</AlertDescription>
           </Alert>
         ) : null}
+
+        <section className="rounded-lg border border-zinc-200 bg-white p-5">
+          <h2 className="text-lg font-semibold tracking-normal">Payment routing</h2>
+          {project.defaultPaymentAnchor === "pdax" ? (
+            <div className="mt-3 grid gap-3">
+              <Alert variant="destructive">
+                <AlertCircleIcon />
+                <AlertTitle>Legacy PDAX routing is unavailable</AlertTitle>
+                <AlertDescription>
+                  This project default cannot create new payments. Switch it to in-house to resume
+                  checkout creation. Existing payment history remains available, and already
+                  submitted Stellar transactions can still be verified.
+                </AlertDescription>
+              </Alert>
+              <Button
+                type="button"
+                className="w-fit"
+                onClick={() => void switchPaymentRouteToInhouse()}
+                disabled={isSwitchingPaymentRoute || isSaving || isRetiring}
+              >
+                {isSwitchingPaymentRoute ? "Switching..." : "Use in-house Stellar payments"}
+              </Button>
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-zinc-600">
+              New payment intents use Velo’s in-house Stellar checkout and settle to the project
+              owner address.
+            </p>
+          )}
+        </section>
 
         <form onSubmit={handleSubmit} className="rounded-lg border border-zinc-200 bg-white p-5">
           <div className="grid gap-5">

@@ -278,16 +278,16 @@ export function BillingDashboard() {
             </CardHeader>
             <CardContent className="space-y-4 text-sm text-muted-foreground">
               <p>
-                Credits are consumed only after independently verified successful settlement.
-                Failed, cancelled, expired, and abandoned payments consume no credit.
+                Commercial credit consumption follows the billing ledger rules for verified
+                payments. Failed, cancelled, expired, and abandoned payments consume no credit.
               </p>
               <p>
                 Merchant-customer refunds do not automatically restore a Velo service credit.
                 Verified Velo billing errors are corrected with auditable compensating entries.
               </p>
               <p>
-                PDAX and off-ramp charges are disclosed separately and passed through at verified
-                cost during the sandbox cohort.
+                Historical PDAX settlement charges remain available for audit. Velo no longer
+                initiates provider settlement or records new PDAX costs.
               </p>
             </CardContent>
           </Card>
@@ -345,13 +345,11 @@ function PdaxCharges({ charges }: { charges: BillingView["pdaxCharges"] }) {
   return (
     <Card className="lg:col-span-2">
       <CardHeader>
-        <CardTitle>PDAX and off-ramp costs</CardTitle>
+        <CardTitle>Historical PDAX and off-ramp costs</CardTitle>
       </CardHeader>
       <CardContent>
         {charges.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No PDAX charges recorded. Verified third-party costs are passed through separately.
-          </p>
+          <p className="text-sm text-muted-foreground">No historical PDAX charges recorded.</p>
         ) : (
           <Table>
             <TableHeader>
@@ -1194,7 +1192,6 @@ function PolicyControls() {
       mainnetCreditEnforcement: false,
       billingTopupsEnabled: values.billingTopupsEnabled ?? policy.billingTopupsEnabled,
       promoGrantEnabled: values.promoGrantEnabled ?? policy.promoGrantEnabled,
-      pdaxBillingEnabled: values.pdaxBillingEnabled ?? policy.pdaxBillingEnabled,
       billingKillSwitch: values.billingKillSwitch ?? policy.billingKillSwitch,
       promoCredits: policy.promoCredits,
       promoValidityMs: policy.promoValidityMs,

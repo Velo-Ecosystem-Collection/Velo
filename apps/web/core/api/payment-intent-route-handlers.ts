@@ -32,7 +32,7 @@ type PaymentActionResult =
   | { status: "limiter_unavailable"; retryAfterMs: number; timings: ActionTimings }
   | { status: "rate_limited"; rateLimit: DistributedRateLimit; timings: ActionTimings }
   | { status: "idempotency_conflict"; rateLimit?: DistributedRateLimit; timings?: ActionTimings }
-  | { status: "anchor_not_connected"; rateLimit: DistributedRateLimit; timings: ActionTimings }
+  | { status: "pdax_unavailable"; code: "PDAX_UNAVAILABLE"; message: string }
   | {
       status: "success" | "idempotency_replay";
       intent: PublicPaymentIntentDocV2;
@@ -41,10 +41,7 @@ type PaymentActionResult =
     };
 
 type ListActionResult =
-  | Exclude<
-      PaymentActionResult,
-      { status: "anchor_not_connected" | "success" | "idempotency_replay" }
-    >
+  | Exclude<PaymentActionResult, { status: "pdax_unavailable" | "success" | "idempotency_replay" }>
   | {
       status: "success";
       page: {
@@ -57,10 +54,7 @@ type ListActionResult =
     };
 
 type RetrieveActionResult =
-  | Exclude<
-      PaymentActionResult,
-      { status: "anchor_not_connected" | "success" | "idempotency_replay" }
-    >
+  | Exclude<PaymentActionResult, { status: "pdax_unavailable" | "success" | "idempotency_replay" }>
   | {
       status: "success";
       intent: PublicPaymentIntentDocV2 | null;
@@ -158,19 +152,18 @@ export async function createPaymentIntentHandler(baseRequest: Request, telemetry
     if (result.status === "unauthorized") return unauthorized(result.reason);
     if (result.status === "limiter_unavailable") return limiterUnavailable(result.retryAfterMs);
     if (result.status === "rate_limited") return rateLimited(result.rateLimit);
+    if (result.status === "pdax_unavailable") {
+      return veloErrorResponse({
+        status: 409,
+        type: "validation_error",
+        code: result.code.toLowerCase(),
+        message: result.message,
+      });
+    }
     const rateHeaders = result.rateLimit
       ? distributedRateLimitHeaders(result.rateLimit)
       : undefined;
     if (result.status === "idempotency_conflict") return idempotencyConflict(rateHeaders);
-    if (result.status === "anchor_not_connected") {
-      return veloErrorResponse({
-        status: 409,
-        type: "validation_error",
-        code: "anchor_not_connected",
-        message: "PDAX provider is not connected for this project.",
-        headers: rateHeaders,
-      });
-    }
 
     const response = jsonResponse(
       telemetry,
@@ -200,19 +193,14 @@ export async function createPaymentIntentHandler(baseRequest: Request, telemetry
     }
     if (
       error instanceof Error &&
-      ((error as { data?: { code?: string } }).data?.code === "anchor_unavailable" ||
-        error.message.includes("anchor_unavailable"))
+      (error as { data?: { code?: string } }).data?.code === "PDAX_UNAVAILABLE"
     ) {
       return veloErrorResponse({
-        status: 503,
-        type: "api_error",
-        code: "anchor_unavailable",
-        message: "The requested payment anchor is currently unavailable.",
-        headers: {
-          "X-Error-Code": "anchor_unavailable",
-          "X-Error-Dependency": "pdax",
-          "X-Error-Source": "payment_intent_route_enrichment",
-        },
+        status: 409,
+        type: "validation_error",
+        code: "pdax_unavailable",
+        message:
+          "PDAX payment routing is no longer available. Switch the project default and API key to in-house before creating payments.",
       });
     }
     return veloErrorResponse({

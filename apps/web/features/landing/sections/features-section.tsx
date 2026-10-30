@@ -30,8 +30,8 @@ const features = [
   {
     icon: Network,
     title: "Settle",
-    description: "Demo conversion and payouts with PDAX UAT.",
-    badge: "UAT demo",
+    description: "A provider-neutral placeholder for a future Philippine payment rail.",
+    badge: "Unavailable",
   },
 ];
 

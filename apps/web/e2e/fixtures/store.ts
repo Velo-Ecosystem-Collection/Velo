@@ -926,7 +926,6 @@ export class GasFixtureStore {
         id: GasFixtureProjectId;
         label: string;
         purpose?: "general" | "gas";
-        paymentAnchor?: "inhouse" | "pdax";
       };
       const purpose = args.purpose ?? "general";
       const prefix = purpose === "gas" ? "tg_test_" : "tk_live_";
@@ -939,9 +938,7 @@ export class GasFixtureStore {
           label: args.label.trim() || "Default Key",
           prefix: `${prefix}${token.slice(0, 4)}...${token.slice(-4)}`,
           purpose,
-          ...(purpose === "general" && args.paymentAnchor !== undefined
-            ? { paymentAnchor: args.paymentAnchor }
-            : {}),
+          ...(purpose === "general" ? { paymentAnchor: "inhouse" as const } : {}),
           createdAt,
           requestCount: 0,
           revoked: false,

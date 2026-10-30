@@ -567,7 +567,7 @@ test("submission requests are not retried and network uncertainty is typed", asy
   }
 });
 
-test("Velo checkout.sessions.create serializes anchor parameter", async () => {
+test("Velo checkout.sessions.create serializes the in-house anchor", async () => {
   const originalFetch = globalThis.fetch;
   let calledUrl = "";
   let calledOptions: RequestInit | undefined;
@@ -583,10 +583,10 @@ test("Velo checkout.sessions.create serializes anchor parameter", async () => {
 
   try {
     const velo = new Velo({ apiKey: "test-key", baseUrl: "https://api.example.com" });
-    await velo.checkout.sessions.create({ amount: "10.00", asset: "USDC", anchor: "pdax" });
+    await velo.checkout.sessions.create({ amount: "10.00", asset: "USDC", anchor: "inhouse" });
     assert.equal(calledUrl, "https://api.example.com/api/v2/payment-intents");
     const body = JSON.parse(calledOptions?.body as string);
-    assert.equal(body.anchor, "pdax");
+    assert.equal(body.anchor, "inhouse");
   } finally {
     globalThis.fetch = originalFetch;
   }

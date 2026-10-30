@@ -243,7 +243,6 @@ test("commercial balance changes coalesce into display-only PayAccess mirror sta
     mainnetCreditEnforcement: false,
     billingTopupsEnabled: false,
     promoGrantEnabled: true,
-    pdaxBillingEnabled: false,
     billingKillSwitch: true,
     actor: "test",
   });

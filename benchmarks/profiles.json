@@ -37,7 +37,7 @@
     { "id": "backlog-recovery", "records": 10000, "interruptionSeconds": 300 },
     {
       "id": "degraded-dependency",
-      "dependencies": ["rpc", "horizon", "pdax", "merchant"],
+      "dependencies": ["rpc", "horizon", "merchant"],
       "responses": ["timeout", "429", "500", "502", "503", "504"]
     }
   ]

@@ -67,15 +67,22 @@ const eventTypes = [
   "payment.succeeded",
   "payment.failed",
   "payment_access.activated",
-  "settlement.quote.created",
-  "settlement.trade.executed",
-  "settlement.withdrawal.pending",
-  "settlement.withdrawal.succeeded",
-  "settlement.withdrawal.failed",
-  "provider.pdax.event.received",
 ] as const;
 
-type EventType = (typeof eventTypes)[number];
+type EventType =
+  | (typeof eventTypes)[number]
+  | "settlement.quote.created"
+  | "settlement.trade.executed"
+  | "settlement.withdrawal.pending"
+  | "settlement.withdrawal.succeeded"
+  | "settlement.withdrawal.failed"
+  | "provider.pdax.event.received";
+
+type ActiveEventType = (typeof eventTypes)[number];
+
+function isActiveEventType(eventType: string): eventType is ActiveEventType {
+  return (eventTypes as readonly string[]).includes(eventType);
+}
 
 const deliveryVariant = {
   pending: "warning",
@@ -113,7 +120,7 @@ function DeliveryDetail({ delivery }: { delivery: Doc<"webhookDeliveries"> }) {
           {delivery.payloadSummary?.paymentIntentId && (
             <>
               <span className="text-xs font-medium text-zinc-500 uppercase">Payment Intent ID</span>
-              <span className="font-mono text-xs text-zinc-700 bg-zinc-100 px-1 py-0.5 w-fit">
+              <span className="w-fit bg-zinc-100 px-1 py-0.5 font-mono text-xs text-zinc-700">
                 {delivery.payloadSummary.paymentIntentId}
               </span>
             </>
@@ -122,13 +129,13 @@ function DeliveryDetail({ delivery }: { delivery: Doc<"webhookDeliveries"> }) {
           <span>{delivery.errorMessage ?? "None"}</span>
         </div>
 
-        <div className="grid gap-2 border border-zinc-200 p-3 bg-zinc-50 rounded text-xs text-zinc-600">
+        <div className="grid gap-2 rounded border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600">
           <span className="font-semibold text-zinc-700">Webhook Signature Security</span>
           <p>
             Payloads are signed using HMAC-SHA256. The request contains the following signature
             header value:
           </p>
-          <code className="block bg-zinc-100 p-2 font-mono text-[10px] break-all border border-zinc-200">
+          <code className="block border border-zinc-200 bg-zinc-100 p-2 font-mono text-[10px] break-all">
             x-velo-signature: t={Math.floor((delivery.lastAttemptAt || delivery.createdAt) / 1000)}
             ,v1=...
           </code>
@@ -190,16 +197,11 @@ export function ProjectWebhooks({
   const saveWebhookFilter = useMutation(api.playground_projects.mutations.saveWebhookFilter);
   const rotateSecret = useMutation(api.webhook_endpoints.mutation.rotateSecret);
   const sendTest = useAction(api.webhookDelivery.sendTest);
-  const connection = useQuery(
-    api.provider_connections.query.getByProject,
-    wallet.address ? { projectId: typedProjectId } : "skip",
-  );
-  const registerWebhookAction = useAction(api.settlement.actions.registerWebhook);
   const loadedSettingsId = useRef<string | null>(null);
   const [url, setUrl] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [selectedTypes, setSelectedTypes] = useState<EventType[]>([...eventTypes]);
-  const [testEventType, setTestEventType] = useState<EventType>("contract.event");
+  const [testEventType, setTestEventType] = useState<ActiveEventType>("contract.event");
   const [useObservedEvent, setUseObservedEvent] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -232,16 +234,18 @@ export function ProjectWebhooks({
     loadedSettingsId.current = settings._id;
     setUrl(settings.url);
     setEnabled(settings.enabled);
-    setSelectedTypes(settings.eventTypes as EventType[]);
-    const firstType = settings.eventTypes[0] as EventType | undefined;
+    const storedTypes = settings.eventTypes as EventType[];
+    setSelectedTypes(storedTypes.filter(isActiveEventType));
+    const firstType = storedTypes.find(isActiveEventType);
     if (firstType) {
       setTestEventType(firstType);
     }
   }, [settings]);
 
   useEffect(() => {
-    if (!selectedTypes.includes(testEventType) && selectedTypes[0]) {
-      setTestEventType(selectedTypes[0]);
+    const firstActiveType = selectedTypes.find(isActiveEventType);
+    if (!selectedTypes.includes(testEventType) && firstActiveType) {
+      setTestEventType(firstActiveType);
     }
   }, [selectedTypes, testEventType]);
 
@@ -374,22 +378,15 @@ export function ProjectWebhooks({
         projectId: typedProjectId,
         url,
         enabled,
-        eventTypes: selectedTypes,
+        eventTypes: Array.from(
+          new Set([
+            ...((settings?.eventTypes ?? []).filter(
+              (eventType) => !isActiveEventType(eventType as EventType),
+            ) as EventType[]),
+            ...selectedTypes,
+          ]),
+        ),
       });
-
-      // Auto-register PDAX webhook if PDAX is connected
-      if (connection && connection.status === "connected") {
-        try {
-          const isLocalhost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-          if (!isLocalhost) {
-            await registerWebhookAction({ projectId: typedProjectId });
-          } else {
-            console.log("Localhost detected. Skipping PDAX webhook registration.");
-          }
-        } catch (pdaxErr) {
-          console.error("Auto-registering PDAX webhook failed on save:", pdaxErr);
-        }
-      }
 
       setNotice({ type: "success", message: "Webhook settings saved." });
     } catch (error) {
@@ -662,7 +659,7 @@ export function ProjectWebhooks({
                 )}
               </Button>
             </div>
-            <div className="flex flex-wrap items-center gap-2 mt-1">
+            <div className="mt-1 flex flex-wrap items-center gap-2">
               {!isConfirmingRotation ? (
                 <Button
                   type="button"
@@ -671,12 +668,12 @@ export function ProjectWebhooks({
                   onClick={() => setIsConfirmingRotation(true)}
                   disabled={!canManage || isRotating}
                 >
-                  <RefreshCwIcon className="h-3 w-3 mr-1" />
+                  <RefreshCwIcon className="mr-1 h-3 w-3" />
                   Rotate secret
                 </Button>
               ) : (
                 <div className="flex flex-col items-stretch gap-2 rounded border border-red-200 bg-red-50 p-2 text-xs sm:flex-row sm:items-center">
-                  <span className="text-red-700 font-medium">
+                  <span className="font-medium text-red-700">
                     Are you sure? Old secret will immediately stop working.
                   </span>
                   <Button
@@ -725,17 +722,34 @@ export function ProjectWebhooks({
         <fieldset className="grid gap-3">
           <legend className="text-sm font-medium">Event types</legend>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {eventTypes.map((eventType) => (
+            {[
+              ...eventTypes,
+              ...((settings?.eventTypes ?? []).filter(
+                (eventType) => !isActiveEventType(eventType as EventType),
+              ) as EventType[]),
+            ].map((eventType) => (
               <Label key={eventType} className="border border-zinc-200 p-3">
                 <Checkbox
-                  checked={selectedTypes.includes(eventType)}
+                  checked={
+                    selectedTypes.includes(eventType) ||
+                    (!isActiveEventType(eventType) && settings?.eventTypes.includes(eventType))
+                  }
                   onCheckedChange={(checked) => toggleEventType(eventType, checked === true)}
-                  disabled={!canManage}
+                  disabled={!canManage || !isActiveEventType(eventType)}
                 />
-                <span className="font-mono text-xs">{eventType}</span>
+                <span className="font-mono text-xs">
+                  {eventType}
+                  {!isActiveEventType(eventType) ? " · historical" : ""}
+                </span>
               </Label>
             ))}
           </div>
+          {settings?.eventTypes.some((eventType) => !isActiveEventType(eventType as EventType)) ? (
+            <p className="text-xs text-zinc-500">
+              Historical settlement and provider event subscriptions are retained for existing
+              endpoints. Velo no longer produces those events.
+            </p>
+          ) : null}
         </fieldset>
 
         <div className="flex flex-wrap gap-2">
@@ -759,7 +773,9 @@ export function ProjectWebhooks({
         <div className="grid gap-3 md:grid-cols-[1fr_auto_auto] md:items-center">
           <Select
             value={testEventType}
-            onValueChange={(value) => setTestEventType(value as EventType)}
+            onValueChange={(value) => {
+              if (isActiveEventType(value)) setTestEventType(value);
+            }}
             disabled={!canManage}
           >
             <SelectTrigger>
@@ -813,7 +829,7 @@ export function ProjectWebhooks({
           <h2 className="font-semibold">Delivery logs</h2>
           <p className="text-xs text-zinc-500">Showing the latest 50 bounded attempts.</p>
         </div>
-        <div className="overflow-x-auto w-full">
+        <div className="w-full overflow-x-auto">
           <Table className="table-fixed sm:table-auto">
             <TableHeader>
               <TableRow>
@@ -842,10 +858,10 @@ export function ProjectWebhooks({
                     <TableCell className="hidden text-sm sm:table-cell">
                       {formatTimestamp(delivery.lastAttemptAt)}
                     </TableCell>
-                    <TableCell className="max-w-36 whitespace-normal break-words font-mono text-xs">
+                    <TableCell className="max-w-36 font-mono text-xs break-words whitespace-normal">
                       {delivery.eventType}
                     </TableCell>
-                    <TableCell className="hidden md:table-cell max-w-64 font-mono text-xs truncate break-all">
+                    <TableCell className="hidden max-w-64 truncate font-mono text-xs break-all md:table-cell">
                       <span title={delivery.destinationHost}>{delivery.destinationHost}</span>
                     </TableCell>
                     <TableCell>

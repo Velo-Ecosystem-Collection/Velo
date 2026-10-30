@@ -1644,40 +1644,16 @@ const session = await velo.checkout.sessions.create({
                     <strong className="text-foreground">payment_access.activated</strong>: Emitted
                     when project pay credits are added.
                   </li>
-                  <li>
-                    <strong className="text-foreground">settlement.quote.created</strong>: Emitted
-                    when a new firm quote is requested and locked (UAT simulated).
-                  </li>
-                  <li>
-                    <strong className="text-foreground">settlement.trade.executed</strong>: Emitted
-                    when stablecoin conversion trade is executed (UAT simulated).
-                  </li>
-                  <li>
-                    <strong className="text-foreground">settlement.withdrawal.pending</strong>:
-                    Emitted when InstaPay bank withdrawal payout is initiated (UAT simulated).
-                  </li>
-                  <li>
-                    <strong className="text-foreground">settlement.withdrawal.succeeded</strong>:
-                    Emitted when bank payout succeeds (UAT simulated).
-                  </li>
-                  <li>
-                    <strong className="text-foreground">settlement.withdrawal.failed</strong>:
-                    Emitted when bank payout fails (UAT simulated).
-                  </li>
-                  <li>
-                    <strong className="text-foreground">provider.pdax.event.received</strong>:
-                    Emitted when raw webhook data is received from PDAX (UAT simulated).
-                  </li>
                 </ul>
 
                 <div className="my-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
                   <AlertTriangleIcon className="mt-0.5 size-5 shrink-0 text-amber-600 dark:text-amber-500" />
                   <div className="text-sm">
-                    <strong>UAT Sandbox Settlement Webhooks</strong>
+                    <strong>Settlement integration unavailable</strong>
                     <p className="mt-1 text-amber-800 dark:text-amber-300">
-                      Settlement events are currently tied to the PDAX UAT Sandbox environment. All
-                      pricing, liquidity, bank payouts, and transactions are mock/simulated. Do not
-                      use real production funds.
+                      Velo currently provides in-house Stellar checkout, ledger verification, and
+                      merchant webhooks. The Settlement page is a placeholder; no settlement rail is
+                      available. Historical settlement events remain decodable by the SDK.
                     </p>
                   </div>
                 </div>

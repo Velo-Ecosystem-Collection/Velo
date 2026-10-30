@@ -13,11 +13,11 @@ export const saveSettings = mutation({
   handler: async (ctx, args) => {
     await requireOwnerProject(ctx, args.projectId);
     const normalizedUrl = validateWebhookUrl(args.url);
-    const eventTypes = validateEventTypes(args.eventTypes);
     const existing = await ctx.db
       .query("webhookEndpoints")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))
       .unique();
+    const eventTypes = validateEventTypes(args.eventTypes, existing?.eventTypes ?? []);
     const now = Date.now();
     const value = {
       projectId: args.projectId,

@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 
-import type { Doc, Id } from "../_generated/dataModel";
+import type { Doc } from "../_generated/dataModel";
 
 import { api, internal } from "../_generated/api";
 import { STATUS_TRANSITIONS } from "../payment_intents/helpers";
@@ -573,120 +573,95 @@ test("public retrieve and list are scoped to the API key project", async () => {
   expect(pendingList.page.page[0]._id).toBe(a2.intent._id);
 });
 
-test("payment anchor resolution precedence and mismatch rejections", async () => {
+test("new payment creation rejects explicit and inherited legacy PDAX routing", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
-  const owner = asWallet(t, ownerAddress);
+  const makeAdmissionArgs = (
+    apiKeyHash: string,
+    admissionId: string,
+    anchor?: "inhouse" | "pdax",
+  ) => ({
+    apiKeyHash,
+    admissionId,
+    amount: "10.00",
+    asset: "native",
+    ...(anchor ? { anchor } : {}),
+  });
+  const projectDefault = await createPaymentReadyProject(t, {
+    ownerAddress: "GPDAXPROJECTDEFAULT",
+    name: "Legacy Project Default",
+    slug: "legacy-project-default",
+  });
+  await t.run(async (ctx) => {
+    await ctx.db.patch(projectDefault.projectId, { defaultPaymentAnchor: "pdax" });
+    const key = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_key_hash", (q) => q.eq("keyHash", projectDefault.apiKeyHash))
+      .unique();
+    if (!key) throw new Error("API key fixture missing");
+    await ctx.db.patch(key._id, { paymentAnchor: undefined });
+  });
+  const inheritedProject = await t.action(api.payment_intents.public_api.create, {
+    ...makeAdmissionArgs(projectDefault.apiKeyHash, "legacy-project-default"),
+  });
+  expect(inheritedProject.status).toBe("pdax_unavailable");
 
-  // Helper to generate scoped keys
-  const createProjectWithAnchor = async (slug: string, defaultAnchor?: "inhouse" | "pdax") => {
-    const projectId = await owner.mutation(api.projects.mutation.createDraft, {
-      name: `Anchor Test Project ${slug}`,
-      slug,
-      description: "Testing payment anchors",
-      metadataJson: "{}",
-      metadataHash: "0000000000000000000000000000000000000000000000000000000000000000",
-      ownerAddress,
-      defaultPaymentAnchor: defaultAnchor,
-    });
+  const keyScope = await createPaymentReadyProject(t, {
+    ownerAddress: "GPDAXKEYSCOPE",
+    name: "Legacy Key Scope",
+    slug: "legacy-key-scope",
+  });
+  await t.run(async (ctx) => {
+    const key = await ctx.db
+      .query("apiKeys")
+      .withIndex("by_key_hash", (q) => q.eq("keyHash", keyScope.apiKeyHash))
+      .unique();
+    if (!key) throw new Error("API key fixture missing");
+    await ctx.db.patch(key._id, { paymentAnchor: "pdax" });
+  });
+  const inheritedKey = await t.action(api.payment_intents.public_api.create, {
+    ...makeAdmissionArgs(keyScope.apiKeyHash, "legacy-api-key-scope"),
+  });
+  expect(inheritedKey.status).toBe("pdax_unavailable");
 
-    await owner.mutation(api.projects.mutation.markPaymentAccessActive, {
-      id: projectId,
-      checkoutCredits: 100,
-    });
-
-    return projectId;
-  };
-
-  const generateScopedKey = async (
-    projectId: Id<"projects">,
-    paymentAnchor?: "inhouse" | "pdax",
-  ) => {
-    const { rawKey } = await owner.mutation(api.projects.mutation.generateApiKey, {
-      id: projectId,
-      label: `Key-${paymentAnchor || "none"}`,
-      paymentAnchor,
-    });
-    return sha256Hex(rawKey);
-  };
-
-  // Case 4: Default fallback is "inhouse" when project default is omitted
-  const projDefaultOmitted = await createProjectWithAnchor("default-omitted");
-  const keyUnscoped = await generateScopedKey(projDefaultOmitted);
-
-  const resOmitted = await t.mutation(
-    internal.payment_intents.mutations.createPublicPaymentIntent,
-    {
-      apiKeyHash: keyUnscoped,
-      amount: "10.00",
-      asset: "native",
-    },
-  );
-  expect(resOmitted.authorized).toBe(true);
-  if (!resOmitted.authorized || "idempotencyConflict" in resOmitted)
-    throw new Error("expected create");
-  expect(resOmitted.intent.anchor).toBe("inhouse");
-
-  // Case 3: Omitted key anchor, falls back to project default (e.g., "pdax")
-  const projPdaxDefault = await createProjectWithAnchor("pdax-default", "pdax");
-  const keyForPdaxDefault = await generateScopedKey(projPdaxDefault);
-
-  const resProjDefault = await t.mutation(
-    internal.payment_intents.mutations.createPublicPaymentIntent,
-    {
-      apiKeyHash: keyForPdaxDefault,
-      amount: "20.00",
-      asset: "native",
-    },
-  );
-  expect(resProjDefault.authorized).toBe(true);
-  if (!resProjDefault.authorized || "idempotencyConflict" in resProjDefault)
-    throw new Error("expected create");
-  expect(resProjDefault.intent.anchor).toBe("pdax");
-
-  // Case 2: Scoped key (e.g. "pdax") overrides project default (e.g. "inhouse")
-  const projInhouseDefault = await createProjectWithAnchor("inhouse-default", "inhouse");
-  const keyScopedPdax = await generateScopedKey(projInhouseDefault, "pdax");
-
-  const resScopedKey = await t.mutation(
-    internal.payment_intents.mutations.createPublicPaymentIntent,
-    {
-      apiKeyHash: keyScopedPdax,
-      amount: "30.00",
-      asset: "native",
-    },
-  );
-  expect(resScopedKey.authorized).toBe(true);
-  if (!resScopedKey.authorized || "idempotencyConflict" in resScopedKey)
-    throw new Error("expected create");
-  expect(resScopedKey.intent.anchor).toBe("pdax");
-
-  // Case 1: Explicit request matches scoped key anchor
-  const resExplicitMatch = await t.mutation(
-    internal.payment_intents.mutations.createPublicPaymentIntent,
-    {
-      apiKeyHash: keyScopedPdax,
-      amount: "40.00",
+  const explicit = await t.action(api.payment_intents.public_api.create, {
+    ...makeAdmissionArgs(keyScope.apiKeyHash, "explicit-pdax", "pdax"),
+  });
+  expect(explicit.status).toBe("pdax_unavailable");
+  await expect(
+    t.mutation(api.payment_intents.mutations.createPaymentIntent, {
+      apiKeyHash: keyScope.apiKeyHash,
+      amount: "12.00",
       asset: "native",
       anchor: "pdax",
-    },
-  );
-  expect(resExplicitMatch.authorized).toBe(true);
-  if (!resExplicitMatch.authorized || "idempotencyConflict" in resExplicitMatch)
-    throw new Error("expected create");
-  expect(resExplicitMatch.intent.anchor).toBe("pdax");
-
-  // Case 1 Mismatch: Explicit request does not match scoped key anchor (pdax key vs inhouse request)
-  await expect(
-    t.mutation(internal.payment_intents.mutations.createPublicPaymentIntent, {
-      apiKeyHash: keyScopedPdax,
-      amount: "50.00",
-      asset: "native",
-      anchor: "inhouse",
     }),
-  ).rejects.toThrow(
-    "Anchor mismatch: Requested anchor does not match the API key's scoped anchor.",
-  );
+  ).rejects.toThrow(/PDAX payment routing is no longer available/);
+
+  const stored = await t.run(async (ctx) => ({
+    intents: await ctx.db.query("paymentIntents").collect(),
+    admissions: await ctx.db.query("rateLimitBuckets").collect(),
+  }));
+  expect(stored.intents).toHaveLength(0);
+  expect(stored.admissions).toHaveLength(0);
+
+  await projectDefault.owner.mutation(api.projects.mutation.updateSettings, {
+    id: projectDefault.projectId,
+    name: "Legacy Project Default",
+    description: "Switched to in-house",
+    defaultPaymentAnchor: "inhouse",
+  });
+  const newKey = await projectDefault.owner.mutation(api.projects.mutation.generateApiKey, {
+    id: projectDefault.projectId,
+    label: "In-house key",
+  });
+  const newKeyHash = await sha256Hex(newKey.rawKey);
+  const result = await t.mutation(internal.payment_intents.mutations.createPublicPaymentIntent, {
+    apiKeyHash: newKeyHash,
+    amount: "11.00",
+    asset: "native",
+  });
+  expect(result.authorized).toBe(true);
+  if (!result.authorized || "idempotencyConflict" in result) throw new Error("expected create");
+  expect(result.intent.anchor).toBe("inhouse");
 });
 
 test("payment.created webhook scheduling is demand-driven", async () => {
@@ -751,48 +726,12 @@ test("payment.created webhook scheduling is demand-driven", async () => {
   expect(await scheduledWebhookCount()).toBe(beforeSubscribed + 1);
 });
 
-test("public payment intent v2 creates one awaiting route and completes it safely", async () => {
+test("V2 in-house creation keeps idempotency without scheduling provider routing", async () => {
   const t = convexTest(schema, modules);
-
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
-  const owner = asWallet(t, ownerAddress);
-
-  const projectId = await owner.mutation(api.projects.mutation.createDraft, {
-    name: "V2 Test Store",
-    slug: "v2-test-store",
-    description: "Testing V2 PDAX Action",
-    metadataJson: "{}",
-    metadataHash: "0000000000000000000000000000000000000000000000000000000000000000",
-    ownerAddress,
-  });
-
-  await owner.mutation(api.projects.mutation.markPaymentAccessActive, {
-    id: projectId,
-    checkoutCredits: 100,
-  });
-
-  const { rawKey } = await owner.mutation(api.projects.mutation.generateApiKey, {
-    id: projectId,
-    label: "Key-None",
-  });
-  const apiKeyHash = await sha256Hex(rawKey);
-
-  const resNoConnection = await t.mutation(
-    internal.payment_intents.mutations.createPublicPaymentIntentV2,
-    {
-      apiKeyHash,
-      amount: "10.00",
-      asset: "native",
-      anchor: "pdax",
-    },
-  );
-  expect(resNoConnection.status).toBe("anchor_not_connected");
-
-  // 2. Connect the PDAX provider connection
-  await t.mutation(internal.provider_connections.mutation.upsertInternal, {
-    projectId,
-    provider: "pdax",
-    status: "connected",
+  const { projectId, apiKeyHash, owner } = await createPaymentReadyProject(t, {
+    ownerAddress: "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP",
+    name: "In-house V2 Store",
+    slug: "inhouse-v2-store",
   });
 
   const create = () =>
@@ -800,228 +739,183 @@ test("public payment intent v2 creates one awaiting route and completes it safel
       apiKeyHash,
       amount: "15.00",
       asset: "USDC",
-      anchor: "pdax",
-      idempotencyKey: "pdax-hot-key",
+      idempotencyKey: "inhouse-v2-order",
     });
-  const results = await Promise.all(Array.from({ length: 100 }, create));
-  const first = results.find((result) => result.status === "success");
-  expect(first?.status).toBe("success");
-  if (!first || first.status !== "success") throw new Error("Expected initial creation");
-  expect(first.intent.status).toBe("awaiting_route");
-  expect(first.intent.receiverAddress).toBeUndefined();
-  expect(results.filter((result) => result.status === "success")).toHaveLength(1);
-  expect(results.filter((result) => result.status === "idempotency_replay")).toHaveLength(99);
-
-  const counts = await t.run(async (ctx) => ({
-    intents: (await ctx.db.query("paymentIntents").collect()).length,
-    jobs: (await ctx.db.query("paymentIntentRouteJobs").collect()).length,
-  }));
-  expect(counts).toEqual({ intents: 1, jobs: 1 });
-
-  const leaseToken = "test-route-lease";
-  const claim = await t.mutation(internal.payment_intents.mutations.claimRouteJob, {
-    paymentIntentId: first.intent._id,
-    leaseToken,
-  });
-  expect(claim.status).toBe("claimed");
-  if (claim.status !== "claimed") throw new Error("Expected route claim");
-  expect(
-    (
-      await t.mutation(internal.payment_intents.mutations.claimProviderRoute, {
-        projectId,
-        mappedAsset: "USDCXLM",
-        leaseToken,
-      })
-    ).status,
-  ).toBe("claimed");
-  expect(
-    (
-      await t.mutation(internal.payment_intents.mutations.completePdaxRoute, {
-        paymentIntentId: first.intent._id,
-        leaseToken,
-        mappedAsset: "USDCXLM",
-        address: "G-MOCK-PDAX-DEPOSIT-ADDRESS",
-        memo: "123456",
-        fromCache: false,
-      })
-    ).applied,
-  ).toBe(true);
-  const completed = await t.query(api.payment_intents.queries.getPaymentIntent, {
-    paymentIntentId: first.intent._id,
-  });
-  expect(completed?.status).toBe("created");
-  expect(completed?.receiverAddress).toBe("G-MOCK-PDAX-DEPOSIT-ADDRESS");
-
-  const cachedCreate = await t.mutation(
-    internal.payment_intents.mutations.createPublicPaymentIntentV2,
-    {
-      apiKeyHash,
-      amount: "16.00",
-      asset: "USDC",
-      anchor: "pdax",
-    },
+  const results = await Promise.all(Array.from({ length: 12 }, create));
+  const initial = results.find((result) => result.status === "success");
+  expect(initial?.status).toBe("success");
+  if (!initial || initial.status !== "success") throw new Error("Expected initial creation");
+  expect(initial.intent.status).toBe("created");
+  expect(initial.intent.anchor).toBe("inhouse");
+  expect(initial.intent.receiverAddress).toBe(
+    "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP",
   );
-  if (cachedCreate.status !== "success") throw new Error("Expected cached-route creation");
-  expect(cachedCreate.intent.status).toBe("created");
-  expect(cachedCreate.intent.receiverAddress).toBe("G-MOCK-PDAX-DEPOSIT-ADDRESS");
-  expect(cachedCreate.intent.receiverMemo).toBe("123456");
-  expect(cachedCreate.intent.anchorDepositCurrency).toBe("USDCXLM");
-  expect(
-    await t.run(async (ctx) => (await ctx.db.query("paymentIntentRouteJobs").collect()).length),
-  ).toBe(1);
+  expect(results.filter((result) => result.status === "success")).toHaveLength(1);
+  expect(results.filter((result) => result.status === "idempotency_replay")).toHaveLength(11);
 
-  const failing = await t.mutation(internal.payment_intents.mutations.createPublicPaymentIntentV2, {
-    apiKeyHash,
-    amount: "20.00",
-    asset: "native",
-    anchor: "pdax",
-    idempotencyKey: "pdax-failing-key",
+  const state = await t.run(async (ctx) => ({
+    intents: await ctx.db.query("paymentIntents").collect(),
+    routeJobs: await ctx.db.query("paymentIntentRouteJobs").collect(),
+    providerOperations: await ctx.db.query("providerOperations").collect(),
+  }));
+  expect(state.intents).toHaveLength(1);
+  expect(state.routeJobs).toHaveLength(0);
+  expect(state.providerOperations).toHaveLength(0);
+
+  const key = await owner.mutation(api.projects.mutation.generateApiKey, {
+    id: projectId,
+    label: "Additional in-house key",
   });
-  if (failing.status !== "success") throw new Error("Expected failing-route fixture intent");
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    await t.run(async (ctx) => {
-      const job = await ctx.db
-        .query("paymentIntentRouteJobs")
-        .withIndex("by_payment_intent", (q) => q.eq("paymentIntentId", failing.intent._id))
-        .unique();
-      if (job) await ctx.db.patch(job._id, { nextAttemptAt: 0, leaseExpiresAt: undefined });
-    });
-    const token = `failure-lease-${attempt}`;
-    expect(
-      (
-        await t.mutation(internal.payment_intents.mutations.claimRouteJob, {
-          paymentIntentId: failing.intent._id,
-          leaseToken: token,
-        })
-      ).status,
-    ).toBe("claimed");
-    await t.mutation(internal.payment_intents.mutations.failPdaxRoute, {
-      paymentIntentId: failing.intent._id,
-      leaseToken: token,
-      errorCode: "provider_timeout",
-    });
-  }
-  expect(
-    (
-      await t.query(api.payment_intents.queries.getPaymentIntent, {
-        paymentIntentId: failing.intent._id,
-      })
-    )?.status,
-  ).toBe("failed");
+  expect(key.rawKey).toMatch(/^tk_live_/);
 });
 
-test("cached PDAX route completion does not rewrite shared cache", async () => {
+test("legacy PDAX checkout cannot submit, but submitted transactions still require ledger verification", async () => {
   const t = convexTest(schema, modules);
+  const { projectId, owner } = await createPaymentReadyProject(t, {
+    ownerAddress: "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP",
+    name: "Legacy PDAX Store",
+    slug: "legacy-pdax-store",
+  });
   const fixture = await t.run(async (ctx) => {
     const now = Date.now();
-    const projectId = await ctx.db.insert("projects", {
-      name: "Cache Test",
-      slug: `cache-test-${now}`,
-      description: "test",
-      metadataJson: "{}",
-      metadataHash: "0".repeat(64),
-      ownerAddress: "GTEST",
-      status: "draft",
+    const cachedIntentId = await ctx.db.insert("paymentIntents", {
+      projectId,
+      amount: "10.00",
+      asset: "native",
+      receiverAddress: "G-LEGACY-PDAX-DEPOSIT",
+      receiverMemo: "legacy-tag",
+      anchorDepositCurrency: "XLM",
+      merchantName: "Legacy PDAX Store",
+      status: "created",
+      anchor: "pdax",
+      expiresAt: now + 30 * 60_000,
       createdAt: now,
       updatedAt: now,
     });
+    const submittedIntentId = await ctx.db.insert("paymentIntents", {
+      projectId,
+      amount: "10.00",
+      asset: "native",
+      receiverAddress: "G-LEGACY-PDAX-DEPOSIT",
+      receiverMemo: "legacy-tag",
+      anchorDepositCurrency: "XLM",
+      merchantName: "Legacy PDAX Store",
+      status: "pending",
+      anchor: "pdax",
+      payerAddress: "G-VERIFIED-PAYER",
+      txHash: "already-submitted-hash",
+      expiresAt: now + 30 * 60_000,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return { cachedIntentId, submittedIntentId };
+  });
+
+  await expect(
+    owner.mutation(api.payment_intents.mutations.updateStatus, {
+      paymentIntentId: fixture.cachedIntentId,
+      status: "pending",
+      payerAddress: "G-NEW-PAYER",
+      txHash: "must-not-submit",
+    }),
+  ).rejects.toThrow(/legacy PDAX checkout cannot accept a new payment submission/);
+
+  const blocked = await t.run(async (ctx) => ({
+    intent: await ctx.db.get(fixture.cachedIntentId),
+    reconciliationJobs: await ctx.db.query("paymentReconciliationJobs").collect(),
+  }));
+  expect(blocked.intent?.status).toBe("created");
+  expect(blocked.intent?.receiverAddress).toBe("G-LEGACY-PDAX-DEPOSIT");
+  expect(blocked.reconciliationJobs).toHaveLength(0);
+
+  const verified = await t.mutation(internal.payment_intents.mutations.markVerifiedPaid, {
+    paymentIntentId: fixture.submittedIntentId,
+    txHash: "ABCDEF1234",
+    verifiedPayment: {
+      source: "G-VERIFIED-PAYER",
+      destination: "G-LEGACY-PDAX-DEPOSIT",
+      amount: "10.00",
+      asset: "native",
+    },
+    verifiedNetwork: "testnet",
+  });
+  expect(verified.applied).toBe(true);
+
+  const completed = await t.run(async (ctx) => ({
+    intent: await ctx.db.get(fixture.submittedIntentId),
+    settlements: await ctx.db.query("settlementTransactions").collect(),
+    providerOperations: await ctx.db.query("providerOperations").collect(),
+  }));
+  expect(completed.intent?.status).toBe("paid");
+  expect(completed.intent?.verifiedTxHash).toBe("abcdef1234");
+  expect(completed.settlements).toHaveLength(0);
+  expect(completed.providerOperations).toHaveLength(0);
+});
+
+test("queued legacy PDAX workers are safe no-ops and do not modify retained records", async () => {
+  const t = convexTest(schema, modules);
+  const { projectId } = await createPaymentReadyProject(t, {
+    ownerAddress: "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP",
+    name: "Queued PDAX Jobs",
+    slug: "queued-pdax-jobs",
+  });
+  const fixture = await t.run(async (ctx) => {
+    const now = Date.now();
     const paymentIntentId = await ctx.db.insert("paymentIntents", {
       projectId,
       amount: "1.00",
       asset: "USDC",
-      merchantName: "Cache Test",
+      receiverAddress: "G-HISTORICAL-DEPOSIT",
+      merchantName: "Queued PDAX Jobs",
       status: "awaiting_route",
       anchor: "pdax",
       expiresAt: now + 60_000,
       createdAt: now,
       updatedAt: now,
     });
-    await ctx.db.insert("paymentIntentRouteJobs", {
+    const routeJobId = await ctx.db.insert("paymentIntentRouteJobs", {
       paymentIntentId,
       projectId,
       mappedAsset: "USDCXLM",
       state: "leased",
-      attempts: 0,
+      attempts: 1,
       nextAttemptAt: now,
-      leaseToken: "cache-hit-lease",
-      leaseExpiresAt: now + 30_000,
+      leaseToken: "legacy-route-lease",
+      leaseExpiresAt: now + 10_000,
       createdAt: now,
       updatedAt: now,
     });
-    const cacheId = await ctx.db.insert("pdaxRouteCache", {
-      projectId,
-      mappedAsset: "USDCXLM",
-      address: "G-CACHED-PDAX-ADDRESS",
-      memo: "123456",
-      expiresAt: now + 60_000,
-      updatedAt: now - 1_000,
-    });
-    return { cacheId, paymentIntentId };
+    return { paymentIntentId, routeJobId };
   });
 
-  const cachedBefore = await t.run(async (ctx) => await ctx.db.get(fixture.cacheId));
-  const result = await t.mutation(internal.payment_intents.mutations.completePdaxRoute, {
-    paymentIntentId: fixture.paymentIntentId,
-    leaseToken: "cache-hit-lease",
-    mappedAsset: "USDCXLM",
-    address: "G-CACHED-PDAX-ADDRESS",
-    memo: "123456",
-    fromCache: true,
+  expect(
+    await t.action(internal.payment_intents.actions.enrichPdaxRoute, {
+      paymentIntentId: fixture.paymentIntentId,
+    }),
+  ).toBeNull();
+  expect(
+    await t.mutation(internal.payment_intents.mutations.recoverPdaxRouteJobs, { limit: 10 }),
+  ).toEqual({
+    recovered: 0,
+    expired: 0,
   });
-  const cachedAfter = await t.run(async (ctx) => await ctx.db.get(fixture.cacheId));
-
-  expect(result.applied).toBe(true);
-  expect(cachedAfter).toEqual(cachedBefore);
-});
-
-test("stale PDAX route jobs are recovered after a worker lease is lost", async () => {
-  const t = convexTest(schema, modules);
-  const fixture = await t.run(async (ctx) => {
-    const now = Date.now();
-    const projectId = await ctx.db.insert("projects", {
-      name: "Route Recovery Test",
-      slug: `route-recovery-test-${now}`,
-      description: "test",
-      metadataJson: "{}",
-      metadataHash: "0".repeat(64),
-      ownerAddress: "GTEST",
-      status: "draft",
-      createdAt: now,
-      updatedAt: now,
-    });
-    const paymentIntentId = await ctx.db.insert("paymentIntents", {
-      projectId,
-      amount: "1.00",
-      asset: "USDC",
-      merchantName: "Route Recovery Test",
-      status: "awaiting_route",
-      anchor: "pdax",
-      expiresAt: now + 60_000,
-      createdAt: now,
-      updatedAt: now,
-    });
-    const jobId = await ctx.db.insert("paymentIntentRouteJobs", {
-      paymentIntentId,
-      projectId,
-      mappedAsset: "USDCXLM",
-      state: "leased",
-      attempts: 0,
-      nextAttemptAt: now - 10_000,
-      leaseToken: "lost-worker-lease",
-      leaseExpiresAt: now - 1_000,
-      createdAt: now,
-      updatedAt: now,
-    });
-    return { jobId };
+  expect(await t.action(internal.provider_operations.actions.reconcileDue, { limit: 10 })).toEqual({
+    claimed: 0,
+    resolved: 0,
+  });
+  expect(await t.action(internal.provider_events.processing.drain, { limit: 10 })).toEqual({
+    claimed: 0,
+  });
+  expect(await t.action(internal.settlement.actions.pollPendingPayouts, {})).toEqual({
+    updated: 0,
+    total: 0,
   });
 
-  const result = await t.mutation(internal.payment_intents.mutations.recoverPdaxRouteJobs, {
-    limit: 10,
-  });
-  const recovered = await t.run(async (ctx) => await ctx.db.get(fixture.jobId));
-
-  expect(result).toEqual({ recovered: 1, expired: 0 });
-  expect(recovered?.state).toBe("scheduled");
-  expect(recovered?.leaseToken).toBeUndefined();
-  expect(recovered?.leaseExpiresAt).toBeUndefined();
+  const after = await t.run(async (ctx) => ({
+    intent: await ctx.db.get(fixture.paymentIntentId),
+    routeJob: await ctx.db.get(fixture.routeJobId),
+  }));
+  expect(after.intent?.status).toBe("awaiting_route");
+  expect(after.intent?.receiverAddress).toBe("G-HISTORICAL-DEPOSIT");
+  expect(after.routeJob?.leaseToken).toBe("legacy-route-lease");
 });

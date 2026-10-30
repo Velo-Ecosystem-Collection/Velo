@@ -2,7 +2,7 @@
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 
-import { api, internal } from "../_generated/api";
+import { api } from "../_generated/api";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -20,7 +20,7 @@ function asWallet(t: ReturnType<typeof convexTest>, address: string) {
 
 async function createProject(
   t: ReturnType<typeof convexTest>,
-  options: { active?: boolean; defaultAnchor?: "inhouse" | "pdax"; slug: string },
+  options: { active?: boolean; defaultAnchor?: "inhouse"; slug: string },
 ) {
   const owner = asWallet(t, OWNER);
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
@@ -143,11 +143,11 @@ test("owner dashboard list paginates, filters, and finds exact identifiers", asy
   ).rejects.toThrow("Unauthorized");
 });
 
-test("dashboard PDAX creation requires a connected provider", async () => {
+test("dashboard creation rejects a legacy PDAX default until the owner switches to in-house", async () => {
   const t = convexTest(schema, modules);
-  const { owner, projectId } = await createProject(t, {
-    slug: "dashboard-pdax",
-    defaultAnchor: "pdax",
+  const { owner, projectId } = await createProject(t, { slug: "dashboard-pdax" });
+  await t.run(async (ctx) => {
+    await ctx.db.patch(projectId, { defaultPaymentAnchor: "pdax" });
   });
 
   await expect(
@@ -157,19 +157,20 @@ test("dashboard PDAX creation requires a connected provider", async () => {
       amount: "5",
       asset: "USDC",
     }),
-  ).rejects.toThrow("PDAX provider is not connected");
+  ).rejects.toThrow(/PDAX payment routing is no longer available/);
 
-  await t.mutation(internal.provider_connections.mutation.upsertInternal, {
-    projectId,
-    provider: "pdax",
-    status: "connected",
+  await owner.mutation(api.projects.mutation.updateSettings, {
+    id: projectId,
+    name: "Dashboard Merchant dashboard-pdax",
+    description: "Switched to in-house",
+    defaultPaymentAnchor: "inhouse",
   });
   const result = await owner.mutation(api.payment_intents.mutations.createFromDashboard, {
     projectId,
-    requestId: "pdax-connected",
+    requestId: "inhouse-after-switch",
     amount: "5",
     asset: "USDC",
   });
-  expect(result.intent.anchor).toBe("pdax");
-  expect(result.intent.status).toBe("awaiting_route");
+  expect(result.intent.anchor).toBe("inhouse");
+  expect(result.intent.status).toBe("created");
 });

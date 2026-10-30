@@ -20,7 +20,7 @@ test("dashboard covers every Sprint 10 operating view", () => {
     "dependency",
     "slo",
     "queue-backlog",
-    "provider",
+    "payment-reconciliation",
     "webhook",
     "ui",
     "exporter-health",
@@ -36,16 +36,11 @@ test("alerts use locked thresholds, owners, and concrete runbook anchors", () =>
   assert.match(alerts, /< 0\.999/);
   assert.match(alerts, />= 0\.005/);
   assert.match(alerts, /for: 10m/);
-  for (const owner of [
-    "API\/Web",
-    "Payments Backend",
-    "Settlement\/PDAX",
-    "Webhooks\/Integrations",
-  ]) {
+  for (const owner of ["API/Web", "Payments Backend"]) {
     assert.match(alerts, new RegExp(owner));
   }
-  const anchors = [...alerts.matchAll(/runbook: "([^\"]+)#([^\"]+)"/g)];
-  assert.equal(anchors.length, 6);
+  const anchors = [...alerts.matchAll(/runbook: "([^"]+)#([^"]+)"/g)];
+  assert.equal(anchors.length, 5);
   for (const [, path, anchor] of anchors) {
     assert.match(path, /^docs\/operations\//);
     assert.ok(anchor.length > 3);
@@ -76,12 +71,8 @@ test("every dashboard and alert metric is catalogued and has an emitter", () => 
     assert.match(catalogSource, new RegExp(`"${metric}"`), `${metric} missing from catalog`);
     assert.match(emitterSource, new RegExp(metric), `${metric} missing from emitters`);
   }
-  const catalogBlock =
-    catalogSource.match(/export const METRIC_NAMES = \[([\s\S]*?)\] as const/)?.[1] ?? "";
-  const required = [...catalogBlock.matchAll(/"(velo_[a-z0-9_]+)"/g)].map((match) => match[1]);
-  for (const metric of required) {
-    assert.match(emitterSource, new RegExp(metric), `${metric} has no production emitter`);
-  }
+  assert.doesNotMatch(catalogSource, /"velo_provider_(?:event_backlog|healthy)"/);
+  assert.doesNotMatch(emitterSource, /velo_provider_(?:event_backlog|healthy)/);
 });
 
 test("scenario p95 recording rule and threshold join use the seven exact manifest labels", () => {

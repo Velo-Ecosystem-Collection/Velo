@@ -26,14 +26,14 @@ Velo connects the workflows teams use to build, verify, observe, pay, and settle
 </div>
 
 > [!IMPORTANT]
-> **Velo is alpha software for Stellar Testnet.** The checkout workflow is implemented, with live end-to-end qualification still in progress. Settlement is limited to PDAX UAT and demo flows. Mainnet readiness and production settlement are not yet claimed.
+> **Velo is alpha software for Stellar Testnet.** In-house Stellar checkout, ledger verification, and merchant webhooks are implemented, with live end-to-end qualification still in progress. Settlement integration is unavailable; the Settlement page is a placeholder for a future Philippine payment rail.
 
 ---
 
 ## 📱 Velo on Mobile
 
-A compact tour of Velo's Testnet alpha—from project setup and registry proof to observability,
-developer integration, and settlement. Select any screen to view it at full resolution.
+A compact tour of Velo's Testnet alpha—from project setup and registry proof to observability and
+developer integration. The settlement screenshot is retained as historical product evidence.
 
 <details open>
 <summary><strong>Start and configure</strong></summary>
@@ -99,7 +99,7 @@ developer integration, and settlement. Select any screen to view it at full reso
 </details>
 
 <details>
-<summary><strong>Integrate and settle</strong></summary>
+<summary><strong>Integrate and review history</strong></summary>
 <br>
 <table>
   <tr>
@@ -112,8 +112,8 @@ developer integration, and settlement. Select any screen to view it at full reso
       <br><strong>SDK documentation</strong>
     </td>
     <td align="center" width="33%">
-      <a href="screenshots/mobile_settlement.png"><img src="screenshots/mobile_settlement.png" alt="Velo mobile PDAX sandbox settlement page with balances and quote form" width="250" /></a>
-      <br><strong>PDAX settlement</strong>
+      <a href="screenshots/mobile_settlement.png"><img src="screenshots/mobile_settlement.png" alt="Archived Velo settlement demo page" width="250" /></a>
+      <br><strong>Historical settlement demo</strong>
     </td>
   </tr>
 </table>
@@ -121,13 +121,13 @@ developer integration, and settlement. Select any screen to view it at full reso
 
 ## 🧩 Why Velo
 
-Building a Stellar application is only the beginning. Teams still need to prove which contracts are official, inspect live behavior, accept payments, verify settlement against the ledger, notify merchant systems, and coordinate regional payout workflows.
+Building a Stellar application is only the beginning. Teams still need to prove which contracts are official, inspect live behavior, accept payments, verify payments against the ledger, and notify merchant systems.
 
 Those jobs often end up fragmented across scripts, dashboards, providers, and manual runbooks. Velo brings them into one developer-first operating layer.
 
 ## 🔁 The Velo Operating Loop
 
-**Build → Verify → Observe → Pay → Settle**
+**Build → Verify → Observe → Pay**
 
 | Capability     | What Velo helps you do                                                                                      | Alpha status               |
 | -------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------- |
@@ -135,7 +135,7 @@ Those jobs often end up fragmented across scripts, dashboards, providers, and ma
 | ✅ **Verify**  | Link wallet authorization and on-chain provenance to the project and contracts an owner claims as official. | Live validation pending    |
 | 📡 **Observe** | Inspect Testnet transactions, monitor contract events, and review signed webhook delivery.                  | Live qualification pending |
 | 💳 **Pay**     | Create hosted Stellar checkout flows and return ledger-verified payment state to an application.            | Code-complete; E2E pending |
-| 🏦 **Settle**  | Exercise supported stablecoin conversion and local payout workflows through PDAX UAT.                       | UAT demo only              |
+| 🏦 **Settlement route** | Reserved for a future Philippine payment rail. No settlement integration is available. | Placeholder |
 
 Start with Velo Pay, then use the wider platform as your Stellar application grows.
 
@@ -149,7 +149,7 @@ Start with Velo Pay, then use the wider platform as your Stellar application gro
   sponsorship. dApps integrate through the server-side API, SDK, or Express and Next.js examples.
 - **Explore Soroban contracts** in Playground by loading live specs, simulating calls, reviewing exact XDR,
   and invoking eligible calls on Testnet with a wallet. Mainnet is limited to inspection and simulation.
-- **Create PaymentIntents** through the Velo API or the server-side `@carts1024/velo-sdk`, with idempotency and anchor-aware routing.
+- **Create PaymentIntents** through the Velo API or the server-side `@carts1024/velo-sdk`, with idempotency and in-house Stellar routing.
 - **Send customers to hosted checkout** where they connect a wallet and submit a Stellar Testnet payment.
 - **Trust ledger evidence, not browser callbacks**: only the backend scanner can promote a payment to `paid` after verification.
 - **Deliver signed webhooks** with HMAC-SHA256 signatures, retries, secret rotation, and delivery logs.
@@ -157,7 +157,6 @@ Start with Velo Pay, then use the wider platform as your Stellar application gro
 - **Use project-configured wallets** through `@carts1024/velo-wallets` browser, React, and custom-element
   integrations.
 - **Track Velo credits and top-ups** through policy-gated billing controls; Mainnet enforcement remains gated.
-- **Demonstrate regional settlement** with PDAX UAT balances, quotes, trades, InstaPay withdrawals, callbacks, and normalized merchant events.
 
 ## 🌐 How Velo Uses Stellar
 
@@ -172,7 +171,7 @@ Testnet operating loop.
 | **Testnet fee sponsorship**         | Managed relayers submit eligible FeeBump transactions under project limits and contract allowlists. Owners control funding and activation; the signing key stays on the server.                                                  |
 | **Soroban contracts**               | `VeloRegistry` records project identity and official contract references. `VeloPayAccess` reads Registry state to control payment activation and checkout credits. Playground supports Testnet invocation and Mainnet simulation. |
 | **Ledger-verified payments**        | A browser submission never marks a PaymentIntent as paid. The backend checks the transaction against the intended source, destination, asset, and amount before updating state and scheduling `payment.succeeded`.                |
-| **Stablecoin settlement**           | The current PDAX UAT workflow demonstrates how Stellar stablecoin collection can continue into quotes, trades, and Philippine local-payout flows. It is a sandbox integration, not production settlement.                         |
+| **Provider settlement**             | Unavailable. Historical provider and settlement records remain readable; the Settlement route is a provider-neutral placeholder.                                                                                                  |
 
 ## 💡 Innovation and Differentiation
 
@@ -181,7 +180,7 @@ payment truth verifiable on-chain. Its differentiation is the operating model ar
 claim to replace wallets, Horizon, RPC providers, anchors, or the Stellar SDK.
 
 - **One operating loop:** project provenance, payment access, hosted checkout, ledger verification,
-  contract monitoring, signed webhooks, and settlement workflows share one project context.
+  contract monitoring, and signed webhooks share one project context.
 - **Ledger evidence over client trust:** the checkout UI can submit a transaction, but only backend
   verification can finalize the payment.
 - **Contracts plus operations:** Soroban authorization is connected to the API, SDK, checkout, event
@@ -246,7 +245,6 @@ flowchart LR
   Backend --> Stellar
 
   Backend --> Webhooks[Signed merchant webhooks]
-  Backend --> PDAX[PDAX UAT settlement]
 ```
 
 The browser can submit a payment, but it cannot declare success. Velo verifies the transaction from the backend before updating the PaymentIntent and dispatching `payment.succeeded`.
@@ -269,7 +267,7 @@ contract-specific READMEs together.
 - **Stellar:** Stellar Wallets Kit, `@stellar/stellar-sdk`, Horizon, Stellar RPC, and Testnet.
 - **Smart contracts:** Rust, `soroban-sdk`, `VeloRegistry`, and `VeloPayAccess`.
 - **Developer experience:** `@carts1024/velo-sdk`, `@carts1024/velo-wallets`, REST APIs, signed webhooks, and Express and Next.js examples.
-- **Settlement:** Server-only PDAX UAT client for sandbox quotes, trades, withdrawals, and callbacks.
+- **Settlement:** No provider integration is available. The Settlement route remains a placeholder.
 - **Tooling:** pnpm workspaces, Turborepo, oxlint, oxfmt, Husky, and GitHub Actions.
 
 ## 🚀 Run Velo Locally
@@ -303,7 +301,7 @@ NEXT_PUBLIC_VELO_REGISTRY_CONTRACT_ID=CDIWR3WQ7DKQORRRAZOTWFQ2AOZZOFFNA3CUTL5CJP
 NEXT_PUBLIC_VELO_PAY_ACCESS_CONTRACT_ID=CAXMXAWM7QSW57TE3MG2DQI6ZG4UQPYK3VGPMF5K7XO5ASEEJ7IXL7RH
 ```
 
-Authentication, backend, hosted deployment, and PDAX UAT flows require additional server-side configuration. See the [full environment reference](docs/velo-master-context.md#environment-variables) and [demo setup guide](docs/demo-setup.md).
+Authentication, backend, and hosted deployment require additional server-side configuration. See the [full environment reference](docs/velo-master-context.md#environment-variables) and [demo setup guide](docs/demo-setup.md).
 
 #### Optional WalletConnect login
 
@@ -541,7 +539,6 @@ claims of present availability.
 ├── apps/web                 # Next.js application, console, checkout, and public pages
 ├── packages/backend         # Convex schema, functions, actions, crons, and tests
 ├── packages/observability   # Shared telemetry and redaction helpers
-├── packages/pdax            # Server-only PDAX UAT client
 ├── packages/stellar         # Stellar transaction and contract helpers
 ├── packages/ui              # Shared React components and styles
 ├── packages/velo-sdk        # Public alpha server-side SDK
@@ -557,13 +554,13 @@ claims of present availability.
 - [Velo master context](docs/velo-master-context.md) — product scope, trust boundaries, source map, and full environment reference.
 - [Velo Pay checkout](docs/velo-pay-checkout.md) — PaymentIntent and hosted checkout lifecycle.
 - [Velo Gas Station](docs/velo-gas-station.md) — server-side SDK integration, relayer setup, policy, recovery, and Testnet validation.
-- [E2E demo guide](docs/demo-setup.md) — merchant onboarding, payment, webhook, and PDAX UAT walkthrough.
+- [E2E demo guide](docs/demo-setup.md) — merchant onboarding, payment, and webhook walkthrough.
 - [Velo SDK reference](packages/velo-sdk/README.md) — client setup, payment APIs, pagination, errors, and webhook verification.
 - [Velo Wallets package](packages/velo-wallets/README.md) — browser, React, and custom-element wallet integrations.
 - [Registry contract](contracts/registry/README.md) and [PayAccess contract](contracts/pay_access/README.md) — Soroban interfaces and tests.
 - [Observability architecture](docs/architecture/sprint-10-end-to-end-observability-and-redaction.md) — correlation, telemetry export, and safe redaction.
 - [Performance qualification architecture](docs/architecture/sprint-11-comparative-throughput-certification.md) — benchmark evidence and release gating.
-- [PDAX settlement workflow](docs/prds/prd-velo-pdax/pdax-settlement-workflow.md) — UAT conversion and payout design.
+- [Historical PDAX settlement design](docs/prds/prd-velo-pdax/pdax-settlement-workflow.md) — retained product history; the integration is unavailable.
 
 ## ⚠️ Alpha Boundaries
 
@@ -572,7 +569,7 @@ Before evaluating Velo, keep these constraints in view:
 - Payment flows target Stellar Testnet.
 - The Testnet contract IDs above still require explicit configuration and validation in each hosted environment.
 - Checkout code is implemented, but the full wallet-to-webhook path still needs live rehearsal on target devices.
-- PDAX support uses UAT credentials, sandbox balances, simulated pricing/liquidity, and demo payout flows.
+- Provider settlement is unavailable. Historical PDAX records remain accessible; no replacement rail is implemented.
 - Mainnet settlement, production compliance workflows, and production custody are not implemented.
 - Public API rate limiting still needs distributed production hardening.
 

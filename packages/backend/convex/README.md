@@ -10,10 +10,10 @@ Run the suite from the repository root with `pnpm --filter @repo/backend test`.
 
 ## Sprint 8 reliability services
 
-Financial provider calls are owned by `providerOperations`; payment RPC uncertainty is owned by
-`paymentReconciliationJobs`; inbound PDAX callbacks are persisted in `providerEvents`; outbound
-merchant notifications use immutable `webhookDomainEvents` plus fenced `webhookDeliveries`.
-Together these provide **exactly-once observable transitions**, not exactly-once transport.
+Payment RPC uncertainty is owned by `paymentReconciliationJobs`; historical provider callbacks
+remain persisted in `providerEvents`; outbound merchant notifications use immutable
+`webhookDomainEvents` plus fenced `webhookDeliveries`. Together these provide **exactly-once
+observable transitions**, not exactly-once transport.
 
 Provider and payment workers use indexed pages of at most 100 and continuation scheduling. The
 capacity contract is covered by [`10,000 reconciliation jobs drain in exactly 100 bounded pages`](tests/durableReliability.test.ts). Provider lease fencing is covered by [`lease fencing rejects stale completion and ambiguous trades cannot resubmit`](tests/durableReliability.test.ts).
@@ -25,24 +25,15 @@ one exact Redis Lua operation. See the [payment limiter cutover runbook](../../.
 
 ## Configuration and rollout
 
-Required Convex environment variables:
-
-- `PDAX_UAT_BASE_URL`, `PDAX_UAT_USERNAME`, and `PDAX_UAT_PASSWORD`
-- `PDAX_CALLBACK_URL` and `PDAX_WEBHOOK_TOKEN`
-- `STELLAR_RPC_URL`
-
-The direct provider ingress is `POST /api/webhooks/pdax/v1?token=…`; the retired Next.js route
-returns 410. After additive schema deployment, run `internal.sprint8_migrations.backfill` and
-re-register active PDAX projects with `settlement.actions.registerWebhook({ projectId })`.
-
-Use authenticated provider-operation queries and `provider_operations.mutations.redrive` for
-operator recovery. Redrive preserves the original request fingerprint/provider UUID; an ambiguous
-trade must not become a new submission. This invariant is covered by [`lease fencing rejects stale completion and ambiguous trades cannot resubmit`](tests/durableReliability.test.ts).
+Required Stellar configuration: `STELLAR_RPC_URL`. PDAX provider actions and webhook ingress are
+unavailable; the historical records and schema remain readable. Recurring provider processing is
+disabled. Safe no-op compatibility handlers absorb already-scheduled legacy jobs without network
+calls.
 
 ## Webhook delivery
 
-Canonical payment and settlement mutations enqueue `internal.webhookDelivery.trigger` after the
-transaction commits. Immutable domain events deduplicate deliveries per endpoint/schema version,
+Canonical payment mutations enqueue `internal.webhookDelivery.trigger` after the transaction
+commits. Immutable domain events deduplicate deliveries per endpoint/schema version,
 and lease token/generation fencing rejects stale workers. This is covered by [`duplicate delivery triggers share one fenced delivery`](tests/durableReliability.test.ts).
 
 Network failures, HTTP 408/429, and 5xx responses retry at most five times with bounded jitter and

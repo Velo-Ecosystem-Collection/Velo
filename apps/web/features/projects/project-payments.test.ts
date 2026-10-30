@@ -30,4 +30,5 @@ test("Payments Hub exposes its required operational states and actions", () => {
   }
   assert.doesNotMatch(source, /mutations\.updateStatus/);
   assert.doesNotMatch(source, /markVerifiedPaid/);
+  assert.match(source, /New payments are disabled while this project uses a legacy PDAX default/);
 });

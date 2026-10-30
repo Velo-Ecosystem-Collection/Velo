@@ -17,7 +17,7 @@ export const draftProjectArgs = {
   metadataJson: v.string(),
   metadataHash: v.string(),
   ownerAddress: v.string(),
-  defaultPaymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
+  defaultPaymentAnchor: v.optional(v.literal("inhouse")),
 };
 
 export function normalizeAddress(address: string) {

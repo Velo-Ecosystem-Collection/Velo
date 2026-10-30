@@ -18,10 +18,9 @@ import { recordMetric, recordSpan } from "../telemetry_outbox/helpers";
 import { hasEnabledWebhookForEvent } from "../webhook_endpoints/helpers";
 import {
   createPaymentIntentFingerprint,
-  mapAssetToPdax,
   PAYMENT_INTENT_EXPIRY_MS,
+  resolveActivePaymentAnchor,
   STATUS_TRANSITIONS,
-  resolvePaymentAnchor,
   verifyApiKeyForPayments,
 } from "./helpers";
 import { paymentMatchesIntent } from "./verification";
@@ -63,7 +62,7 @@ export const createPaymentIntent = mutation({
     const now = Date.now();
 
     // Resolve payment anchor
-    const resolvedAnchor = resolvePaymentAnchor({
+    const resolvedAnchor = resolveActivePaymentAnchor({
       requestedAnchor: args.anchor,
       apiKeyAnchor: apiKey.paymentAnchor,
       projectDefaultAnchor: project.defaultPaymentAnchor,
@@ -109,7 +108,7 @@ export const createPaymentIntent = mutation({
       phase: "would_reserve",
       projectId: project._id,
       paymentIntentId: id,
-      route: resolvedAnchor === "pdax" ? "pdax" : "stellar",
+      route: "stellar",
       idempotencyKey: `shadow:reserve:${id}`,
     });
 
@@ -164,7 +163,7 @@ export const createFromDashboard = mutation({
       throw new ConvexError("Description must be 500 characters or fewer.");
     }
 
-    const resolvedAnchor = resolvePaymentAnchor({
+    const resolvedAnchor = resolveActivePaymentAnchor({
       requestedAnchor: args.anchor,
       projectDefaultAnchor: project.defaultPaymentAnchor,
     });
@@ -196,32 +195,6 @@ export const createFromDashboard = mutation({
     }
 
     const now = Date.now();
-    const mappedAsset = resolvedAnchor === "pdax" ? mapAssetToPdax(asset) : undefined;
-    let cachedPdaxRoute: { address: string; memo?: string; mappedAsset: string } | undefined;
-    if (resolvedAnchor === "pdax") {
-      const connection = await ctx.db
-        .query("providerConnections")
-        .withIndex("by_project_provider", (q) =>
-          q.eq("projectId", project._id).eq("provider", "pdax"),
-        )
-        .unique();
-      if (connection?.status !== "connected") {
-        throw new ConvexError("PDAX provider is not connected for this project.");
-      }
-      const cached = await ctx.db
-        .query("pdaxRouteCache")
-        .withIndex("by_project_and_mapped_asset", (q) =>
-          q.eq("projectId", project._id).eq("mappedAsset", mappedAsset!),
-        )
-        .unique();
-      if (cached && cached.expiresAt > now) {
-        cachedPdaxRoute = {
-          address: cached.address,
-          ...(cached.memo !== undefined ? { memo: cached.memo } : {}),
-          mappedAsset: cached.mappedAsset,
-        };
-      }
-    }
 
     const intentFields = {
       projectId: project._id,
@@ -229,27 +202,15 @@ export const createFromDashboard = mutation({
       intentType: "merchant_payment" as const,
       amount,
       asset,
-      ...(resolvedAnchor === "inhouse"
-        ? { receiverAddress: project.ownerAddress }
-        : cachedPdaxRoute
-          ? {
-              receiverAddress: cachedPdaxRoute.address,
-              ...(cachedPdaxRoute.memo !== undefined ? { receiverMemo: cachedPdaxRoute.memo } : {}),
-              anchorDepositCurrency: cachedPdaxRoute.mappedAsset,
-            }
-          : {}),
+      receiverAddress: project.ownerAddress,
       merchantName: project.name,
       ...(description !== undefined ? { description } : {}),
-      status:
-        resolvedAnchor === "pdax" && !cachedPdaxRoute
-          ? ("awaiting_route" as const)
-          : ("created" as const),
+      status: "created" as const,
       anchor: resolvedAnchor,
       correlationId: `dashboard:${requestId}`,
       expiresAt: now + PAYMENT_INTENT_EXPIRY_MS,
       stageTimestamps: {
         created: now,
-        ...(cachedPdaxRoute ? { routeReady: now } : {}),
       },
       createdAt: now,
       updatedAt: now,
@@ -271,7 +232,7 @@ export const createFromDashboard = mutation({
       phase: "would_reserve",
       projectId: project._id,
       paymentIntentId,
-      route: resolvedAnchor === "pdax" ? "pdax" : "stellar",
+      route: "stellar",
       idempotencyKey: `shadow:reserve:${paymentIntentId}`,
     });
 
@@ -284,21 +245,7 @@ export const createFromDashboard = mutation({
       updatedAt: now,
     });
 
-    if (resolvedAnchor === "pdax" && !cachedPdaxRoute) {
-      await ctx.db.insert("paymentIntentRouteJobs", {
-        paymentIntentId,
-        projectId: project._id,
-        mappedAsset: mappedAsset!,
-        state: "scheduled",
-        attempts: 0,
-        nextAttemptAt: now,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await ctx.scheduler.runAfter(0, internal.payment_intents.actions.enrichPdaxRoute, {
-        paymentIntentId,
-      });
-    } else if (await hasEnabledWebhookForEvent(ctx, project._id, "payment.created")) {
+    if (await hasEnabledWebhookForEvent(ctx, project._id, "payment.created")) {
       await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
         projectId: project._id,
         eventType: "payment.created",
@@ -373,7 +320,7 @@ export const createPublicPaymentIntent = internalMutation({
     }
 
     // Resolve payment anchor
-    const resolvedAnchor = resolvePaymentAnchor({
+    const resolvedAnchor = resolveActivePaymentAnchor({
       requestedAnchor: args.anchor,
       apiKeyAnchor: auth.apiKey.paymentAnchor,
       projectDefaultAnchor: auth.project.defaultPaymentAnchor,
@@ -418,7 +365,7 @@ export const createPublicPaymentIntent = internalMutation({
       phase: "would_reserve",
       projectId: auth.project._id,
       paymentIntentId,
-      route: resolvedAnchor === "pdax" ? "pdax" : "stellar",
+      route: "stellar",
       idempotencyKey: `shadow:reserve:${paymentIntentId}`,
     });
     if (args.correlationId !== undefined) {
@@ -496,6 +443,14 @@ export const updateStatus = mutation({
       throw new ConvexError("Payment intent not found");
     }
 
+    if (args.status === "pending" && intent.anchor === "pdax") {
+      throw new ConvexError({
+        code: "PDAX_UNAVAILABLE",
+        message:
+          "This legacy PDAX checkout cannot accept a new payment submission. Create a new in-house checkout instead.",
+      });
+    }
+
     const now = Date.now();
 
     // Check expiry for non-terminal transitions
@@ -538,13 +493,15 @@ export const updateStatus = mutation({
     if (args.status === "failed" || args.status === "cancelled") {
       if (intent.intentType !== "billing_topup") {
         await releaseCommercialReservation(ctx, intent._id, args.status);
-        await scheduleShadowEvaluation(ctx, {
-          phase: "would_release",
-          projectId: intent.projectId,
-          paymentIntentId: intent._id,
-          route: intent.anchor === "pdax" ? "pdax" : "stellar",
-          idempotencyKey: `shadow:release:${intent._id}:${args.status}`,
-        });
+        if (intent.anchor !== "pdax") {
+          await scheduleShadowEvaluation(ctx, {
+            phase: "would_release",
+            projectId: intent.projectId,
+            paymentIntentId: intent._id,
+            route: "stellar",
+            idempotencyKey: `shadow:release:${intent._id}:${args.status}`,
+          });
+        }
       }
     }
 
@@ -800,7 +757,7 @@ export const prepareOrInsertPaymentIntentV2 = internalMutation({
       return { status: "unauthorized" as const, reason: auth.reason };
     }
 
-    const resolvedAnchor = resolvePaymentAnchor({
+    const resolvedAnchor = resolveActivePaymentAnchor({
       requestedAnchor: args.anchor,
       apiKeyAnchor: auth.apiKey.paymentAnchor,
       projectDefaultAnchor: auth.project.defaultPaymentAnchor,
@@ -846,28 +803,6 @@ export const prepareOrInsertPaymentIntentV2 = internalMutation({
 
     if (auth.project.retiredAt !== undefined) {
       return { status: "unauthorized" as const, reason: "Project is retired." };
-    }
-
-    if (resolvedAnchor === "pdax") {
-      const connection = await ctx.db
-        .query("providerConnections")
-        .withIndex("by_project_provider", (q) =>
-          q.eq("projectId", auth.project._id).eq("provider", "pdax"),
-        )
-        .unique();
-
-      const hasPdaxConnection = connection ? connection.status === "connected" : false;
-      if (!hasPdaxConnection) {
-        return {
-          status: "pdax_not_connected" as const,
-          reason: "PDAX provider not connected for this project.",
-        };
-      }
-
-      return {
-        status: "pdax_required" as const,
-        projectId: auth.project._id,
-      };
     }
 
     const paymentIntentId = await ctx.db.insert("paymentIntents", {
@@ -989,6 +924,8 @@ export const insertPublicPaymentIntentV2 = internalMutation({
       return { status: "unauthorized" as const, reason: auth.reason || "Unauthorized" };
     }
 
+    resolveActivePaymentAnchor({ requestedAnchor: args.anchor });
+
     const now = Date.now();
 
     if (args.idempotencyKey !== undefined) {
@@ -1036,7 +973,7 @@ export const insertPublicPaymentIntentV2 = internalMutation({
       status: "created",
       ...(args.successUrl !== undefined ? { successUrl: args.successUrl } : {}),
       ...(args.cancelUrl !== undefined ? { cancelUrl: args.cancelUrl } : {}),
-      anchor: args.anchor,
+      anchor: "inhouse",
       ...(args.correlationId !== undefined ? { correlationId: args.correlationId } : {}),
       receiverMemo: args.receiverMemo,
       anchorDepositCurrency: args.anchorDepositCurrency,
@@ -1063,7 +1000,7 @@ export const insertPublicPaymentIntentV2 = internalMutation({
       phase: "would_reserve",
       projectId: auth.project._id,
       paymentIntentId,
-      route: args.anchor === "pdax" ? "pdax" : "stellar",
+      route: "stellar",
       idempotencyKey: `shadow:reserve:${paymentIntentId}`,
     });
 
@@ -1105,12 +1042,6 @@ export const insertPublicPaymentIntentV2 = internalMutation({
   },
 });
 
-const ROUTE_JOB_LEASE_MS = 8_500;
-const ROUTE_CACHE_TTL_MS = 5 * 60 * 1000;
-const CIRCUIT_OPEN_MS = 30_000;
-const MAX_ROUTE_ATTEMPTS = 5;
-const ROUTE_RETRY_DELAYS_MS = [1_000, 5_000, 30_000, 60_000] as const;
-
 export const createPublicPaymentIntentV2 = internalMutation({
   args: {
     apiKeyHash: v.string(),
@@ -1130,16 +1061,13 @@ export const createPublicPaymentIntentV2 = internalMutation({
     const authCompletedAt = Date.now();
     if (!auth.authorized) return { status: "unauthorized" as const, reason: auth.reason };
 
-    const resolvedAnchor = resolvePaymentAnchor({
+    const resolvedAnchor = resolveActivePaymentAnchor({
       requestedAnchor: args.anchor,
       apiKeyAnchor: auth.apiKey.paymentAnchor,
       projectDefaultAnchor: auth.project.defaultPaymentAnchor,
     });
     const fingerprint = createPaymentIntentFingerprint({ ...args, anchor: resolvedAnchor });
     const now = Date.now();
-    const mappedAsset = resolvedAnchor === "pdax" ? mapAssetToPdax(args.asset) : undefined;
-    let cachedPdaxRoute: { address: string; memo?: string; mappedAsset: string } | undefined;
-
     if (args.idempotencyKey !== undefined) {
       const existing = await ctx.db
         .query("paymentIntentIdempotencyKeys")
@@ -1174,32 +1102,6 @@ export const createPublicPaymentIntentV2 = internalMutation({
       return { status: "unauthorized" as const, reason: "Project is retired." };
     }
 
-    if (resolvedAnchor === "pdax") {
-      const connection = await ctx.db
-        .query("providerConnections")
-        .withIndex("by_project_provider", (q) =>
-          q.eq("projectId", auth.project._id).eq("provider", "pdax"),
-        )
-        .unique();
-      if (connection?.status !== "connected") {
-        return { status: "anchor_not_connected" as const, projectId: auth.project._id };
-      }
-
-      const cached = await ctx.db
-        .query("pdaxRouteCache")
-        .withIndex("by_project_and_mapped_asset", (q) =>
-          q.eq("projectId", auth.project._id).eq("mappedAsset", mappedAsset!),
-        )
-        .unique();
-      if (cached && cached.expiresAt > now) {
-        cachedPdaxRoute = {
-          address: cached.address,
-          ...(cached.memo !== undefined ? { memo: cached.memo } : {}),
-          mappedAsset: cached.mappedAsset,
-        };
-      }
-    }
-
     if (auth.project.retiredAt !== undefined) {
       return { status: "unauthorized" as const, reason: "Project is retired." };
     }
@@ -1210,18 +1112,10 @@ export const createPublicPaymentIntentV2 = internalMutation({
       intentType: "merchant_payment",
       amount: args.amount,
       asset: args.asset,
-      ...(resolvedAnchor === "inhouse"
-        ? { receiverAddress: auth.project.ownerAddress }
-        : cachedPdaxRoute
-          ? {
-              receiverAddress: cachedPdaxRoute.address,
-              ...(cachedPdaxRoute.memo !== undefined ? { receiverMemo: cachedPdaxRoute.memo } : {}),
-              anchorDepositCurrency: cachedPdaxRoute.mappedAsset,
-            }
-          : {}),
+      receiverAddress: auth.project.ownerAddress,
       merchantName: auth.project.name,
       ...(args.description !== undefined ? { description: args.description } : {}),
-      status: resolvedAnchor === "pdax" && !cachedPdaxRoute ? "awaiting_route" : "created",
+      status: "created",
       ...(args.successUrl !== undefined ? { successUrl: args.successUrl } : {}),
       ...(args.cancelUrl !== undefined ? { cancelUrl: args.cancelUrl } : {}),
       anchor: resolvedAnchor,
@@ -1230,7 +1124,6 @@ export const createPublicPaymentIntentV2 = internalMutation({
       expiresAt: now + PAYMENT_INTENT_EXPIRY_MS,
       stageTimestamps: {
         created: now,
-        ...(cachedPdaxRoute ? { routeReady: now } : {}),
       },
       createdAt: now,
       updatedAt: now,
@@ -1251,7 +1144,7 @@ export const createPublicPaymentIntentV2 = internalMutation({
       phase: "would_reserve",
       projectId: auth.project._id,
       paymentIntentId,
-      route: resolvedAnchor === "pdax" ? "pdax" : "stellar",
+      route: "stellar",
       idempotencyKey: `shadow:reserve:${paymentIntentId}`,
     });
 
@@ -1282,29 +1175,13 @@ export const createPublicPaymentIntentV2 = internalMutation({
       });
     }
 
-    if (resolvedAnchor === "pdax" && !cachedPdaxRoute) {
-      await ctx.db.insert("paymentIntentRouteJobs", {
-        paymentIntentId,
+    if (await hasEnabledWebhookForEvent(ctx, auth.project._id, "payment.created")) {
+      await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
         projectId: auth.project._id,
-        mappedAsset: mappedAsset!,
-        state: "scheduled",
-        attempts: 0,
-        nextAttemptAt: now,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await ctx.scheduler.runAfter(0, internal.payment_intents.actions.enrichPdaxRoute, {
+        eventType: "payment.created",
         paymentIntentId,
+        ...(args.correlationId !== undefined ? { correlationId: args.correlationId } : {}),
       });
-    } else {
-      if (await hasEnabledWebhookForEvent(ctx, auth.project._id, "payment.created")) {
-        await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
-          projectId: auth.project._id,
-          eventType: "payment.created",
-          paymentIntentId,
-          ...(args.correlationId !== undefined ? { correlationId: args.correlationId } : {}),
-        });
-      }
     }
 
     const intent = await ctx.db.get(paymentIntentId);
@@ -1357,7 +1234,7 @@ export const createAuthorizedPaymentIntentV2 = internalMutation({
       return { status: "limiter_unavailable" as const };
     }
 
-    const resolvedAnchor = resolvePaymentAnchor({
+    const resolvedAnchor = resolveActivePaymentAnchor({
       requestedAnchor: args.anchor,
       apiKeyAnchor: apiKey.paymentAnchor,
       projectDefaultAnchor: project.defaultPaymentAnchor,
@@ -1390,54 +1267,16 @@ export const createAuthorizedPaymentIntentV2 = internalMutation({
       return { status: "unauthorized" as const };
     }
 
-    const mappedAsset = resolvedAnchor === "pdax" ? mapAssetToPdax(args.asset) : undefined;
-    let cachedPdaxRoute: { address: string; memo?: string; mappedAsset: string } | undefined;
-    if (resolvedAnchor === "pdax") {
-      const connection = await ctx.db
-        .query("providerConnections")
-        .withIndex("by_project_provider", (q) =>
-          q.eq("projectId", project._id).eq("provider", "pdax"),
-        )
-        .unique();
-      if (connection?.status !== "connected") {
-        return { status: "anchor_not_connected" as const, projectId: project._id };
-      }
-      const cached = await ctx.db
-        .query("pdaxRouteCache")
-        .withIndex("by_project_and_mapped_asset", (q) =>
-          q.eq("projectId", project._id).eq("mappedAsset", mappedAsset!),
-        )
-        .unique();
-      if (cached && cached.expiresAt > now) {
-        cachedPdaxRoute = {
-          address: cached.address,
-          ...(cached.memo !== undefined ? { memo: cached.memo } : {}),
-          mappedAsset: cached.mappedAsset,
-        };
-      }
-    }
-
     const intentFields = {
       projectId: project._id,
       network: currentBillingNetwork(),
       intentType: "merchant_payment" as const,
       amount: args.amount,
       asset: args.asset,
-      ...(resolvedAnchor === "inhouse"
-        ? { receiverAddress: project.ownerAddress }
-        : cachedPdaxRoute
-          ? {
-              receiverAddress: cachedPdaxRoute.address,
-              ...(cachedPdaxRoute.memo !== undefined ? { receiverMemo: cachedPdaxRoute.memo } : {}),
-              anchorDepositCurrency: cachedPdaxRoute.mappedAsset,
-            }
-          : {}),
+      receiverAddress: project.ownerAddress,
       merchantName: project.name,
       ...(args.description !== undefined ? { description: args.description } : {}),
-      status:
-        resolvedAnchor === "pdax" && !cachedPdaxRoute
-          ? ("awaiting_route" as const)
-          : ("created" as const),
+      status: "created" as const,
       ...(args.successUrl !== undefined ? { successUrl: args.successUrl } : {}),
       ...(args.cancelUrl !== undefined ? { cancelUrl: args.cancelUrl } : {}),
       anchor: resolvedAnchor,
@@ -1446,7 +1285,6 @@ export const createAuthorizedPaymentIntentV2 = internalMutation({
       expiresAt: now + PAYMENT_INTENT_EXPIRY_MS,
       stageTimestamps: {
         created: now,
-        ...(cachedPdaxRoute ? { routeReady: now } : {}),
       },
       createdAt: now,
       updatedAt: now,
@@ -1468,7 +1306,7 @@ export const createAuthorizedPaymentIntentV2 = internalMutation({
       phase: "would_reserve",
       projectId: project._id,
       paymentIntentId,
-      route: resolvedAnchor === "pdax" ? "pdax" : "stellar",
+      route: "stellar",
       idempotencyKey: `shadow:reserve:${paymentIntentId}`,
     });
 
@@ -1497,21 +1335,7 @@ export const createAuthorizedPaymentIntentV2 = internalMutation({
       updatedAt: now,
     });
 
-    if (resolvedAnchor === "pdax" && !cachedPdaxRoute) {
-      await ctx.db.insert("paymentIntentRouteJobs", {
-        paymentIntentId,
-        projectId: project._id,
-        mappedAsset: mappedAsset!,
-        state: "scheduled",
-        attempts: 0,
-        nextAttemptAt: now,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await ctx.scheduler.runAfter(0, internal.payment_intents.actions.enrichPdaxRoute, {
-        paymentIntentId,
-      });
-    } else if (await hasEnabledWebhookForEvent(ctx, project._id, "payment.created")) {
+    if (await hasEnabledWebhookForEvent(ctx, project._id, "payment.created")) {
       await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
         projectId: project._id,
         eventType: "payment.created",
@@ -1529,460 +1353,8 @@ export const createAuthorizedPaymentIntentV2 = internalMutation({
   },
 });
 
-export const claimRouteJob = internalMutation({
-  args: { paymentIntentId: v.id("paymentIntents"), leaseToken: v.string() },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const job = await ctx.db
-      .query("paymentIntentRouteJobs")
-      .withIndex("by_payment_intent", (q) => q.eq("paymentIntentId", args.paymentIntentId))
-      .unique();
-    const intent = await ctx.db.get(args.paymentIntentId);
-    if (!job || !intent) return { status: "done" as const };
-    if (intent.status !== "awaiting_route") {
-      if (job.state !== "succeeded" && job.state !== "failed") {
-        await ctx.db.patch(job._id, {
-          state: "failed",
-          lastErrorCode: `intent_${intent.status}`,
-          leaseToken: undefined,
-          leaseExpiresAt: undefined,
-          updatedAt: now,
-        });
-      }
-      return { status: "done" as const };
-    }
-    if (job.state === "succeeded" || job.state === "failed") return { status: "done" as const };
-    if (job.nextAttemptAt > now) return { status: "wait" as const, retryAt: job.nextAttemptAt };
-    if (job.leaseExpiresAt && job.leaseExpiresAt > now) {
-      return { status: "wait" as const, retryAt: job.leaseExpiresAt };
-    }
-    await ctx.db.patch(job._id, {
-      state: "leased",
-      leaseToken: args.leaseToken,
-      leaseExpiresAt: now + ROUTE_JOB_LEASE_MS,
-      updatedAt: now,
-    });
-    await ctx.scheduler.runAfter(
-      ROUTE_JOB_LEASE_MS,
-      internal.payment_intents.actions.enrichPdaxRoute,
-      { paymentIntentId: args.paymentIntentId },
-    );
-    return {
-      status: "claimed" as const,
-      jobId: job._id,
-      projectId: job.projectId,
-      mappedAsset: job.mappedAsset,
-      correlationId: intent.correlationId,
-      traceparent: intent.traceparent,
-    };
-  },
-});
-
-export const claimProviderRoute = internalMutation({
-  args: {
-    projectId: v.id("projects"),
-    mappedAsset: v.string(),
-    leaseToken: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const cached = await ctx.db
-      .query("pdaxRouteCache")
-      .withIndex("by_project_and_mapped_asset", (q) =>
-        q.eq("projectId", args.projectId).eq("mappedAsset", args.mappedAsset),
-      )
-      .unique();
-    if (cached && cached.expiresAt > now) {
-      await recordMetric(
-        ctx,
-        "velo_cache_hit_total",
-        "pdax_route_lookup",
-        "indexed_read",
-        "success",
-      );
-      return { status: "cache_hit" as const, address: cached.address, memo: cached.memo };
-    }
-    let resilience = await ctx.db
-      .query("providerResilience")
-      .withIndex("by_project_and_provider", (q) =>
-        q.eq("projectId", args.projectId).eq("provider", "pdax"),
-      )
-      .unique();
-    if (resilience?.circuitOpenUntil && resilience.circuitOpenUntil > now) {
-      return { status: "circuit_open" as const, retryAt: resilience.circuitOpenUntil };
-    }
-    if (resilience?.leaseExpiresAt && resilience.leaseExpiresAt > now) {
-      return { status: "coalesced" as const, retryAt: resilience.leaseExpiresAt };
-    }
-    if (resilience) {
-      await ctx.db.patch(resilience._id, {
-        leaseToken: args.leaseToken,
-        leaseExpiresAt: now + ROUTE_JOB_LEASE_MS,
-        updatedAt: now,
-      });
-    } else {
-      const id = await ctx.db.insert("providerResilience", {
-        projectId: args.projectId,
-        provider: "pdax",
-        consecutiveFailures: 0,
-        leaseToken: args.leaseToken,
-        leaseExpiresAt: now + ROUTE_JOB_LEASE_MS,
-        updatedAt: now,
-      });
-      resilience = await ctx.db.get(id);
-    }
-    return { status: "claimed" as const };
-  },
-});
-
-export const completePdaxRoute = internalMutation({
-  args: {
-    paymentIntentId: v.id("paymentIntents"),
-    leaseToken: v.string(),
-    mappedAsset: v.string(),
-    address: v.string(),
-    memo: v.optional(v.string()),
-    fromCache: v.boolean(),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const job = await ctx.db
-      .query("paymentIntentRouteJobs")
-      .withIndex("by_payment_intent", (q) => q.eq("paymentIntentId", args.paymentIntentId))
-      .unique();
-    const intent = await ctx.db.get(args.paymentIntentId);
-    if (
-      !job ||
-      job.leaseToken !== args.leaseToken ||
-      !job.leaseExpiresAt ||
-      job.leaseExpiresAt <= now ||
-      intent?.status !== "awaiting_route"
-    ) {
-      return { applied: false };
-    }
-    if (intent.expiresAt <= now) {
-      await ctx.db.patch(intent._id, {
-        status: "expired",
-        updatedAt: now,
-      });
-      await scheduleShadowEvaluation(ctx, {
-        phase: "would_release",
-        projectId: intent.projectId,
-        paymentIntentId: intent._id,
-        route: "pdax",
-        idempotencyKey: `shadow:release:${intent._id}:expired`,
-      });
-      await ctx.db.patch(job._id, {
-        state: "failed",
-        lastErrorCode: "intent_expired",
-        leaseToken: undefined,
-        leaseExpiresAt: undefined,
-        updatedAt: now,
-      });
-      return { applied: false };
-    }
-    if (!args.fromCache) {
-      const resilience = await ctx.db
-        .query("providerResilience")
-        .withIndex("by_project_and_provider", (q) =>
-          q.eq("projectId", job.projectId).eq("provider", "pdax"),
-        )
-        .unique();
-      if (
-        resilience?.leaseToken !== args.leaseToken ||
-        !resilience.leaseExpiresAt ||
-        resilience.leaseExpiresAt <= now
-      ) {
-        return { applied: false };
-      }
-      const cached = await ctx.db
-        .query("pdaxRouteCache")
-        .withIndex("by_project_and_mapped_asset", (q) =>
-          q.eq("projectId", job.projectId).eq("mappedAsset", args.mappedAsset),
-        )
-        .unique();
-      const cacheValue = {
-        projectId: job.projectId,
-        mappedAsset: args.mappedAsset,
-        address: args.address,
-        ...(args.memo !== undefined ? { memo: args.memo } : {}),
-        expiresAt: now + ROUTE_CACHE_TTL_MS,
-        updatedAt: now,
-      };
-      if (cached) await ctx.db.replace(cached._id, cacheValue);
-      else await ctx.db.insert("pdaxRouteCache", cacheValue);
-      await ctx.db.patch(resilience._id, {
-        consecutiveFailures: 0,
-        circuitOpenUntil: undefined,
-        leaseToken: undefined,
-        leaseExpiresAt: undefined,
-        updatedAt: now,
-      });
-    }
-    await ctx.db.patch(intent._id, {
-      receiverAddress: args.address,
-      ...(args.memo !== undefined ? { receiverMemo: args.memo } : {}),
-      anchorDepositCurrency: args.mappedAsset,
-      status: "created",
-      stageTimestamps: {
-        created: intent.stageTimestamps?.created ?? intent.createdAt,
-        ...intent.stageTimestamps,
-        routeReady: now,
-      },
-      updatedAt: now,
-    });
-    await ctx.db.patch(job._id, {
-      state: "succeeded",
-      leaseToken: undefined,
-      leaseExpiresAt: undefined,
-      updatedAt: now,
-    });
-    await recordSpan(ctx, "velo.dependency.call", "pdax_route_lookup", "provider_call", "success", {
-      journeyCorrelationId: intent.correlationId,
-      traceparent: intent.traceparent,
-    });
-    await recordSpan(ctx, "velo.worker.run", "pdax_route_enrichment", "state_update", "success", {
-      journeyCorrelationId: intent.correlationId,
-      traceparent: intent.traceparent,
-    });
-    if (await hasEnabledWebhookForEvent(ctx, intent.projectId, "payment.created")) {
-      await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
-        projectId: intent.projectId,
-        eventType: "payment.created",
-        paymentIntentId: intent._id,
-        ...(intent.correlationId !== undefined ? { correlationId: intent.correlationId } : {}),
-      });
-    }
-    return { applied: true };
-  },
-});
-
-export const deferPdaxRoute = internalMutation({
-  args: {
-    paymentIntentId: v.id("paymentIntents"),
-    leaseToken: v.string(),
-    retryAt: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const job = await ctx.db
-      .query("paymentIntentRouteJobs")
-      .withIndex("by_payment_intent", (q) => q.eq("paymentIntentId", args.paymentIntentId))
-      .unique();
-    if (!job || job.leaseToken !== args.leaseToken) return false;
-    const delay = Math.max(0, args.retryAt - Date.now());
-    await ctx.db.patch(job._id, {
-      state: "retry_wait",
-      nextAttemptAt: args.retryAt,
-      leaseToken: undefined,
-      leaseExpiresAt: undefined,
-      updatedAt: Date.now(),
-    });
-    await ctx.scheduler.runAfter(delay, internal.payment_intents.actions.enrichPdaxRoute, {
-      paymentIntentId: args.paymentIntentId,
-    });
-    await recordMetric(ctx, "velo_retry_total", "pdax_route_enrichment", "queue_wait", "retry");
-    const intent = await ctx.db.get(args.paymentIntentId);
-    await recordSpan(ctx, "velo.worker.run", "pdax_route_enrichment", "queue_wait", "retry", {
-      journeyCorrelationId: intent?.correlationId,
-      traceparent: intent?.traceparent,
-    });
-    return true;
-  },
-});
-
-export const failPdaxRoute = internalMutation({
-  args: {
-    paymentIntentId: v.id("paymentIntents"),
-    leaseToken: v.string(),
-    errorCode: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const job = await ctx.db
-      .query("paymentIntentRouteJobs")
-      .withIndex("by_payment_intent", (q) => q.eq("paymentIntentId", args.paymentIntentId))
-      .unique();
-    const intent = await ctx.db.get(args.paymentIntentId);
-    if (!job || job.leaseToken !== args.leaseToken || intent?.status !== "awaiting_route")
-      return false;
-    const attempts = job.attempts + 1;
-    const timeout = args.errorCode === "provider_timeout";
-    if (timeout) {
-      await recordMetric(
-        ctx,
-        "velo_timeout_total",
-        "pdax_route_lookup",
-        "provider_call",
-        "timeout",
-      );
-    }
-    await recordSpan(
-      ctx,
-      "velo.dependency.call",
-      "pdax_route_lookup",
-      "provider_call",
-      timeout ? "timeout" : "error",
-      {
-        journeyCorrelationId: intent.correlationId,
-        traceparent: intent.traceparent,
-        errorCode: timeout ? "dependency_timeout" : "dependency_unavailable",
-      },
-    );
-    const resilience = await ctx.db
-      .query("providerResilience")
-      .withIndex("by_project_and_provider", (q) =>
-        q.eq("projectId", job.projectId).eq("provider", "pdax"),
-      )
-      .unique();
-    const failures = (resilience?.consecutiveFailures ?? 0) + 1;
-    if (resilience?.leaseToken === args.leaseToken) {
-      await ctx.db.patch(resilience._id, {
-        consecutiveFailures: failures,
-        ...(failures >= 3 ? { circuitOpenUntil: now + CIRCUIT_OPEN_MS } : {}),
-        leaseToken: undefined,
-        leaseExpiresAt: undefined,
-        updatedAt: now,
-      });
-    }
-    if (attempts >= MAX_ROUTE_ATTEMPTS) {
-      await ctx.db.patch(job._id, {
-        state: "failed",
-        attempts,
-        lastErrorCode: args.errorCode,
-        leaseToken: undefined,
-        leaseExpiresAt: undefined,
-        updatedAt: now,
-      });
-      await ctx.db.patch(intent._id, {
-        status: "failed",
-        stageTimestamps: {
-          created: intent.stageTimestamps?.created ?? intent.createdAt,
-          ...intent.stageTimestamps,
-          routeFailed: now,
-        },
-        updatedAt: now,
-      });
-      await scheduleShadowEvaluation(ctx, {
-        phase: "would_release",
-        projectId: intent.projectId,
-        paymentIntentId: intent._id,
-        route: "pdax",
-        idempotencyKey: `shadow:release:${intent._id}:route_failed`,
-      });
-      if (await hasEnabledWebhookForEvent(ctx, intent.projectId, "payment.failed")) {
-        await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
-          projectId: intent.projectId,
-          eventType: "payment.failed",
-          paymentIntentId: intent._id,
-          ...(intent.correlationId !== undefined ? { correlationId: intent.correlationId } : {}),
-        });
-      }
-      return true;
-    }
-    const retryDelay =
-      ROUTE_RETRY_DELAYS_MS[Math.min(attempts - 1, ROUTE_RETRY_DELAYS_MS.length - 1)] ?? 60_000;
-    await ctx.db.patch(job._id, {
-      state: "retry_wait",
-      attempts,
-      nextAttemptAt: now + retryDelay,
-      lastErrorCode: args.errorCode,
-      leaseToken: undefined,
-      leaseExpiresAt: undefined,
-      updatedAt: now,
-    });
-    await ctx.scheduler.runAfter(retryDelay, internal.payment_intents.actions.enrichPdaxRoute, {
-      paymentIntentId: args.paymentIntentId,
-    });
-    await recordMetric(ctx, "velo_retry_total", "pdax_route_enrichment", "queue_wait", "retry");
-    await recordSpan(ctx, "velo.worker.run", "pdax_route_enrichment", "queue_wait", "retry", {
-      journeyCorrelationId: intent.correlationId,
-      traceparent: intent.traceparent,
-    });
-    return true;
-  },
-});
-
-/**
- * Recovers PDAX route work whose scheduled action was lost or whose worker lease expired.
- * The cron calling this mutation is a safety net; claimRouteJob still provides fencing.
- */
+/** Compatibility target for queued legacy route recovery jobs. */
 export const recoverPdaxRouteJobs = internalMutation({
   args: { limit: v.number() },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const limit = Math.max(1, Math.min(Math.floor(args.limit), 100));
-    const dueJobs = [];
-
-    for (const state of ["scheduled", "retry_wait", "leased"] as const) {
-      const remaining = limit - dueJobs.length;
-      if (remaining <= 0) break;
-      const jobs = await ctx.db
-        .query("paymentIntentRouteJobs")
-        .withIndex("by_state_and_next_attempt_at", (q) =>
-          q.eq("state", state).lte("nextAttemptAt", now),
-        )
-        .take(remaining);
-      dueJobs.push(...jobs);
-    }
-
-    let recovered = 0;
-    let expired = 0;
-    for (const job of dueJobs) {
-      if (job.state === "leased" && job.leaseExpiresAt && job.leaseExpiresAt > now) continue;
-
-      const intent = await ctx.db.get(job.paymentIntentId);
-      if (!intent || intent.status !== "awaiting_route") {
-        await ctx.db.patch(job._id, {
-          state: "failed",
-          lastErrorCode: intent ? `intent_${intent.status}` : "intent_not_found",
-          leaseToken: undefined,
-          leaseExpiresAt: undefined,
-          updatedAt: now,
-        });
-        continue;
-      }
-
-      if (intent.expiresAt <= now) {
-        await ctx.db.patch(intent._id, {
-          status: "expired",
-          stageTimestamps: {
-            created: intent.stageTimestamps?.created ?? intent.createdAt,
-            ...intent.stageTimestamps,
-            expired: now,
-          },
-          updatedAt: now,
-        });
-        await scheduleShadowEvaluation(ctx, {
-          phase: "would_release",
-          projectId: intent.projectId,
-          paymentIntentId: intent._id,
-          route: intent.anchor === "pdax" ? "pdax" : "stellar",
-          idempotencyKey: `shadow:release:${intent._id}:expired`,
-        });
-        await ctx.db.patch(job._id, {
-          state: "failed",
-          lastErrorCode: "intent_expired",
-          leaseToken: undefined,
-          leaseExpiresAt: undefined,
-          updatedAt: now,
-        });
-        expired += 1;
-        continue;
-      }
-
-      await ctx.db.patch(job._id, {
-        state: "scheduled",
-        nextAttemptAt: now,
-        leaseToken: undefined,
-        leaseExpiresAt: undefined,
-        updatedAt: now,
-      });
-      await ctx.scheduler.runAfter(0, internal.payment_intents.actions.enrichPdaxRoute, {
-        paymentIntentId: job.paymentIntentId,
-      });
-      recovered += 1;
-    }
-
-    return { recovered, expired };
-  },
+  handler: async () => ({ recovered: 0, expired: 0 }),
 });

@@ -180,7 +180,6 @@ test("merchant billing reports whether platform safety controls allow top-ups", 
     mainnetCreditEnforcement: false,
     billingTopupsEnabled: true,
     promoGrantEnabled: true,
-    pdaxBillingEnabled: false,
     billingKillSwitch: false,
     actor: "operator:test",
   });
@@ -203,7 +202,6 @@ test("top-up settlement snapshots the offer and grants paid credits exactly once
     mainnetCreditEnforcement: false,
     billingTopupsEnabled: true,
     promoGrantEnabled: true,
-    pdaxBillingEnabled: false,
     billingKillSwitch: false,
     actor: "operator:test",
   });
@@ -278,7 +276,6 @@ test("cancelling a later top-up preserves credits from an earlier settled top-up
       mainnetCreditEnforcement: false,
       billingTopupsEnabled: true,
       promoGrantEnabled: true,
-      pdaxBillingEnabled: false,
       billingKillSwitch: false,
       actor: "operator:test",
     });
@@ -356,7 +353,6 @@ test("sandbox enforcement reserves and consumes commercial trial credit", async 
     mainnetCreditEnforcement: false,
     billingTopupsEnabled: true,
     promoGrantEnabled: true,
-    pdaxBillingEnabled: false,
     billingKillSwitch: false,
     actor: "operator:test",
   });
@@ -441,7 +437,6 @@ test("mismatched treasury payments create durable exceptions and grant nothing",
     mainnetCreditEnforcement: false,
     billingTopupsEnabled: true,
     promoGrantEnabled: true,
-    pdaxBillingEnabled: false,
     billingKillSwitch: false,
     actor: "operator:test",
   });
@@ -482,7 +477,6 @@ test("reconciliation detects a seeded receipt discrepancy without changing balan
     mainnetCreditEnforcement: false,
     billingTopupsEnabled: true,
     promoGrantEnabled: true,
-    pdaxBillingEnabled: false,
     billingKillSwitch: false,
     actor: "operator:test",
   });
@@ -539,7 +533,6 @@ test("sandbox enforcement rejects overspending and releases failed reservations"
     mainnetCreditEnforcement: false,
     billingTopupsEnabled: true,
     promoGrantEnabled: true,
-    pdaxBillingEnabled: false,
     billingKillSwitch: false,
     promoCredits: 1n,
     actor: "operator:test",

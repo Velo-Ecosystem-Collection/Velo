@@ -321,12 +321,19 @@ to that value in both the web server and Convex environment. If unset, Velo uses
 HTTPS URL or a `data:` URI; it cannot fetch a JWKS from a phone's local network.
 Restart development or rebuild/redeploy the web app after changing these values.
 
+Wallet login now signs a short-lived SEP-10 challenge before creating a session.
+Run `pnpm --filter @repo/backend dev` against the same Convex deployment named by
+`NEXT_PUBLIC_CONVEX_URL` so it receives the challenge table, mutations, and
+`velo-web-v2` auth configuration. Web and Convex changes must be deployed
+together. If challenge setup returns 503, use its safe failure message to check
+server signing configuration, Convex issuer/auth configuration, the deployed
+challenge functions, or backend availability.
+
 When configured, Velo's wallet selector includes WalletConnect for Stellar
 Testnet. Without it, the existing wallet options remain available. Login uses
 the Testnet address returned by the connected wallet to request a Velo-issued
-JWT. The session endpoint checks the address format but does not independently
-verify wallet ownership, so this is not SEP-10 authentication. Login does not
-submit a Stellar transaction. This integration applies to Velo login/sign-up;
+JWT after the wallet signs a SEP-10 challenge. The challenge is not submitted
+to Stellar and incurs no network fee. This integration applies to Velo login/sign-up;
 it does not enable WalletConnect in the Velo Wallets widget.
 See the [Stellar Wallets Kit module documentation](https://stellarwalletskit.dev/wallets/wallet-connect.html).
 

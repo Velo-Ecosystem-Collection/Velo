@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 
 import { issueWalletChallenge } from "@/core/auth/wallet-auth-challenges";
+import { classifyWalletAuthFailure } from "@/core/auth/wallet-auth-errors";
 import { createWalletChallenge, WALLET_CHALLENGE_TTL_MS } from "@/core/auth/wallet-jwt";
 import { withRouteTelemetry } from "@/core/observability";
 import { assertValidPublicKey } from "@repo/stellar";
@@ -42,16 +43,34 @@ export const POST = withRouteTelemetry("wallet.challenge", async (request) => {
     return NextResponse.json({ error: "Invalid wallet address" }, { status: 400 });
   }
 
+  const challengeId = randomBytes(32).toString("base64url");
+  const expiresAt = Date.now() + WALLET_CHALLENGE_TTL_MS;
+  let challenge: string;
+  let transactionHash: string;
+
   try {
-    const { challenge, transactionHash } = createWalletChallenge(address);
-    const challengeId = randomBytes(32).toString("base64url");
-    const expiresAt = Date.now() + WALLET_CHALLENGE_TTL_MS;
+    ({ challenge, transactionHash } = createWalletChallenge(address));
+  } catch (error) {
+    const code = classifyWalletAuthFailure(error);
+    console.error("[wallet.challenge] Challenge construction failed", { code });
+    return NextResponse.json(
+      { error: "Unable to create wallet challenge", code },
+      { status: 503, headers: { "cache-control": "no-store" } },
+    );
+  }
+
+  try {
     await issueWalletChallenge({ challengeId, address, transactionHash, expiresAt });
     return NextResponse.json(
       { challengeId, challenge, expiresAt },
       { headers: { "cache-control": "no-store" } },
     );
-  } catch {
-    return NextResponse.json({ error: "Unable to create wallet challenge" }, { status: 503 });
+  } catch (error) {
+    const code = classifyWalletAuthFailure(error);
+    console.error("[wallet.challenge] Challenge persistence failed", { code });
+    return NextResponse.json(
+      { error: "Unable to create wallet challenge", code },
+      { status: 503, headers: { "cache-control": "no-store" } },
+    );
   }
 });

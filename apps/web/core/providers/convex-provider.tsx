@@ -1,5 +1,6 @@
 "use client";
 
+import { walletAuthFailureMessage } from "@/core/auth/wallet-auth-errors";
 import { WalletError, useWallet } from "@/core/wallet/wallet-provider";
 import { ConvexProviderWithAuth, ConvexReactClient } from "convex/react";
 import { usePathname } from "next/navigation";
@@ -51,6 +52,17 @@ function isWalletSessionResponse(value: unknown): value is WalletSessionResponse
   if (!value || typeof value !== "object") return false;
   const result = value as Record<string, unknown>;
   return typeof result.token === "string" && typeof result.address === "string";
+}
+
+async function authFailureMessage(response: Response, fallback: string) {
+  try {
+    const value: unknown = await response.json();
+    if (!value || typeof value !== "object") return fallback;
+    const code = (value as Record<string, unknown>).code;
+    return typeof code === "string" ? walletAuthFailureMessage(code) : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function jwtExpiresAt(token: string) {
@@ -199,7 +211,10 @@ function useWalletConvexAuth() {
           if (!challengeResponse.ok) {
             throw new WalletError(
               "WALLET_AUTH_FAILED",
-              "Velo could not start wallet verification.",
+              await authFailureMessage(
+                challengeResponse,
+                "Velo could not start wallet verification.",
+              ),
             );
           }
           const challengeResult: unknown = await challengeResponse.json();

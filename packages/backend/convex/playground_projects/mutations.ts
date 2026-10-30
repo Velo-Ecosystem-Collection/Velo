@@ -7,6 +7,7 @@ import {
   normalizeHash,
   normalizeTags,
   normalizeVariable,
+  normalizeMembershipWalletAddress,
   normalizeWalletAddress,
   requireProjectRole,
   parseBoundedJson,
@@ -28,7 +29,7 @@ export const upsertMember = mutation({
   },
   handler: async (ctx, args) => {
     const access = await requireProjectRole(ctx, args.projectId, "owner");
-    const walletAddress = normalizeWalletAddress(args.walletAddress);
+    const walletAddress = normalizeMembershipWalletAddress(args.walletAddress);
     if (walletAddress === access.project.ownerAddress) {
       throw new Error("Project owner role cannot be changed");
     }
@@ -57,10 +58,12 @@ export const upsertMember = mutation({
 export const removeMember = mutation({
   args: { projectId: v.id("projects"), membershipId: v.id("projectMemberships") },
   handler: async (ctx, args) => {
-    await requireProjectRole(ctx, args.projectId, "owner");
+    const access = await requireProjectRole(ctx, args.projectId, "owner");
     const membership = await ctx.db.get(args.membershipId);
     if (!membership || membership.projectId !== args.projectId) throw new Error("Member not found");
-    if (membership.role === "owner") throw new Error("Project owner cannot be removed");
+    if (membership.walletAddress === access.project.ownerAddress) {
+      throw new Error("Project owner cannot be removed");
+    }
     await ctx.db.delete(membership._id);
   },
 });

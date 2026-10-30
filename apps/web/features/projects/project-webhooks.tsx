@@ -266,7 +266,7 @@ export function ProjectWebhooks({
           <WalletIcon />
           <AlertTitle>Connect the owner wallet</AlertTitle>
           <AlertDescription>
-            Private webhook settings and delivery logs load only after ownership is verified.
+            Private webhook information loads after your project access is verified.
           </AlertDescription>
         </Alert>
         <Button onClick={wallet.connect} className="w-fit">

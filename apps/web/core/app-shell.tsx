@@ -120,6 +120,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       status: p.status,
       slug: p.slug,
       logoUrl: p.logoUrl,
+      role: p.role,
     }));
   }, [rawProjects]);
   const selectableProjects = useMemo(

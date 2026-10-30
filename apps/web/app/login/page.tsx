@@ -62,8 +62,8 @@ export default function LoginPage() {
                 Stellar events.
               </p>
               <p className="pt-2 text-sm text-zinc-600">
-                Approve the wallet connection once. Velo will use the approved public address to
-                start your session; there is no separate sign-in request or network fee.
+                After connecting, sign a short wallet challenge to prove you control this address.
+                Velo never submits the challenge to Stellar, and it has no network fee.
               </p>
             </div>
 

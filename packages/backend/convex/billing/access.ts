@@ -1,5 +1,7 @@
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
+import { requireIdentity } from "../auth/identity";
+
 export function normalizeWalletAddress(value: string) {
   const normalized = value.trim().toUpperCase();
   if (!normalized) throw new Error("Wallet address is required");
@@ -8,8 +10,7 @@ export function normalizeWalletAddress(value: string) {
 }
 
 export async function authenticatedWallet(ctx: QueryCtx | MutationCtx) {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) throw new Error("Not authenticated");
+  const identity = await requireIdentity(ctx);
   return normalizeWalletAddress(identity.subject);
 }
 

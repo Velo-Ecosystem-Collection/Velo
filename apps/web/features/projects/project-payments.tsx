@@ -398,6 +398,24 @@ export function ProjectPayments({ projectId }: ProjectPaymentsProps) {
     );
   }
 
+  if (!project.isOwner) {
+    return (
+      <section className="grid gap-4">
+        <h1 className="text-3xl font-semibold tracking-tight">Payments</h1>
+        <Alert>
+          <WalletIcon />
+          <AlertTitle>Owner access required</AlertTitle>
+          <AlertDescription>
+            Payment records and operations are available only to the project owner.
+          </AlertDescription>
+        </Alert>
+        <Button asChild className="w-fit">
+          <Link href="/dashboard">Back to dashboard</Link>
+        </Button>
+      </section>
+    );
+  }
+
   if (stats === undefined) {
     return (
       <section className="grid gap-6">

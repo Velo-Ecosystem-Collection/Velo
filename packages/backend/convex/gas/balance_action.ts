@@ -9,6 +9,7 @@ import type { RelayerBalanceRefreshResult } from "./balance_internal";
 
 import { internal } from "../_generated/api";
 import { action } from "../_generated/server";
+import { getAuthenticatedIdentity } from "../auth/identity";
 import { readTestnetNativeBalance } from "./balance";
 import { relayerBalanceRefreshResultValidator } from "./balance_internal";
 import {
@@ -117,7 +118,7 @@ export const prepareRelayerFunding = action({
   args: { projectId: v.id("projects"), amountStroops: v.string() },
   returns: fundingPrepareResultValidator,
   handler: async (ctx, args): Promise<FundingPrepareResult> => {
-    if ((await ctx.auth.getUserIdentity()) === null) return { status: "unauthorized" as const };
+    if ((await getAuthenticatedIdentity(ctx)) === null) return { status: "unauthorized" as const };
     let claim;
     try {
       claim = await ctx.runMutation(internal.gas.balance_internal.prepareFunding, args);
@@ -217,7 +218,7 @@ export const submitRelayerFunding = action({
   },
   returns: fundingSubmitResultValidator,
   handler: async (ctx, args): Promise<FundingSubmitResult> => {
-    if ((await ctx.auth.getUserIdentity()) === null) return { status: "unauthorized" as const };
+    if ((await getAuthenticatedIdentity(ctx)) === null) return { status: "unauthorized" as const };
     if (
       args.transactionXdr.trim() === "" ||
       new TextEncoder().encode(args.transactionXdr).byteLength > GAS_FUNDING_MAX_XDR_BYTES
@@ -730,7 +731,7 @@ export const prepareRelayerWithdrawal = action({
   args: { projectId: v.id("projects"), amountStroops: v.string() },
   returns: withdrawalPreparationResultValidator,
   handler: async (ctx, args): Promise<WithdrawalPreparationResult> => {
-    if ((await ctx.auth.getUserIdentity()) === null) return { status: "unauthorized" as const };
+    if ((await getAuthenticatedIdentity(ctx)) === null) return { status: "unauthorized" as const };
     const deploymentId = getGasRuntimeEnv().VELO_GAS_CUSTODY_DEPLOYMENT_ID?.trim();
     if (!deploymentId) return { status: "configuration_unavailable" as const };
     const requestId = globalThis.crypto.randomUUID();
@@ -799,7 +800,7 @@ export const confirmRelayerWithdrawal = action({
   args: { projectId: v.id("projects"), requestId: v.string(), consentTransactionXdr: v.string() },
   returns: withdrawalOutcomeValidator,
   handler: async (ctx, args): Promise<WithdrawalOutcome> => {
-    if ((await ctx.auth.getUserIdentity()) === null) return { status: "unauthorized" };
+    if ((await getAuthenticatedIdentity(ctx)) === null) return { status: "unauthorized" };
     if (
       new TextEncoder().encode(args.consentTransactionXdr).byteLength > GAS_FUNDING_MAX_XDR_BYTES
     ) {
@@ -871,7 +872,7 @@ export const continueRelayerWithdrawal = action({
   args: { projectId: v.id("projects"), requestId: v.string() },
   returns: withdrawalOutcomeValidator,
   handler: async (ctx, args): Promise<WithdrawalOutcome> => {
-    if ((await ctx.auth.getUserIdentity()) === null) return { status: "unauthorized" };
+    if ((await getAuthenticatedIdentity(ctx)) === null) return { status: "unauthorized" };
     return await processRelayerWithdrawal(ctx, args.projectId, args.requestId);
   },
 });
@@ -880,7 +881,7 @@ export const cancelRelayerWithdrawal = action({
   args: { projectId: v.id("projects"), requestId: v.string() },
   returns: v.union(v.literal("cancelled"), v.literal("not_cancellable"), v.literal("unauthorized")),
   handler: async (ctx, args): Promise<"cancelled" | "not_cancellable" | "unauthorized"> => {
-    if ((await ctx.auth.getUserIdentity()) === null) return "unauthorized" as const;
+    if ((await getAuthenticatedIdentity(ctx)) === null) return "unauthorized" as const;
     try {
       return await ctx.runMutation(internal.gas.balance_internal.cancelUnsentWithdrawal, args);
     } catch (error) {
@@ -936,7 +937,7 @@ export const requestTestnetRelayerFunds = action({
   args: { projectId: v.id("projects") },
   returns: faucetResultValidator,
   handler: async (ctx, args): Promise<FaucetResult> => {
-    if ((await ctx.auth.getUserIdentity()) === null) return { status: "unauthorized" };
+    if ((await getAuthenticatedIdentity(ctx)) === null) return { status: "unauthorized" };
     let claim;
     try {
       claim = await ctx.runMutation(internal.gas.balance_internal.claimFaucetRequest, args);
@@ -994,7 +995,7 @@ export const checkTestnetRelayerFunds = action({
   args: { projectId: v.id("projects"), requestId: v.string() },
   returns: faucetResultValidator,
   handler: async (ctx, args): Promise<FaucetResult> => {
-    if ((await ctx.auth.getUserIdentity()) === null) return { status: "unauthorized" };
+    if ((await getAuthenticatedIdentity(ctx)) === null) return { status: "unauthorized" };
     let claim;
     try {
       claim = await ctx.runMutation(internal.gas.balance_internal.claimFaucetCheck, args);
@@ -1030,7 +1031,7 @@ export const refreshRelayerBalance = action({
   args: { projectId: v.id("projects") },
   returns: relayerBalanceRefreshResultValidator,
   handler: async (ctx, args): Promise<RelayerBalanceRefreshResult> => {
-    if ((await ctx.auth.getUserIdentity()) === null) {
+    if ((await getAuthenticatedIdentity(ctx)) === null) {
       throw new Error("Not authenticated");
     }
 

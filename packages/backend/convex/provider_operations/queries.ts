@@ -1,6 +1,7 @@
 import { ConvexError, v } from "convex/values";
 
 import { internalQuery, query } from "../_generated/server";
+import { requireIdentity } from "../auth/identity";
 
 export const getInternal = internalQuery({
   args: { operationId: v.id("providerOperations") },
@@ -30,8 +31,7 @@ export const getByLogicalKey = internalQuery({
 export const get = query({
   args: { operationId: v.id("providerOperations") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Authentication required");
+    const identity = await requireIdentity(ctx);
     const operation = await ctx.db.get(args.operationId);
     if (!operation) return null;
     const project = await ctx.db.get(operation.projectId);
@@ -50,8 +50,7 @@ export const get = query({
 export const listRecovery = query({
   args: { projectId: v.id("projects"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError("Authentication required");
+    const identity = await requireIdentity(ctx);
     const project = await ctx.db.get(args.projectId);
     if (
       !project ||

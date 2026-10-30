@@ -34,6 +34,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Id } from "@repo/backend/convex/_generated/dataModel";
 
+import { ProjectMembers } from "./project-members";
+
 const maxLogoSizeBytes = 2 * 1024 * 1024;
 
 function errorMessage(error: unknown) {
@@ -261,7 +263,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
           <AlertCircleIcon />
           <AlertTitle>Project unavailable</AlertTitle>
           <AlertDescription>
-            The project does not exist or the connected wallet is not its owner.
+            The project does not exist or the connected wallet does not have access.
           </AlertDescription>
         </Alert>
         <Button asChild variant="outline" className="w-fit">
@@ -271,13 +273,17 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
     );
   }
 
+  const canManageProject = project.isOwner;
+
   return (
     <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <div className="grid gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-normal">Project settings</h1>
           <p className="mt-1 max-w-2xl text-sm text-zinc-600">
-            Update owner-facing project configuration. Registry metadata hash stays unchanged.
+            {canManageProject
+              ? "Update project configuration and manage wallet access. Registry metadata hash stays unchanged."
+              : `You have ${project.role} access. Project configuration is read-only for members.`}
           </p>
         </div>
 
@@ -310,14 +316,16 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
                   submitted Stellar transactions can still be verified.
                 </AlertDescription>
               </Alert>
-              <Button
-                type="button"
-                className="w-fit"
-                onClick={() => void switchPaymentRouteToInhouse()}
-                disabled={isSwitchingPaymentRoute || isSaving || isRetiring}
-              >
-                {isSwitchingPaymentRoute ? "Switching..." : "Use in-house Stellar payments"}
-              </Button>
+              {canManageProject ? (
+                <Button
+                  type="button"
+                  className="w-fit"
+                  onClick={() => void switchPaymentRouteToInhouse()}
+                  disabled={isSwitchingPaymentRoute || isSaving || isRetiring}
+                >
+                  {isSwitchingPaymentRoute ? "Switching..." : "Use in-house Stellar payments"}
+                </Button>
+              ) : null}
             </div>
           ) : (
             <p className="mt-2 text-sm text-zinc-600">
@@ -334,7 +342,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
               <Input
                 id="settings-project-name"
                 value={name}
-                disabled={isRetiring}
+                disabled={isRetiring || !canManageProject}
                 onChange={(event) => {
                   setName(event.target.value);
                   setSaved(false);
@@ -347,7 +355,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
               <Textarea
                 id="settings-project-description"
                 value={description}
-                disabled={isRetiring}
+                disabled={isRetiring || !canManageProject}
                 onChange={(event) => {
                   setDescription(event.target.value);
                   setSaved(false);
@@ -362,21 +370,25 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
                 id="settings-project-logo"
                 type="file"
                 accept="image/*"
-                disabled={isRetiring}
+                disabled={isRetiring || !canManageProject}
                 onChange={(event) => selectLogo(event.target.files?.[0] ?? null)}
               />
               <p className="text-xs text-zinc-500">Optional image, 2 MB maximum.</p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Button type="submit" disabled={isSaving || isRemovingLogo || isRetiring}>
-                {isSaving ? "Saving..." : selectedLogo ? "Save and upload logo" : "Save settings"}
-              </Button>
+              {canManageProject ? (
+                <Button type="submit" disabled={isSaving || isRemovingLogo || isRetiring}>
+                  {isSaving ? "Saving..." : selectedLogo ? "Save and upload logo" : "Save settings"}
+                </Button>
+              ) : null}
               <Button type="button" variant="outline" asChild disabled={isRetiring}>
                 <Link href="/dashboard">Dashboard</Link>
               </Button>
             </div>
           </div>
         </form>
+
+        {canManageProject ? <ProjectMembers projectId={typedProjectId} /> : null}
 
         {project.isOwner ? (
           <section className="grid gap-4 rounded-lg border border-red-200 bg-red-50/50 p-5">
@@ -524,7 +536,7 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
             <ImageIcon className="size-10 text-zinc-400" />
           )}
         </div>
-        {project.logoUrl ? (
+        {project.logoUrl && canManageProject ? (
           <Button
             type="button"
             variant="outline"

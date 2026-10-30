@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 
 import { query } from "../_generated/server";
+import { requireIdentity } from "../auth/identity";
 import { findOrganizationForIdentity } from "../organizations/helpers";
 import { isBillingOperator } from "./access";
 import { topupAvailability } from "./availability";
@@ -11,8 +12,7 @@ import { activeOffer } from "./offers";
 export const get = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const identity = await requireIdentity(ctx);
     const organization = await findOrganizationForIdentity(ctx, identity.tokenIdentifier);
     if (!organization) return null;
     const policy = await ctx.db
@@ -129,8 +129,7 @@ export const get = query({
 export const listLedger = query({
   args: { before: v.optional(v.number()), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const identity = await requireIdentity(ctx);
     const organization = await findOrganizationForIdentity(ctx, identity.tokenIdentifier);
     if (!organization) return [];
     const limit = Math.min(100, Math.max(1, Math.floor(args.limit ?? 50)));

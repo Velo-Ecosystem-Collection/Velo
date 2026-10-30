@@ -54,6 +54,29 @@ export const StellarWalletsKit = {
       document.body.append(dialog);
     });
   },
+  signTransaction(xdr: string): Promise<{ signedTxXdr: string }> {
+    return new Promise((resolve, reject) => {
+      const dialog = document.createElement("div");
+      dialog.setAttribute("role", "dialog");
+      const approve = document.createElement("button");
+      approve.textContent = "Approve simulated signature";
+      const cancel = document.createElement("button");
+      cancel.textContent = "Cancel simulated signature";
+      close = () => {
+        dialog.remove();
+        close = undefined;
+        reject({ code: -1, message: "The user rejected the signature request." });
+      };
+      approve.onclick = () => {
+        dialog.remove();
+        close = undefined;
+        resolve({ signedTxXdr: xdr });
+      };
+      cancel.onclick = () => close?.();
+      dialog.append(approve, cancel);
+      document.body.append(dialog);
+    });
+  },
   async signMessage() {
     return { signedMessage: "simulated" };
   },

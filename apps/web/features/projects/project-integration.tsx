@@ -158,7 +158,7 @@ export function ProjectIntegration({ projectId }: ProjectIntegrationProps) {
     );
   }
 
-  const ownerMatches = wallet.address?.toUpperCase() === project.ownerAddress;
+  const ownerMatches = project.isOwner;
   if (!ownerMatches) {
     return (
       <section className="grid gap-4">

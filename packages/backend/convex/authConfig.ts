@@ -1,3 +1,5 @@
+import { WALLET_AUTH_APPLICATION_ID } from "./auth.constants";
+
 const DEFAULT_LOCAL_ISSUER = "http://localhost:3000";
 
 type WalletAuthEnvironment = {
@@ -25,7 +27,7 @@ export function resolveWalletAuthProvider(env: WalletAuthEnvironment) {
 
   return {
     type: "customJwt" as const,
-    applicationID: "velo-web",
+    applicationID: WALLET_AUTH_APPLICATION_ID,
     issuer,
     jwks,
     algorithm: "ES256" as const,

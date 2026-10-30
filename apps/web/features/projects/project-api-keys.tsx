@@ -164,7 +164,7 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
     );
   }
 
-  const ownerMatches = wallet.address.toUpperCase() === project.ownerAddress;
+  const ownerMatches = project.isOwner;
 
   if (!ownerMatches) {
     return (

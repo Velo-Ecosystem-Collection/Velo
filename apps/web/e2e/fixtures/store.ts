@@ -82,6 +82,14 @@ type FixtureApiKey = {
   revoked: boolean;
 };
 
+type FixtureMembership = {
+  _id: string;
+  walletAddress: string;
+  role: "editor" | "viewer";
+  createdAt: number;
+  updatedAt: number;
+};
+
 type PaginationRecord = {
   functionName: string;
   args: { projectId: GasFixtureProjectId };
@@ -374,6 +382,10 @@ export class GasFixtureStore {
     "project-gas-owner": [],
     "project-gas-member": [],
   };
+  private memberships: Record<GasFixtureProjectId, FixtureMembership[]> = {
+    "project-gas-owner": [],
+    "project-gas-member": [],
+  };
   private existingProjectProvisioningState: "not_configured" | "pending" | "ready" =
     "not_configured";
   private generatedRelayerReady = false;
@@ -419,6 +431,7 @@ export class GasFixtureStore {
     this.managedPolicyAllowedContractIds = this.managedPolicyEnabled ? [VALID_CONTRACT_ID] : [];
     this.managedRelayerStatus = "active";
     this.apiKeys = { "project-gas-owner": [], "project-gas-member": [] };
+    this.memberships = { "project-gas-owner": [], "project-gas-member": [] };
     this.existingProjectProvisioningState = "not_configured";
     this.generatedRelayerReady = false;
     this.existingProjectManualRelayerReady = false;
@@ -728,6 +741,18 @@ export class GasFixtureStore {
           : null;
       case "playground_projects/queries:getMyAccess":
         return role ? { role } : null;
+      case "playground_projects/queries:listMembers":
+        return projectId && role === "owner"
+          ? [
+              {
+                _id: null,
+                walletAddress: projects[projectId].ownerAddress,
+                role: "owner" as const,
+                createdAt: OBSERVED_AT,
+              },
+              ...clone(this.memberships[projectId]),
+            ]
+          : [];
       case "projects/query:getById":
         return projectId && role && !this.retiredProjectIds.has(projectId)
           ? {
@@ -921,6 +946,45 @@ export class GasFixtureStore {
   }
 
   private defaultCompletion(call: GasFixtureCall): unknown {
+    if (call.functionName === "playground_projects/mutations:upsertMember") {
+      const args = call.args as {
+        projectId: GasFixtureProjectId;
+        walletAddress: string;
+        role: "editor" | "viewer";
+      };
+      const walletAddress = args.walletAddress.trim().toUpperCase();
+      const existing = this.memberships[args.projectId].find(
+        (member) => member.walletAddress === walletAddress,
+      );
+      const now = Date.now();
+      if (existing) {
+        existing.role = args.role;
+        existing.updatedAt = now;
+        this.notify();
+        return existing._id;
+      }
+      const membership: FixtureMembership = {
+        _id: `fixture-membership-${this.memberships[args.projectId].length + 1}`,
+        walletAddress,
+        role: args.role,
+        createdAt: now,
+        updatedAt: now,
+      };
+      this.memberships[args.projectId] = [membership, ...this.memberships[args.projectId]];
+      this.notify();
+      return membership._id;
+    }
+    if (call.functionName === "playground_projects/mutations:removeMember") {
+      const args = call.args as {
+        projectId: GasFixtureProjectId;
+        membershipId: string;
+      };
+      this.memberships[args.projectId] = this.memberships[args.projectId].filter(
+        (member) => member._id !== args.membershipId,
+      );
+      this.notify();
+      return null;
+    }
     if (call.functionName === "projects/mutation:generateApiKey") {
       const args = call.args as {
         id: GasFixtureProjectId;
@@ -1114,6 +1178,7 @@ export class GasFixtureStore {
       "projects/query:listByOwner",
       "users/query:getByWallet",
       "playground_projects/queries:getMyAccess",
+      "playground_projects/queries:listMembers",
       "projects/query:getById",
       "projects/query:listApiKeys",
       "project_contracts/query:listByProject",
@@ -1147,6 +1212,8 @@ export class GasFixtureStore {
       "gas/balance_action:cancelRelayerWithdrawal",
       "projects/mutation:generateApiKey",
       "projects/mutation:retire",
+      "playground_projects/mutations:upsertMember",
+      "playground_projects/mutations:removeMember",
     ]);
     if (!supported.has(functionName)) {
       throw new Error(`Unexpected Gas E2E fixture call: ${functionName}`);

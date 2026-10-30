@@ -1,1 +1,1 @@
-export const WALLET_AUTH_KEY_ID = "velo-wallet-auth-v2";
+export const WALLET_AUTH_KEY_ID = "velo-wallet-auth-v3";

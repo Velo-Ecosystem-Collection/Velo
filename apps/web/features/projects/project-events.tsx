@@ -1,6 +1,5 @@
 "use client";
 
-import { shortenAddress } from "@/core/wallet/format";
 import { useWallet } from "@/core/wallet/wallet-provider";
 import { api } from "@repo/backend/convex/_generated/api";
 import { filterContractEvents } from "@repo/stellar";
@@ -172,7 +171,7 @@ export function ProjectEvents({ projectId }: ProjectEventsProps) {
           <WalletIcon />
           <AlertTitle>Connect the owner wallet</AlertTitle>
           <AlertDescription>
-            Private event details load only after wallet ownership is verified.
+            Private event details load after your wallet membership is verified.
           </AlertDescription>
         </Alert>
         <Button onClick={wallet.connect} className="w-fit">
@@ -183,7 +182,7 @@ export function ProjectEvents({ projectId }: ProjectEventsProps) {
     );
   }
 
-  if (project === undefined || contracts === undefined) {
+  if (project === undefined || contracts === undefined || activity === undefined) {
     return (
       <section className="grid gap-4">
         <Skeleton className="h-10 w-64" />
@@ -198,7 +197,7 @@ export function ProjectEvents({ projectId }: ProjectEventsProps) {
       <section className="grid gap-4">
         <h1 className="text-3xl font-semibold">Project unavailable</h1>
         <p className="text-sm text-zinc-600">
-          The project does not exist or the connected wallet is not its owner.
+          The project does not exist or the connected wallet does not have access.
         </p>
         <Button asChild className="w-fit">
           <Link href="/dashboard">Back to dashboard</Link>
@@ -207,8 +206,20 @@ export function ProjectEvents({ projectId }: ProjectEventsProps) {
     );
   }
 
+  if (contracts === null || activity === null) {
+    return (
+      <section className="grid gap-4">
+        <h1 className="text-3xl font-semibold">Project unavailable</h1>
+        <p className="text-sm text-zinc-600">Your project access changed.</p>
+        <Button asChild className="w-fit">
+          <Link href="/dashboard">Back to dashboard</Link>
+        </Button>
+      </section>
+    );
+  }
+
   const activeContracts = contracts.filter((contract) => contract.status === "active");
-  const ownerMatches = wallet.address?.toUpperCase() === project.ownerAddress;
+  const ownerMatches = project.isOwner;
   const numericLedger = ledger.trim() === "" ? undefined : Number(ledger);
   const filteredEvents = filterContractEvents(activity?.events ?? [], {
     contractId: contractFilter === "all" ? undefined : contractFilter,
@@ -219,7 +230,7 @@ export function ProjectEvents({ projectId }: ProjectEventsProps) {
   const pollStatus = activity?.poller.status ?? "stale";
 
   async function refreshEvents() {
-    if (!wallet.address) {
+    if (!wallet.address || !ownerMatches) {
       return;
     }
 
@@ -273,19 +284,13 @@ export function ProjectEvents({ projectId }: ProjectEventsProps) {
         </div>
       </div>
 
-      {!wallet.address ? (
+      {!ownerMatches && project.status === "registered" && activeContracts.length > 0 ? (
         <Alert>
-          <WalletIcon />
-          <AlertTitle>Owner wallet required</AlertTitle>
+          <ActivityIcon />
+          <AlertTitle>Owner access is required to poll</AlertTitle>
           <AlertDescription>
-            Connect {shortenAddress(project.ownerAddress)} to view raw event details and poll now.
+            You can inspect cached activity. Ask the project owner to refresh events.
           </AlertDescription>
-        </Alert>
-      ) : !ownerMatches ? (
-        <Alert variant="destructive">
-          <AlertCircleIcon />
-          <AlertTitle>Connected wallet is not the owner</AlertTitle>
-          <AlertDescription>Switch to {shortenAddress(project.ownerAddress)}.</AlertDescription>
         </Alert>
       ) : project.status !== "registered" ? (
         <Alert>
@@ -364,7 +369,7 @@ export function ProjectEvents({ projectId }: ProjectEventsProps) {
             Last poll: {formatTimestamp(activity?.poller.lastRunAt)}
           </span>
         </div>
-        <div className="overflow-x-auto w-full">
+        <div className="w-full overflow-x-auto">
           <Table className="table-fixed sm:table-auto">
             <TableHeader>
               <TableRow>
@@ -388,7 +393,7 @@ export function ProjectEvents({ projectId }: ProjectEventsProps) {
               ) : (
                 filteredEvents.map((event) => (
                   <TableRow key={event._id}>
-                    <TableCell className="max-w-44 whitespace-normal break-words">
+                    <TableCell className="max-w-44 break-words whitespace-normal">
                       <div className="grid gap-1">
                         <span className="font-medium">{displayTopic(event.topic)}</span>
                         <Badge variant="gray" className="w-fit">

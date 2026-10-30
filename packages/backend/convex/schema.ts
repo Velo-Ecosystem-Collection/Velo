@@ -74,6 +74,7 @@ import settlementTransactions from "./settlement_transactions/schema";
 import telemetryOutbox from "./telemetry_outbox/schema";
 import transactions from "./transactions/schema";
 import users from "./users/schema";
+import walletAuthChallenges from "./wallet_auth/schema";
 import { walletConfigPublications, walletConfigs } from "./wallet_configs/schema";
 import webhookDeliveries from "./webhook_deliveries/schema";
 import webhookDomainEvents from "./webhook_domain_events/schema";
@@ -153,4 +154,5 @@ export default defineSchema({
   webhookDomainEvents,
   walletConfigs,
   walletConfigPublications,
+  walletAuthChallenges,
 });

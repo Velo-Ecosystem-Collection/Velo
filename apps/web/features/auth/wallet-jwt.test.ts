@@ -52,7 +52,8 @@ test("SEP-10 Challenge Lifecycle", () => {
 
   try {
     // 1. Create a challenge
-    const { challenge } = createWalletChallenge(address);
+    const { challenge, transactionHash } = createWalletChallenge(address);
+    assert.match(transactionHash, /^[a-f0-9]{64}$/);
     assert.ok(challenge, "Challenge transaction should be generated");
 
     // 2. Client signs the challenge transaction
@@ -61,12 +62,13 @@ test("SEP-10 Challenge Lifecycle", () => {
     const signedTxXdr = tx.toEnvelope().toXDR("base64");
 
     // 3. Verify the signed challenge
-    const verifiedAddress = verifyWalletChallenge({
+    const verified = verifyWalletChallenge({
       address,
       challenge: signedTxXdr,
     });
 
-    assert.equal(verifiedAddress, address, "Verified address should match client address");
+    assert.equal(verified.address, address, "Verified address should match client address");
+    assert.equal(verified.transactionHash, transactionHash);
   } finally {
     restoreEnv("VELO_AUTH_CHALLENGE_SECRET", previousChallengeSecret);
   }
@@ -88,8 +90,8 @@ test("wallet JWT signing accepts an environment-provided P-256 private key", () 
     const header = JSON.parse(Buffer.from(encodedHeader!, "base64url").toString("utf8")) as {
       kid?: string;
     };
-    assert.equal(header.kid, "velo-wallet-auth-v2");
-    assert.equal(walletJwks().keys[0]?.kid, "velo-wallet-auth-v2");
+    assert.equal(header.kid, "velo-wallet-auth-v3");
+    assert.equal(walletJwks().keys[0]?.kid, "velo-wallet-auth-v3");
     assert.equal(walletJwks().keys[0]?.crv, "P-256");
   } finally {
     restoreEnv("VELO_AUTH_JWT_PRIVATE_KEY_PEM", previousJwtKey);
@@ -144,6 +146,9 @@ test("wallet auth rejects unsigned, wrong-account, wrong-network and expired cha
     const wrongNetwork = new Transaction(challenge, Networks.PUBLIC);
     wrongNetwork.sign(client);
     assert.throws(() => verifyWalletChallenge({ address, challenge: wrongNetwork.toXDR() }));
+    const altered = Buffer.from(signed.toXDR(), "base64");
+    altered[altered.length - 1] = altered[altered.length - 1]! ^ 1;
+    assert.throws(() => verifyWalletChallenge({ address, challenge: altered.toString("base64") }));
     try {
       t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 20 * 60 * 1000 });
       assert.throws(() => verifyWalletChallenge({ address, challenge: signed.toXDR() }));

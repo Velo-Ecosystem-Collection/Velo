@@ -26,7 +26,7 @@ test("app shell constrains intrinsic width and respects installed-app safe areas
 });
 
 test("dense operational tables progressively reveal secondary columns", () => {
-  assert.match(contracts, /whitespace-normal break-all/);
+  assert.match(contracts, /(?:whitespace-normal break-all|break-all whitespace-normal)/);
   assert.match(events, /hidden lg:table-cell">Transaction/);
   assert.match(webhooks, /hidden lg:table-cell">Latency/);
   assert.match(apiKeys, /hidden lg:table-cell">Created/);

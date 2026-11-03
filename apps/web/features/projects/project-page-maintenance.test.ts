@@ -62,9 +62,12 @@ test("maintenance view provides labelled page-specific content and a keyboard-fo
 
 test("Settlement remains a provider-neutral unavailable placeholder", () => {
   assert.match(settlementPage, /Settlement integration unavailable/);
-  assert.match(settlementPage, /Velo does not currently offer an external settlement provider/);
+  assert.match(
+    settlementPage,
+    /Integration with a new payment provider for the Philippines is currently underway/,
+  );
+  assert.match(settlementPage, /Settlement is not available yet/);
   assert.match(settlementPage, /In-house Stellar checkout remains available/);
   assert.match(settlementPage, /Existing settlement history remains stored/);
-  assert.match(settlementPage, /No\s+replacement settlement rail is implemented/);
   assert.doesNotMatch(settlementPage, /PDAX|quote|withdrawal|provider connection/i);
 });

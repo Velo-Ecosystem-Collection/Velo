@@ -46,6 +46,12 @@ test("project settings includes owner-only retirement with typed confirmation an
   assert.match(settingsSource, /Unique slug/);
 });
 
+test("legacy project routing has an owner-directed in-house switch", () => {
+  assert.match(settingsSource, /defaultPaymentAnchor: "inhouse"/);
+  assert.match(settingsSource, /Legacy PDAX routing is unavailable/);
+  assert.match(settingsSource, /Use in-house Stellar payments/);
+});
+
 test("project settings route renders inside app shell sidebar", () => {
   assert.match(settingsPageSource, /import \{ AppShell \}/);
   assert.match(settingsPageSource, /<AppShell>/);

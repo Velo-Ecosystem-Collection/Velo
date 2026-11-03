@@ -25,6 +25,7 @@ export type SwitcherProject = {
   status: string;
   slug?: string;
   logoUrl?: string;
+  role?: "owner" | "editor" | "viewer";
 };
 
 export function ProjectSwitcher({
@@ -108,6 +109,7 @@ export function ProjectSwitcher({
                   <span className="text-xs text-muted-foreground">
                     {project.slug ? `/${project.slug} · ` : ""}
                     <span className="capitalize">{project.status}</span>
+                    {project.role ? ` · ${project.role}` : ""}
                   </span>
                 </div>
               </DropdownMenuItem>

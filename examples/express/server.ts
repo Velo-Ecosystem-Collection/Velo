@@ -2,7 +2,7 @@ import { Velo } from "@carts1024/velo-sdk";
 import dotenv from "dotenv";
 import express from "express";
 
-import { isCheckoutAnchor, requireApiKeyForAnchor, type CheckoutAnchor } from "./config.ts";
+import { getCheckoutAnchorError, requireInhouseApiKey } from "./config.ts";
 import { createGasRouter } from "./gas-route.ts";
 
 dotenv.config();
@@ -10,9 +10,9 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 3001;
 
-function createVeloClient(anchor: CheckoutAnchor) {
+function createVeloClient() {
   return new Velo({
-    apiKey: requireApiKeyForAnchor(anchor),
+    apiKey: requireInhouseApiKey(),
     environment: (process.env.VELO_ENV as "testnet" | "production" | "development") || "testnet",
     baseUrl: process.env.VELO_BASE_URL,
   });
@@ -27,19 +27,30 @@ app.use(express.json());
 // Create Checkout Session
 app.post("/api/checkout", async (req, res) => {
   try {
-    const asset = req.body?.asset || "USDC";
-    const anchor = req.body?.anchor;
-    if (!isCheckoutAnchor(anchor)) {
-      res.status(400).json({ error: 'The checkout anchor must be either "inhouse" or "pdax".' });
+    const body: unknown = req.body;
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      res.status(400).json({ error: "Request body must be an object." });
       return;
     }
+    const input = body as Record<string, unknown>;
+    const anchorError = getCheckoutAnchorError(input.anchor);
+    if (anchorError) {
+      res.status(anchorError.status).json({ error: anchorError.error });
+      return;
+    }
+    const assetValue = input.asset;
+    if (assetValue !== undefined && typeof assetValue !== "string") {
+      res.status(400).json({ error: "asset must be a string." });
+      return;
+    }
+    const asset = typeof assetValue === "string" && assetValue ? assetValue : "USDC";
 
-    const velo = createVeloClient(anchor);
+    const velo = createVeloClient();
     const session = await velo.checkout.sessions.create(
       {
         amount: "10.00",
         asset,
-        anchor,
+        anchor: "inhouse",
         description: `Order #1001 (${asset === "native" ? "XLM" : asset})`,
         successUrl: "http://localhost:3001/success",
         cancelUrl: "http://localhost:3001/cancel",

@@ -1,15 +1,17 @@
 import { v } from "convex/values";
 
 import { query } from "../_generated/server";
-import { ownerProjectOrNull } from "../projects/helpers";
+import { requireProjectRole } from "../playground_projects/helpers";
 
 export const listByProject = query({
   args: {
     projectId: v.id("projects"),
   },
   handler: async (ctx, args) => {
-    if (!(await ownerProjectOrNull(ctx, args.projectId))) {
-      return [];
+    try {
+      await requireProjectRole(ctx, args.projectId, "viewer");
+    } catch {
+      return null;
     }
 
     return await ctx.db

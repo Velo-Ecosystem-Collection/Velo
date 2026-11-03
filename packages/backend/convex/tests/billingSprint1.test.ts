@@ -345,7 +345,6 @@ test("Mainnet shadow lifecycle reserves and consumes without enforcing legacy ac
       mainnetCreditEnforcement: false,
       billingTopupsEnabled: false,
       promoGrantEnabled: false,
-      pdaxBillingEnabled: false,
       billingKillSwitch: false,
       actor: "operator:test",
     });
@@ -440,141 +439,41 @@ test("Mainnet shadow lifecycle reserves and consumes without enforcing legacy ac
   }
 });
 
-test("PDAX charges only at verified payout success and records cost evidence", async () => {
-  vi.useFakeTimers();
-  vi.setSystemTime(new Date("2026-07-26T00:00:00Z"));
-  try {
-    const t = convexTest(schema, modules);
-    const owner = asOwner(t, "GOWNER");
-    const projectId = await createProject(owner, "pdax-shadow-project");
-    const organization = await owner.query(currentOrganization, {});
-    await t.mutation(verifyOrganization, {
-      organizationId: organization._id,
-      evidenceType: "manual_review",
-      evidenceReference: "pdax-review",
-      actor: "operator:test",
-      reason: "Approved fixture",
-    });
-    await t.mutation(grantPromotion, {
-      organizationId: organization._id,
-      book: "shadow",
-      idempotencyKey: "promo:pdax",
-      actor: "operator:test",
-    });
-    await t.mutation(updatePolicy, {
-      billingLedgerWrite: true,
-      billingShadowMode: true,
-      mainnetCreditEnforcement: false,
-      billingTopupsEnabled: false,
-      promoGrantEnabled: false,
-      pdaxBillingEnabled: true,
-      billingKillSwitch: false,
-      actor: "operator:test",
-    });
-    await t.mutation(setOrganizationPolicy, {
-      organizationId: organization._id,
-      enforcementEnabled: false,
-      shadowEnabled: true,
-      actor: "operator:test",
-    });
-
-    const fixture = await t.run(async (ctx) => {
-      const now = Date.now();
-      const paymentIntentId = await ctx.db.insert("paymentIntents", {
-        projectId,
-        network: "public",
-        intentType: "merchant_payment",
-        amount: "10",
-        asset: "USDC:GISSUER",
-        receiverAddress: "GPDAX",
-        merchantName: "PDAX merchant",
-        status: "paid",
-        anchor: "pdax",
-        expiresAt: now + 30 * 60_000,
-        createdAt: now,
-        updatedAt: now,
-      });
-      await ctx.db.insert("settlementQuotes", {
-        projectId,
-        paymentIntentId,
-        provider: "pdax",
-        quoteId: "quote-pdax-shadow",
-        side: "sell",
-        quoteCurrency: "USDCXLM",
-        baseCurrency: "PHP",
-        quantity: "10",
-        price: 58,
-        totalAmount: 580,
-        expiresAt: now + 60_000,
-        status: "executed",
-        createdAt: now,
-      });
-      const settlementTransactionId = await ctx.db.insert("settlementTransactions", {
-        projectId,
-        paymentIntentId,
-        provider: "pdax",
-        status: "PAYOUT_PENDING",
-        idempotencyId: "settlement-pdax-shadow",
-        quoteId: "quote-pdax-shadow",
-        tradeDetails: {
-          orderId: 1,
-          price: 58.1,
-          amount: 581,
-          quantity: 10,
-          status: "completed",
-        },
-        createdAt: now,
-        updatedAt: now,
-      });
-      return { paymentIntentId, settlementTransactionId };
-    });
-
-    await t.mutation(evaluateShadow, {
-      phase: "would_reserve",
+test("legacy PDAX shadow billing is disabled and does not write new financial entries", async () => {
+  const t = convexTest(schema, modules);
+  const owner = asOwner(t, "GPDAXLEGACY");
+  const projectId = await createProject(owner, "pdax-shadow-project");
+  const paymentIntentId = await t.run(async (ctx) => {
+    const now = Date.now();
+    return await ctx.db.insert("paymentIntents", {
       projectId,
-      paymentIntentId: fixture.paymentIntentId,
-      route: "pdax",
-      idempotencyKey: "shadow:reserve:pdax",
+      network: "public",
+      intentType: "merchant_payment",
+      amount: "10",
+      asset: "USDC:GISSUER",
+      receiverAddress: "G-HISTORICAL-DEPOSIT",
+      merchantName: "Historical merchant",
+      status: "paid",
+      anchor: "pdax",
+      expiresAt: now + 30 * 60_000,
+      createdAt: now,
+      updatedAt: now,
     });
-    await t.mutation(internal.settlement_transactions.mutation.updateStatus, {
-      projectId,
-      idempotencyId: "settlement-pdax-shadow",
-      status: "PAYOUT_SUCCEEDED",
-      withdrawalDetails: {
-        referenceNumber: "payout-ref",
-        amount: 581,
-        fee: 25,
-        status: "COMPLETED",
-        bankCode: "BASECPH",
-        accountName: "Merchant",
-        accountNumber: "redacted",
-      },
-    });
-    await t.finishAllScheduledFunctions(() => vi.runAllTimers());
+  });
 
-    const decisions = await t.query(listShadowDecisions, { projectId });
-    const consumed = decisions.find(
-      (decision: Doc<"shadowBillingDecisions">) => decision.phase === "would_consume",
-    );
-    expect(consumed).toEqual(
-      expect.objectContaining({
-        outcome: "applied",
-        settlementTransactionId: fixture.settlementTransactionId,
-        quotedCost: "580",
-        actualCost: "25",
-        spread: expect.any(String),
-        failureCost: "0",
-        subsidy: "25",
-        costCurrency: "PHP",
-      }),
-    );
-    const state = await t.query(reconcile, {
-      organizationId: organization._id,
-      book: "shadow",
-    });
-    expect(state.materialized.promoConsumed).toBe(1n);
-    expect(state.matches).toBe(true);
-  } finally {
-    vi.useRealTimers();
-  }
+  const result = await t.mutation(evaluateShadow, {
+    phase: "would_consume",
+    projectId,
+    paymentIntentId,
+    route: "pdax",
+    idempotencyKey: "legacy-pdax-shadow-disabled",
+  });
+  expect(result).toEqual({ applied: false, outcome: "disabled" });
+
+  const state = await t.run(async (ctx) => ({
+    decisions: await ctx.db.query("shadowBillingDecisions").collect(),
+    economics: await ctx.db.query("billingPdaxEconomics").collect(),
+  }));
+  expect(state.decisions).toHaveLength(0);
+  expect(state.economics).toHaveLength(0);
 });

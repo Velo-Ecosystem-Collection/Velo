@@ -70,7 +70,7 @@ export const getMyAccess = query({
 export const listMembers = query({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args) => {
-    const access = await requireProjectRole(ctx, args.projectId, "viewer");
+    const access = await requireProjectRole(ctx, args.projectId, "owner");
     const rows = await ctx.db
       .query("projectMemberships")
       .withIndex("by_project", (q) => q.eq("projectId", args.projectId))

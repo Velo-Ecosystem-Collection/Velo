@@ -1,3 +1,5 @@
+import { assertValidPublicKey } from "@repo/stellar/validation";
+
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 
@@ -16,6 +18,10 @@ export function normalizeWalletAddress(value: string) {
   const normalized = value.trim().toUpperCase();
   if (!/^G[A-Z2-7]{55}$/.test(normalized)) throw new Error("Invalid Stellar wallet address");
   return normalized;
+}
+
+export function normalizeMembershipWalletAddress(value: string) {
+  return assertValidPublicKey(value);
 }
 
 export function normalizeContractId(value: string) {
@@ -62,7 +68,7 @@ export async function requireProjectRole(
         q.eq("projectId", projectId).eq("walletAddress", address),
       )
       .unique();
-    role = membership?.role ?? null;
+    role = membership && membership.role !== "owner" ? membership.role : null;
   }
   if (!role) throw new Error("Unauthorized");
   if (ROLE_RANK[role] < ROLE_RANK[minimum]) {
@@ -87,15 +93,13 @@ export async function requireProjectRoleByToken(
       ? "owner"
       : null;
   if (!role) {
-    role =
-      (
-        await ctx.db
-          .query("projectMemberships")
-          .withIndex("by_project_and_wallet_address", (q) =>
-            q.eq("projectId", projectId).eq("walletAddress", address),
-          )
-          .unique()
-      )?.role ?? null;
+    const membership = await ctx.db
+      .query("projectMemberships")
+      .withIndex("by_project_and_wallet_address", (q) =>
+        q.eq("projectId", projectId).eq("walletAddress", address),
+      )
+      .unique();
+    role = membership && membership.role !== "owner" ? membership.role : null;
   }
   if (!role) throw new Error("Unauthorized");
   if (ROLE_RANK[role] < ROLE_RANK[minimum]) {

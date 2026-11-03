@@ -33,18 +33,10 @@ groups:
           {
             runbook: "docs/operations/sprint-10-observability-and-redaction-runbook.md#telemetry-exporter",
           }
-      - alert: VeloProviderUnhealthy
-        expr: velo_provider_healthy == 0
-        for: 2m
-        labels: { severity: critical, owner: "Settlement/PDAX" }
-        annotations:
-          {
-            runbook: "docs/operations/sprint-10-observability-and-redaction-runbook.md#provider-health",
-          }
       - alert: VeloQueueStalled
         expr: velo_queue_depth > 100 and velo_queue_oldest_seconds > 120
         for: 2m
-        labels: { severity: critical, owner: "Webhooks/Integrations" }
+        labels: { severity: critical, owner: "Payments Backend" }
         annotations:
           {
             runbook: "docs/operations/sprint-10-observability-and-redaction-runbook.md#queue-backlog",

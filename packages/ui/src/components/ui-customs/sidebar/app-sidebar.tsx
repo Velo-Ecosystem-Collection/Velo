@@ -66,6 +66,14 @@ export function AppSidebar({
   ...props
 }: SidebarProps) {
   const activeProject = projects.find((project) => project.id === activeProjectId);
+  const isProjectOwner = activeProject?.role === "owner";
+  const ownerOnlyNavItems = new Set([
+    "Integration",
+    "API Keys",
+    "Wallets",
+    "Payments",
+    "Settlement",
+  ]);
   const projectBaseUrl = activeProject ? `/projects/${activeProject.id}` : "/dashboard";
   const gasUrl = projectDestination(activeProjectId, "/gas") ?? "/dashboard";
   const publicProofUrl = activeProject?.slug ? `/verify/${activeProject.slug}` : "/dashboard";
@@ -200,16 +208,23 @@ export function AppSidebar({
         },
       ],
     },
-  ].map((group) => ({
-    ...group,
-    items: group.items.map((item) => ({
-      ...item,
-      isActive: !item.disabled && isSidebarPathActive(currentPath, item.url),
-    })),
-    isActive: group.items.some(
-      (item) => !item.disabled && isSidebarPathActive(currentPath, item.url),
-    ),
-  }));
+  ]
+    .map((group) => ({
+      ...group,
+      items: group.items
+        .filter((item) => isProjectOwner || !ownerOnlyNavItems.has(item.title))
+        .map((item) => ({
+          ...item,
+          isActive: !item.disabled && isSidebarPathActive(currentPath, item.url),
+        })),
+      isActive: group.items.some(
+        (item) =>
+          !item.disabled &&
+          (isProjectOwner || !ownerOnlyNavItems.has(item.title)) &&
+          isSidebarPathActive(currentPath, item.url),
+      ),
+    }))
+    .filter((group) => group.items.length > 0);
 
   return (
     <Sidebar collapsible="icon" {...props}>

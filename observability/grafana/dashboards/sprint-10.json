@@ -6,7 +6,7 @@
     "dependency",
     "slo",
     "queue-backlog",
-    "provider",
+    "payment-reconciliation",
     "webhook",
     "ui",
     "exporter-health",
@@ -34,9 +34,9 @@
     },
     {
       "id": 4,
-      "title": "Provider health",
+      "title": "Confirmation lag",
       "type": "stat",
-      "targets": [{ "expr": "velo_provider_healthy" }]
+      "targets": [{ "expr": "velo_confirmation_lag_seconds" }]
     },
     {
       "id": 5,

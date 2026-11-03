@@ -26,11 +26,12 @@ test("app shell constrains intrinsic width and respects installed-app safe areas
 });
 
 test("dense operational tables progressively reveal secondary columns", () => {
-  assert.match(contracts, /whitespace-normal break-all/);
+  assert.match(contracts, /(?:whitespace-normal break-all|break-all whitespace-normal)/);
   assert.match(events, /hidden lg:table-cell">Transaction/);
   assert.match(webhooks, /hidden lg:table-cell">Latency/);
   assert.match(apiKeys, /hidden lg:table-cell">Created/);
-  assert.match(settlement, /hidden py-2 text-xs lg:table-cell"[^>]*>\s*Idempotency ID/);
+  assert.match(settlement, /max-w-3xl/);
+  assert.match(settlement, /Settlement integration unavailable/);
 });
 
 test("docs and configuration pages provide narrow-screen layouts", () => {

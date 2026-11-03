@@ -33,11 +33,9 @@ export const METRIC_NAMES = [
   "velo_idempotency_contention_total",
   "velo_queue_depth",
   "velo_queue_oldest_seconds",
-  "velo_provider_event_backlog",
   "velo_webhook_backlog",
   "velo_cursor_lag_seconds",
   "velo_scanner_backlog",
-  "velo_provider_healthy",
   "velo_webhook_lag_seconds",
   "velo_confirmation_lag_seconds",
   "velo_ui_propagation_seconds",
@@ -67,7 +65,7 @@ export const METRIC_NAMES = [
   "velo_billing_support_minutes",
 ] as const;
 
-export const DEPENDENCIES = ["convex", "pdax", "stellar_rpc", "horizon", "merchant"] as const;
+export const DEPENDENCIES = ["convex", "stellar_rpc", "horizon", "merchant"] as const;
 export const OUTCOMES = ["success", "error", "timeout", "retry", "rejected"] as const;
 export const ERROR_CODES = [
   "invalid_input",

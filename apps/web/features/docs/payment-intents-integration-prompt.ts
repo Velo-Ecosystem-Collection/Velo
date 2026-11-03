@@ -141,7 +141,7 @@ Check and report each item before claiming the integration is ready:
 - The configured \`VELO_BASE_URL\` points to the deployed Velo API for the intended environment. An SDK environment option or URL alone does not prove project activation or network readiness.
 - The buyer's Testnet wallet has enough Testnet funds for the payment and network fee. For an issued asset, the buyer must also have the applicable asset trustline; native XLM has no issuer trustline. Confirm the exact asset code/issuer and Testnet support instead of assuming every wallet can pay every asset.
 - A reachable merchant webhook endpoint is configured for the relevant payment events, and its signing secret is available to the server as \`VELO_WEBHOOK_SECRET\`. Confirm production HTTPS and deployment reachability using the host project's process.
-- **Optional PDAX routing:** use this only if the merchant intentionally selects the PDAX anchor. Verify the Velo project's PDAX route is enabled, the API key is compatible with that anchor, and the required PDAX UAT/business onboarding and destination configuration are complete with the responsible operator. Report operator-owned gaps separately. PDAX is not a prerequisite for an in-house checkout; do not invent credentials or ask the integrator to expose them.
+- Payment-intent creation uses the in-house Stellar route. Existing projects or API keys configured for the retired PDAX route must be switched by their owner before creating payments; do not silently reroute them.
 
 ## 4. Verify and install the compatible SDK
 
@@ -215,7 +215,7 @@ After verification, perform the durable dedupe, association checks, and fulfillm
 ## 9. Test, document, and report
 
 - Add host-project tests for caller/order authorization, trusted amount/asset/redirect derivation, attempt persistence before dispatch, same-key/same-input recovery, nullable URL and \`awaiting_route\` handling, pending and all terminal statuses, expiry/cancellation, API/idempotency errors, raw-body signature rejection, delivery deduplication, payment/order matching, and idempotent durable fulfillment. Use mocked SDK transport and persistence collaborators for deterministic tests.
-- Document placeholder environment variables, how to configure the selected Testnet project/API key and webhook, the explicit deployed Velo URL, buyer asset/funding prerequisites, and any optional PDAX operator requirements.
+- Document placeholder environment variables, how to configure the selected Testnet project/API key and webhook, the explicit deployed Velo URL, and buyer asset/funding prerequisites.
 - Run the host project's focused tests, type/lint checks, and build. Report missing setup or operator prerequisites. Clearly separate mocked verification from live Testnet evidence; do not claim a live payment unless it was explicitly authorized and actually observed.
 
 ## Authoritative Velo references

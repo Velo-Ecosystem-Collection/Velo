@@ -6,9 +6,6 @@ import { expect, test, vi } from "vitest";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
-const reserve = makeFunctionReference<"mutation">("provider_operations/mutations:reserve");
-const claim = makeFunctionReference<"mutation">("provider_operations/mutations:claim");
-const complete = makeFunctionReference<"mutation">("provider_operations/mutations:complete");
 const consumeRateLimit = makeFunctionReference<"mutation">("rate_limits/mutations:consume");
 const claimReconciliationPage = makeFunctionReference<"mutation">(
   "payment_reconciliation_jobs/mutations:claimDue",
@@ -35,83 +32,6 @@ async function projectFixture(t: ReturnType<typeof convexTest>) {
     });
   });
 }
-
-test.each(["trade", "fiat_withdrawal"] as const)(
-  "100 concurrent %s reservations produce one operation and one submission claim",
-  async (operation) => {
-    const t = convexTest(schema, modules);
-    const projectId = await projectFixture(t);
-    const results = await Promise.all(
-      Array.from({ length: 100 }, () =>
-        t.mutation(reserve, {
-          projectId,
-          provider: "pdax",
-          operation,
-          clientKey: "same-key",
-          requestFingerprint: "fingerprint-a",
-        }),
-      ),
-    );
-    expect(new Set(results.map((result) => result.operationId)).size).toBe(1);
-    expect(results.filter((result) => !result.replay)).toHaveLength(1);
-    const claims = await Promise.all(
-      Array.from({ length: 100 }, (_, index) =>
-        t.mutation(claim, {
-          operationId: results[0]!.operationId,
-          leaseToken: `lease-${index}`,
-        }),
-      ),
-    );
-    expect(claims.filter((result) => result.claimed)).toHaveLength(1);
-    await expect(
-      t.mutation(reserve, {
-        projectId,
-        provider: "pdax",
-        operation,
-        clientKey: "same-key",
-        requestFingerprint: "fingerprint-b",
-      }),
-    ).rejects.toThrow(/conflicts/);
-  },
-);
-
-test("lease fencing rejects stale completion and ambiguous trades cannot resubmit", async () => {
-  const t = convexTest(schema, modules);
-  const projectId = await projectFixture(t);
-  const operation = await t.mutation(reserve, {
-    projectId,
-    provider: "pdax",
-    operation: "trade",
-    clientKey: "trade-key",
-    requestFingerprint: "fp",
-  });
-  const lease = await t.mutation(claim, {
-    operationId: operation.operationId,
-    leaseToken: "lease-1",
-  });
-  expect(lease.claimed).toBe(true);
-  const stale = await t.mutation(complete, {
-    operationId: operation.operationId,
-    expectedState: "submitting",
-    leaseToken: "stale",
-    leaseGeneration: lease.leaseGeneration!,
-    nextState: "succeeded",
-  });
-  expect(stale.applied).toBe(false);
-  await t.mutation(complete, {
-    operationId: operation.operationId,
-    expectedState: "submitting",
-    leaseToken: "lease-1",
-    leaseGeneration: lease.leaseGeneration!,
-    nextState: "reconciling",
-  });
-  const retry = await t.mutation(claim, {
-    operationId: operation.operationId,
-    leaseToken: "lease-2",
-  });
-  expect(retry.claimed).toBe(false);
-  expect(retry.state).toBe("reconciling");
-});
 
 test("distributed rate limits are shared by concurrent callers", async () => {
   vi.useFakeTimers();

@@ -133,6 +133,7 @@ export function ProjectDashboard() {
   useEffect(() => {
     if (
       project &&
+      project.isOwner &&
       project.status === "pending_registration" &&
       project.registrationTxHash &&
       !isRegistering
@@ -180,14 +181,14 @@ export function ProjectDashboard() {
         active = false;
       };
     }
-  }, [project?.status, project?.registrationTxHash]);
+  }, [project?.isOwner, project?.status, project?.registrationTxHash]);
 
   const wait = (milliseconds: number) => {
     return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
   };
 
   async function handleRegister() {
-    if (!wallet.address || !project) return;
+    if (!wallet.address || !project?.isOwner) return;
     setIsRegistering(true);
     setActionError(null);
     setTxHash(null);
@@ -258,7 +259,7 @@ export function ProjectDashboard() {
   }
 
   async function handleActivate() {
-    if (!wallet.address || !project || project.registryProjectId === undefined) return;
+    if (!wallet.address || !project?.isOwner || project.registryProjectId === undefined) return;
     setIsActivating(true);
     setActionError(null);
     setTxHash(null);
@@ -441,14 +442,26 @@ export function ProjectDashboard() {
       <section className="grid gap-4">
         <h1 className="text-3xl font-semibold tracking-normal">Project unavailable</h1>
         <p className="max-w-2xl text-sm text-zinc-600">
-          The selected project does not exist or the connected wallet is not its owner. Choose a
+          The selected project does not exist or the connected wallet does not have access. Choose a
           valid project from the sidebar project switcher.
         </p>
       </section>
     );
   }
 
+  if (contracts === null || activity === null) {
+    return (
+      <section className="grid gap-4">
+        <h1 className="text-3xl font-semibold tracking-normal">Project unavailable</h1>
+        <p className="max-w-2xl text-sm text-zinc-600">
+          Your project access changed. Choose an available project from the sidebar switcher.
+        </p>
+      </section>
+    );
+  }
+
   const events = activity?.events ?? [];
+  const isOwner = project.isOwner;
   const activeContractCount = contracts.filter((contract) => contract.status === "active").length;
   const webhookRate = webhookSummary?.recentCount
     ? Math.round(((webhookSummary.successCount ?? 0) / webhookSummary.recentCount) * 100)
@@ -497,8 +510,8 @@ export function ProjectDashboard() {
         ) : null}
       </div>
 
-      {project.status !== "registered" && (
-        <div className="rounded-lg border border-amber-200/60 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {isOwner && project.status !== "registered" && (
+        <div className="flex flex-col gap-4 rounded-lg border border-amber-200/60 bg-amber-50/40 p-5 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/40 dark:bg-amber-950/20">
           <div className="space-y-1">
             <h2 className="text-lg font-semibold tracking-normal text-amber-900 dark:text-amber-300">
               Project registration required
@@ -512,7 +525,7 @@ export function ProjectDashboard() {
           <Button
             onClick={handleRegister}
             disabled={isRegistering || project.status === "pending_registration"}
-            className="w-full sm:w-auto shrink-0 bg-amber-600 hover:bg-amber-700 text-white dark:bg-amber-700 dark:hover:bg-amber-600"
+            className="w-full shrink-0 bg-amber-600 text-white hover:bg-amber-700 sm:w-auto dark:bg-amber-700 dark:hover:bg-amber-600"
           >
             {isRegistering ? (
               <>
@@ -528,8 +541,8 @@ export function ProjectDashboard() {
         </div>
       )}
 
-      {project.status === "registered" && !project.paymentAccessActive && (
-        <div className="rounded-lg border border-emerald-200/60 bg-emerald-50/40 dark:border-emerald-900/40 dark:bg-emerald-950/20 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {isOwner && project.status === "registered" && !project.paymentAccessActive && (
+        <div className="flex flex-col gap-4 rounded-lg border border-emerald-200/60 bg-emerald-50/40 p-5 sm:flex-row sm:items-center sm:justify-between dark:border-emerald-900/40 dark:bg-emerald-950/20">
           <div className="space-y-1">
             <h2 className="text-lg font-semibold tracking-normal text-emerald-900 dark:text-emerald-300">
               Activate Velo Pay payments
@@ -542,7 +555,7 @@ export function ProjectDashboard() {
           <Button
             onClick={handleActivate}
             disabled={isActivating}
-            className="w-full sm:w-auto shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white dark:bg-emerald-700 dark:hover:bg-emerald-600"
+            className="w-full shrink-0 bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto dark:bg-emerald-700 dark:hover:bg-emerald-600"
           >
             {isActivating ? (
               <>
@@ -569,12 +582,12 @@ export function ProjectDashboard() {
           <CheckCircle2Icon className="h-4 w-4 text-emerald-600" />
           <AlertTitle>Transaction Submitted</AlertTitle>
           <AlertDescription>
-            Hash: <code className="break-all font-mono text-xs">{txHash}</code>
+            Hash: <code className="font-mono text-xs break-all">{txHash}</code>
           </AlertDescription>
         </Alert>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className={`grid gap-4 md:grid-cols-2 ${isOwner ? "xl:grid-cols-4" : "xl:grid-cols-3"}`}>
         <MetricCard
           title="Contracts"
           value={activeContractCount}
@@ -593,55 +606,59 @@ export function ProjectDashboard() {
           detail={`${webhookSummary?.successCount ?? 0} successful, ${webhookSummary?.failedCount ?? 0} failed recent deliveries`}
           icon={WebhookIcon}
         />
-        <MetricCard
-          title="Payments"
-          value={totalPayments}
-          detail={`${paidRate}% paid conversion across this project`}
-          icon={ActivityIcon}
-        />
+        {isOwner ? (
+          <MetricCard
+            title="Payments"
+            value={totalPayments}
+            detail={`${paidRate}% paid conversion across this project`}
+            icon={ActivityIcon}
+          />
+        ) : null}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
-        <div className="rounded-lg border border-zinc-200 bg-white p-5">
-          <div className="flex items-center gap-2">
-            <ActivityIcon className="size-5 text-zinc-700" />
-            <h2 className="text-lg font-semibold tracking-normal">Payment activity</h2>
+        {isOwner ? (
+          <div className="rounded-lg border border-zinc-200 bg-white p-5">
+            <div className="flex items-center gap-2">
+              <ActivityIcon className="size-5 text-zinc-700" />
+              <h2 className="text-lg font-semibold tracking-normal">Payment activity</h2>
+            </div>
+            <div className="mt-5 grid grid-cols-1 gap-3 text-sm min-[360px]:grid-cols-2">
+              <div className="rounded-md bg-zinc-50 p-3">
+                <p className="text-zinc-600">Paid</p>
+                <p className="mt-1 text-2xl font-semibold">{paidPayments}</p>
+              </div>
+              <div className="rounded-md bg-zinc-50 p-3">
+                <p className="text-zinc-600">Pending</p>
+                <p className="mt-1 text-2xl font-semibold">{stats?.counts.pending ?? 0}</p>
+              </div>
+              <div className="rounded-md bg-zinc-50 p-3">
+                <p className="text-zinc-600">Created</p>
+                <p className="mt-1 text-2xl font-semibold">{stats?.counts.created ?? 0}</p>
+              </div>
+              <div className="rounded-md bg-zinc-50 p-3">
+                <p className="text-zinc-600">Failed</p>
+                <p className="mt-1 text-2xl font-semibold">{stats?.counts.failed ?? 0}</p>
+              </div>
+            </div>
+            <div className="mt-5 grid gap-2 text-sm">
+              <p className="font-medium text-zinc-950">Paid volume</p>
+              {stats?.volumes.length ? (
+                stats.volumes.map((volume) => (
+                  <div
+                    key={volume.asset}
+                    className="flex items-center justify-between gap-3 text-zinc-600"
+                  >
+                    <span>{volume.asset}</span>
+                    <span className="font-mono text-zinc-950">{formatVolume(volume.volume)}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-zinc-600">No paid payment volume yet.</p>
+              )}
+            </div>
           </div>
-          <div className="mt-5 grid grid-cols-1 gap-3 text-sm min-[360px]:grid-cols-2">
-            <div className="rounded-md bg-zinc-50 p-3">
-              <p className="text-zinc-600">Paid</p>
-              <p className="mt-1 text-2xl font-semibold">{paidPayments}</p>
-            </div>
-            <div className="rounded-md bg-zinc-50 p-3">
-              <p className="text-zinc-600">Pending</p>
-              <p className="mt-1 text-2xl font-semibold">{stats?.counts.pending ?? 0}</p>
-            </div>
-            <div className="rounded-md bg-zinc-50 p-3">
-              <p className="text-zinc-600">Created</p>
-              <p className="mt-1 text-2xl font-semibold">{stats?.counts.created ?? 0}</p>
-            </div>
-            <div className="rounded-md bg-zinc-50 p-3">
-              <p className="text-zinc-600">Failed</p>
-              <p className="mt-1 text-2xl font-semibold">{stats?.counts.failed ?? 0}</p>
-            </div>
-          </div>
-          <div className="mt-5 grid gap-2 text-sm">
-            <p className="font-medium text-zinc-950">Paid volume</p>
-            {stats?.volumes.length ? (
-              stats.volumes.map((volume) => (
-                <div
-                  key={volume.asset}
-                  className="flex items-center justify-between gap-3 text-zinc-600"
-                >
-                  <span>{volume.asset}</span>
-                  <span className="font-mono text-zinc-950">{formatVolume(volume.volume)}</span>
-                </div>
-              ))
-            ) : (
-              <p className="text-zinc-600">No paid payment volume yet.</p>
-            )}
-          </div>
-        </div>
+        ) : null}
 
         <div className="rounded-lg border border-zinc-200 bg-white p-5">
           <div className="flex items-center gap-2">
@@ -663,7 +680,7 @@ export function ProjectDashboard() {
             </div>
             <div className="flex min-w-0 items-center justify-between gap-3">
               <span className="text-zinc-600">Destination</span>
-              <span className="min-w-0 max-w-64 truncate text-right font-mono text-xs text-zinc-950">
+              <span className="max-w-64 min-w-0 truncate text-right font-mono text-xs text-zinc-950">
                 {webhookSummary?.destinationHost ?? "No host"}
               </span>
             </div>

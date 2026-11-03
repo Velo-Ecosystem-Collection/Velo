@@ -333,18 +333,9 @@ export const sendTest = action({
       v.literal("payment.succeeded"),
       v.literal("payment.failed"),
       v.literal("payment_access.activated"),
-      v.literal("settlement.quote.created"),
-      v.literal("settlement.trade.executed"),
-      v.literal("settlement.withdrawal.pending"),
-      v.literal("settlement.withdrawal.succeeded"),
-      v.literal("settlement.withdrawal.failed"),
-      v.literal("provider.pdax.event.received"),
     ),
     contractEventId: v.optional(v.id("contractEvents")),
     paymentIntentId: v.optional(v.id("paymentIntents")),
-    settlementQuoteId: v.optional(v.id("settlementQuotes")),
-    settlementTransactionId: v.optional(v.id("settlementTransactions")),
-    providerEventId: v.optional(v.id("providerEvents")),
     correlationId: v.optional(v.string()),
     traceparent: v.optional(v.string()),
   },
@@ -366,30 +357,7 @@ export const sendTest = action({
       },
     );
 
-    const quote = args.settlementQuoteId
-      ? await ctx.runQuery(internal.settlement_quotes.query.getById, { id: args.settlementQuoteId })
-      : null;
-    const tx = args.settlementTransactionId
-      ? await ctx.runQuery(internal.settlement_transactions.query.getById, {
-          id: args.settlementTransactionId,
-        })
-      : null;
-    const pEvent = args.providerEventId
-      ? await ctx.runQuery(internal.provider_events.mutation.getById, { id: args.providerEventId })
-      : null;
-
-    const payload = buildPayload(
-      {
-        ...target,
-        settlementQuote: quote,
-        settlementTransaction: tx,
-        providerEvent: pEvent,
-      },
-      args.eventType,
-      true,
-      undefined,
-      correlationId,
-    );
+    const payload = buildPayload(target, args.eventType, true, undefined, correlationId);
     const signatureHeader = computeSignatureHeader(payload, target.endpoint.signingSecret);
     const deliveryId: WebhookDeliveryId = await ctx.runMutation(
       internal.webhook_deliveries.mutation.createPending,

@@ -1,6 +1,7 @@
 "use client";
 
-import { useWallet } from "@/core/wallet/wallet-provider";
+import { walletAuthFailureMessage } from "@/core/auth/wallet-auth-errors";
+import { WalletError, useWallet } from "@/core/wallet/wallet-provider";
 import { ConvexProviderWithAuth, ConvexReactClient } from "convex/react";
 import { usePathname } from "next/navigation";
 import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -25,6 +26,44 @@ type WalletToken = {
   address: string;
   keyId?: string;
 };
+
+type WalletChallengeResponse = {
+  challengeId: string;
+  challenge: string;
+};
+
+type WalletSessionResponse = {
+  token: string;
+  address: string;
+};
+
+function isWalletChallengeResponse(value: unknown): value is WalletChallengeResponse {
+  if (!value || typeof value !== "object") return false;
+  const result = value as Record<string, unknown>;
+  return (
+    typeof result.challengeId === "string" &&
+    typeof result.challenge === "string" &&
+    result.challengeId.length <= 64 &&
+    result.challenge.length <= 16_384
+  );
+}
+
+function isWalletSessionResponse(value: unknown): value is WalletSessionResponse {
+  if (!value || typeof value !== "object") return false;
+  const result = value as Record<string, unknown>;
+  return typeof result.token === "string" && typeof result.address === "string";
+}
+
+async function authFailureMessage(response: Response, fallback: string) {
+  try {
+    const value: unknown = await response.json();
+    if (!value || typeof value !== "object") return fallback;
+    const code = (value as Record<string, unknown>).code;
+    return typeof code === "string" ? walletAuthFailureMessage(code) : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 function jwtExpiresAt(token: string) {
   const [, payload] = token.split(".");
@@ -84,7 +123,7 @@ function validTokenForWallet(
 }
 
 function useWalletConvexAuth() {
-  const { address: walletAddress, status: walletStatus, disconnect } = useWallet();
+  const { address: walletAddress, status: walletStatus, disconnect, signTransaction } = useWallet();
   const tokenRef = useRef<WalletToken | null>(null);
   const pendingPromiseRef = useRef<Promise<string | null> | null>(null);
   const requestScope = useRef(new WalletRequestScope());
@@ -164,15 +203,51 @@ function useWalletConvexAuth() {
       const isCurrent = requestScope.current.capture();
       const fetchPromise = (async () => {
         try {
-          const sessionResponse = await fetch("/api/auth/wallet/session", {
+          const challengeResponse = await fetch("/api/auth/wallet/challenge", {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ address: walletAddress }),
           });
-          if (!sessionResponse.ok) {
-            throw new Error("Unable to create wallet session");
+          if (!challengeResponse.ok) {
+            throw new WalletError(
+              "WALLET_AUTH_FAILED",
+              await authFailureMessage(
+                challengeResponse,
+                "Velo could not start wallet verification.",
+              ),
+            );
           }
-          const authResult = (await sessionResponse.json()) as { token: string; address: string };
+          const challengeResult: unknown = await challengeResponse.json();
+          if (!isWalletChallengeResponse(challengeResult)) {
+            throw new WalletError(
+              "WALLET_AUTH_FAILED",
+              "Velo returned an invalid wallet challenge.",
+            );
+          }
+          if (!isCurrent()) return null;
+
+          const signedChallenge = await signTransaction(challengeResult.challenge);
+          if (!isCurrent()) return null;
+
+          const sessionResponse = await fetch("/api/auth/wallet/session", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              address: walletAddress,
+              challengeId: challengeResult.challengeId,
+              signedChallenge,
+            }),
+          });
+          if (!sessionResponse.ok) {
+            throw new WalletError(
+              "WALLET_AUTH_FAILED",
+              "Velo could not verify the wallet signature.",
+            );
+          }
+          const authResult: unknown = await sessionResponse.json();
+          if (!isWalletSessionResponse(authResult)) {
+            throw new WalletError("WALLET_AUTH_FAILED", "Velo returned an invalid wallet session.");
+          }
           if (!isCurrent()) return null;
           if (authResult.address !== walletAddress) throw new Error("Wallet auth address mismatch");
           const result: WalletToken = {
@@ -183,12 +258,20 @@ function useWalletConvexAuth() {
           writeStoredConvexToken(result);
           setTokenState(result);
           return result.token;
-        } catch {
+        } catch (error) {
           if (!isCurrent()) return null;
           tokenRef.current = null;
           writeStoredConvexToken(null);
           setTokenState(null);
-          void disconnect().catch(() => {});
+          pendingPromiseRef.current = null;
+          const reason =
+            error instanceof WalletError
+              ? error
+              : new WalletError(
+                  "WALLET_AUTH_FAILED",
+                  "Wallet verification failed. Reconnect and try again.",
+                );
+          void disconnect({ code: reason.code, message: reason.message }).catch(() => {});
           return null;
         } finally {
           if (isCurrent()) pendingPromiseRef.current = null;
@@ -198,7 +281,7 @@ function useWalletConvexAuth() {
       pendingPromiseRef.current = fetchPromise;
       return fetchPromise;
     },
-    [disconnect, walletAddress, walletStatus],
+    [disconnect, signTransaction, walletAddress, walletStatus],
   );
 
   const hasValidToken = validTokenForWallet(tokenState, walletAddress);

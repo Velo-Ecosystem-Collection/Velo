@@ -9,6 +9,7 @@
  */
 
 import type * as api_keys_helpers from "../api_keys/helpers.js";
+import type * as auth_identity from "../auth/identity.js";
 import type * as authConfig from "../authConfig.js";
 import type * as billing_access from "../billing/access.js";
 import type * as billing_admin from "../billing/admin.js";
@@ -103,7 +104,6 @@ import type * as projects_helpers from "../projects/helpers.js";
 import type * as projects_mutation from "../projects/mutation.js";
 import type * as projects_query from "../projects/query.js";
 import type * as projects_types from "../projects/types.js";
-import type * as provider_connections_mutation from "../provider_connections/mutation.js";
 import type * as provider_connections_query from "../provider_connections/query.js";
 import type * as provider_events_mutation from "../provider_events/mutation.js";
 import type * as provider_events_processing from "../provider_events/processing.js";
@@ -116,10 +116,7 @@ import type * as rate_limits_mutations from "../rate_limits/mutations.js";
 import type * as rate_limits_upstash from "../rate_limits/upstash.js";
 import type * as seedBenchmarkKey from "../seedBenchmarkKey.js";
 import type * as settlement_actions from "../settlement/actions.js";
-import type * as settlement_helpers from "../settlement/helpers.js";
-import type * as settlement_quotes_mutation from "../settlement_quotes/mutation.js";
 import type * as settlement_quotes_query from "../settlement_quotes/query.js";
-import type * as settlement_transactions_mutation from "../settlement_transactions/mutation.js";
 import type * as settlement_transactions_query from "../settlement_transactions/query.js";
 import type * as sprint8_migrations from "../sprint8_migrations.js";
 import type * as telemetry_outbox_actions from "../telemetry_outbox/actions.js";
@@ -136,6 +133,8 @@ import type * as transactions_query from "../transactions/query.js";
 import type * as transactions_types from "../transactions/types.js";
 import type * as users_mutation from "../users/mutation.js";
 import type * as users_query from "../users/query.js";
+import type * as wallet_auth_challenges from "../wallet_auth/challenges.js";
+import type * as wallet_auth_references from "../wallet_auth/references.js";
 import type * as wallet_configs_helpers from "../wallet_configs/helpers.js";
 import type * as wallet_configs_mutation from "../wallet_configs/mutation.js";
 import type * as wallet_configs_query from "../wallet_configs/query.js";
@@ -154,6 +153,7 @@ import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server
 
 declare const fullApi: ApiFromModules<{
   "api_keys/helpers": typeof api_keys_helpers;
+  "auth/identity": typeof auth_identity;
   authConfig: typeof authConfig;
   "billing/access": typeof billing_access;
   "billing/admin": typeof billing_admin;
@@ -248,7 +248,6 @@ declare const fullApi: ApiFromModules<{
   "projects/mutation": typeof projects_mutation;
   "projects/query": typeof projects_query;
   "projects/types": typeof projects_types;
-  "provider_connections/mutation": typeof provider_connections_mutation;
   "provider_connections/query": typeof provider_connections_query;
   "provider_events/mutation": typeof provider_events_mutation;
   "provider_events/processing": typeof provider_events_processing;
@@ -261,10 +260,7 @@ declare const fullApi: ApiFromModules<{
   "rate_limits/upstash": typeof rate_limits_upstash;
   seedBenchmarkKey: typeof seedBenchmarkKey;
   "settlement/actions": typeof settlement_actions;
-  "settlement/helpers": typeof settlement_helpers;
-  "settlement_quotes/mutation": typeof settlement_quotes_mutation;
   "settlement_quotes/query": typeof settlement_quotes_query;
-  "settlement_transactions/mutation": typeof settlement_transactions_mutation;
   "settlement_transactions/query": typeof settlement_transactions_query;
   sprint8_migrations: typeof sprint8_migrations;
   "telemetry_outbox/actions": typeof telemetry_outbox_actions;
@@ -281,6 +277,8 @@ declare const fullApi: ApiFromModules<{
   "transactions/types": typeof transactions_types;
   "users/mutation": typeof users_mutation;
   "users/query": typeof users_query;
+  "wallet_auth/challenges": typeof wallet_auth_challenges;
+  "wallet_auth/references": typeof wallet_auth_references;
   "wallet_configs/helpers": typeof wallet_configs_helpers;
   "wallet_configs/mutation": typeof wallet_configs_mutation;
   "wallet_configs/query": typeof wallet_configs_query;

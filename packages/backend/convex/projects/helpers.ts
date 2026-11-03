@@ -1,10 +1,13 @@
 import { v } from "convex/values";
 
-import type { ActionCtx, MutationCtx, QueryCtx } from "../_generated/server";
+import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { ProjectId } from "./types";
 import type { UserIdentity } from "convex/server";
 
+import { requireIdentity } from "../auth/identity";
 import { ensureOrganizationForIdentity } from "../organizations/helpers";
+
+export { getAuthenticatedIdentity, requireIdentity } from "../auth/identity";
 
 const TRANSACTION_HASH_PATTERN = /^[0-9a-f]{64}$/i;
 export const METADATA_HASH_PATTERN = /^[0-9a-f]{64}$/i;
@@ -17,7 +20,7 @@ export const draftProjectArgs = {
   metadataJson: v.string(),
   metadataHash: v.string(),
   ownerAddress: v.string(),
-  defaultPaymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
+  defaultPaymentAnchor: v.optional(v.literal("inhouse")),
 };
 
 export function normalizeAddress(address: string) {
@@ -26,16 +29,6 @@ export function normalizeAddress(address: string) {
 
 export function normalizeProjectName(name: string) {
   return name.trim().toLowerCase();
-}
-
-export async function requireIdentity(ctx: QueryCtx | MutationCtx | ActionCtx) {
-  const identity = await ctx.auth.getUserIdentity();
-
-  if (!identity) {
-    throw new Error("Not authenticated");
-  }
-
-  return identity;
 }
 
 function identityOwnerAddress(identity: UserIdentity) {

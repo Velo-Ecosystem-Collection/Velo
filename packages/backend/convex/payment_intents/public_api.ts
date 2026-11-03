@@ -23,6 +23,8 @@ type AuthorizedScope = {
   apiKeyId: Id<"apiKeys">;
   projectId: Id<"projects">;
   rateLimitBackend: "convex" | "migrating" | "upstash";
+  apiKeyAnchor?: "inhouse" | "pdax";
+  resolvedAnchor: "inhouse" | "pdax";
 };
 
 type AuthorizationResult = AuthorizedScope | { authorized: false; reason?: string };
@@ -47,10 +49,9 @@ type CommonActionResult =
 type CreateActionResult =
   | CommonActionResult
   | {
-      status: "anchor_not_connected";
-      projectId: Id<"projects">;
-      rateLimit: RateLimit;
-      timings: ActionTimings;
+      status: "pdax_unavailable";
+      code: "PDAX_UNAVAILABLE";
+      message: string;
     }
   | {
       status: "success" | "idempotency_replay";
@@ -215,6 +216,18 @@ export const create = action({
     const startedAt = Date.now();
     const { result: scope, authMs } = await authorize(ctx, args.apiKeyHash);
     if (!scope.authorized) return { status: "unauthorized" as const, reason: scope.reason };
+    const legacyPdaxRoute =
+      args.anchor === "pdax" ||
+      (args.anchor === undefined && scope.resolvedAnchor === "pdax") ||
+      (args.anchor === "inhouse" && scope.apiKeyAnchor === "pdax");
+    if (legacyPdaxRoute) {
+      return {
+        status: "pdax_unavailable" as const,
+        code: "PDAX_UNAVAILABLE" as const,
+        message:
+          "PDAX payment routing is no longer available. Switch the project default and API key to in-house before creating payments.",
+      };
+    }
     const fingerprint = await sha256(
       JSON.stringify({
         operation: "create",
@@ -265,7 +278,6 @@ export const create = action({
       | { status: "unauthorized"; reason?: string }
       | { status: "limiter_unavailable" }
       | { status: "idempotency_conflict"; projectId: Id<"projects"> }
-      | { status: "anchor_not_connected"; projectId: Id<"projects"> }
       | {
           status: "success" | "idempotency_replay";
           projectId: Id<"projects">;
@@ -306,14 +318,6 @@ export const create = action({
     }
     if (result.status === "idempotency_conflict") {
       return { status: "idempotency_conflict", rateLimit: admission.rateLimit, timings };
-    }
-    if (result.status === "anchor_not_connected") {
-      return {
-        status: "anchor_not_connected",
-        projectId: result.projectId,
-        rateLimit: admission.rateLimit,
-        timings,
-      };
     }
     return {
       status: result.status,

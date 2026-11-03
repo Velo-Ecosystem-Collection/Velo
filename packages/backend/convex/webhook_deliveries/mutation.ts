@@ -2,6 +2,7 @@ import { v } from "convex/values";
 
 import { internal } from "../_generated/api";
 import { internalMutation, mutation } from "../_generated/server";
+import { requireIdentity } from "../auth/identity";
 import { WEBHOOK_DELIVERY_LEASE_MS } from "./constants";
 
 export const createPending = internalMutation({
@@ -241,8 +242,7 @@ export const scheduleRetry = internalMutation({
 export const replay = mutation({
   args: { deliveryId: v.id("webhookDeliveries") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Authentication required");
+    const identity = await requireIdentity(ctx);
     const delivery = await ctx.db.get(args.deliveryId);
     if (!delivery) throw new Error("Webhook delivery not found");
     const project = await ctx.db.get(delivery.projectId);

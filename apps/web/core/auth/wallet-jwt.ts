@@ -1,13 +1,18 @@
 import crypto from "crypto";
 
-import { assertValidPublicKey, Keypair, WebAuth } from "@repo/stellar";
+import {
+  WALLET_AUTH_APPLICATION_ID,
+  WALLET_AUTH_SERVICE_SUBJECT,
+} from "@repo/backend/convex/auth.constants.ts";
+import { assertValidPublicKey, Keypair, Transaction, WebAuth } from "@repo/stellar";
 
 import { stellarConfig } from "../config/stellar.ts";
 import { WALLET_AUTH_KEY_ID } from "./wallet-auth-constants.ts";
 
-const APPLICATION_ID = "velo-web";
 const TOKEN_TTL_SECONDS = 60 * 60;
+const SERVICE_TOKEN_TTL_SECONDS = 60;
 const CHALLENGE_TTL_SECONDS = 5 * 60;
+export const WALLET_CHALLENGE_TTL_MS = CHALLENGE_TTL_SECONDS * 1000;
 
 function base64Url(input: Buffer | string) {
   return Buffer.from(input)
@@ -92,7 +97,11 @@ export function createWalletChallenge(address: string) {
     homeDomain,
   );
 
-  return { challenge };
+  const transactionHash = new Transaction(challenge, stellarConfig.networkPassphrase)
+    .hash()
+    .toString("hex");
+
+  return { challenge, transactionHash };
 }
 
 export function verifyWalletChallenge(input: { address: string; challenge: string }) {
@@ -121,26 +130,37 @@ export function verifyWalletChallenge(input: { address: string; challenge: strin
     homeDomain,
   );
 
-  return normalizedAddress;
+  const transactionHash = new Transaction(input.challenge, stellarConfig.networkPassphrase)
+    .hash()
+    .toString("hex");
+
+  return { address: normalizedAddress, transactionHash };
 }
 
-export function createWalletJwt(address: string) {
-  const normalizedAddress = assertValidPublicKey(address);
+function createJwt(subject: string, ttlSeconds: number) {
   const now = Math.floor(Date.now() / 1000);
   const header = base64Url(JSON.stringify({ alg: "ES256", kid: WALLET_AUTH_KEY_ID, typ: "JWT" }));
   const payload = base64Url(
     JSON.stringify({
       iss: issuer(),
-      sub: normalizedAddress,
-      aud: APPLICATION_ID,
+      sub: subject,
+      aud: WALLET_AUTH_APPLICATION_ID,
       iat: now,
-      exp: now + TOKEN_TTL_SECONDS,
+      exp: now + ttlSeconds,
     }),
   );
   const signingInput = `${header}.${payload}`;
   const signature = crypto.createSign("SHA256").update(signingInput).end().sign(privateKeyPem());
 
   return `${signingInput}.${base64Url(derToJose(signature))}`;
+}
+
+export function createWalletJwt(address: string) {
+  return createJwt(assertValidPublicKey(address), TOKEN_TTL_SECONDS);
+}
+
+export function createWalletAuthServiceJwt() {
+  return createJwt(WALLET_AUTH_SERVICE_SUBJECT, SERVICE_TOKEN_TTL_SECONDS);
 }
 
 export function walletJwks() {
@@ -160,7 +180,7 @@ export function walletJwks() {
 
 export function walletAuthConfig() {
   return {
-    applicationID: APPLICATION_ID,
+    applicationID: WALLET_AUTH_APPLICATION_ID,
     issuer: issuer(),
     jwks: `${issuer()}/api/auth/wallet/jwks`,
   };

@@ -36,7 +36,8 @@ export type WalletErrorCode =
   | "WALLET_UNSUPPORTED"
   | "WALLET_STALE_SESSION"
   | "WALLET_NETWORK_MISMATCH"
-  | "WALLET_SIGNING_FAILED";
+  | "WALLET_SIGNING_FAILED"
+  | "WALLET_AUTH_FAILED";
 
 export class WalletError extends Error {
   constructor(
@@ -65,7 +66,7 @@ type WalletState = {
   supportedWallets: SupportedWallet[];
   staleAddress: string | null;
   connect: () => Promise<void>;
-  disconnect: () => Promise<void>;
+  disconnect: (reason?: { code: WalletErrorCode; message: string }) => Promise<void>;
   signTransaction: (xdr: string) => Promise<string>;
   signMessage: (message: string) => Promise<string>;
 };
@@ -126,6 +127,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const requestScope = useRef(new WalletRequestScope());
   const connecting = useRef(false);
   const connectedAddress = useRef<string | null>(null);
+  const disconnectReason = useRef<{ code: WalletErrorCode; message: string } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -168,21 +170,26 @@ export function WalletProvider({ children }: { children: ReactNode }) {
               setErrorCode("WALLET_STALE_SESSION");
               setError(`Reconnect a wallet on ${stellarConfig.networkLabel}.`);
               window.localStorage.removeItem(LAST_SESSION_KEY);
+              window.sessionStorage.removeItem("velo:convex-token");
             }
           }),
           StellarWalletsKit.on(KitEventType.WALLET_SELECTED, (event) => {
             setWalletId(event.payload.id ?? null);
           }),
           StellarWalletsKit.on(KitEventType.DISCONNECT, () => {
+            const reason = disconnectReason.current;
+            disconnectReason.current = null;
             requestScope.current.invalidate();
             connecting.current = false;
             connectedAddress.current = null;
             setWalletId(null);
             setAddress(null);
             setStaleAddress(null);
-            setStatus("disconnected");
-            setError(null);
-            setErrorCode(null);
+            setStatus(
+              reason?.code === "WALLET_REJECTED" ? "rejected" : reason ? "error" : "disconnected",
+            );
+            setError(reason?.message ?? null);
+            setErrorCode(reason?.code ?? null);
             window.localStorage.removeItem(LAST_SESSION_KEY);
           }),
         );
@@ -264,6 +271,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     if (connecting.current) return;
     connecting.current = true;
     requestScope.current.invalidate();
+    disconnectReason.current = null;
     const isCurrent = requestScope.current.capture();
     connectedAddress.current = null;
     setAddress(null);
@@ -302,26 +310,32 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
   }, [walletId]);
 
-  const disconnect = useCallback(async () => {
+  const disconnect = useCallback(async (reason?: { code: WalletErrorCode; message: string }) => {
     if (typeof window === "undefined") {
       return;
     }
 
+    disconnectReason.current = reason ?? null;
     requestScope.current.invalidate();
     connecting.current = false;
     connectedAddress.current = null;
     setAddress(null);
     setWalletId(null);
-    setStatus("disconnected");
+    setStatus(reason?.code === "WALLET_REJECTED" ? "rejected" : reason ? "error" : "disconnected");
+    setError(reason?.message ?? null);
+    setErrorCode(reason?.code ?? null);
     try {
       const { StellarWalletsKit } = await import("@creit-tech/stellar-wallets-kit");
       await StellarWalletsKit.disconnect();
     } finally {
       setAddress(null);
       setStaleAddress(null);
-      setStatus("disconnected");
-      setError(null);
-      setErrorCode(null);
+      setStatus(
+        reason?.code === "WALLET_REJECTED" ? "rejected" : reason ? "error" : "disconnected",
+      );
+      setError(reason?.message ?? null);
+      setErrorCode(reason?.code ?? null);
+      disconnectReason.current = null;
       window.localStorage.removeItem(LAST_SESSION_KEY);
     }
   }, []);

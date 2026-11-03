@@ -6,6 +6,7 @@ import { isMaintenanceEnabled } from "../../core/config/maintenance.ts";
 
 const paymentsRoute = fs.readFileSync("app/projects/[projectId]/payments/page.tsx", "utf8");
 const settlementRoute = fs.readFileSync("app/projects/[projectId]/settlement/page.tsx", "utf8");
+const settlementPage = fs.readFileSync("features/projects/project-settlement.tsx", "utf8");
 const maintenanceView = fs.readFileSync("features/projects/project-page-maintenance.tsx", "utf8");
 const sharedButton = fs.readFileSync("../../packages/ui/src/components/ui/button.tsx", "utf8");
 
@@ -57,4 +58,16 @@ test("maintenance view provides labelled page-specific content and a keyboard-fo
   assert.match(maintenanceView, /<Link href="\/dashboard">/);
   assert.match(maintenanceView, /sm:py-12/);
   assert.match(sharedButton, /focus-visible:ring/);
+});
+
+test("Settlement remains a provider-neutral unavailable placeholder", () => {
+  assert.match(settlementPage, /Settlement integration unavailable/);
+  assert.match(
+    settlementPage,
+    /Integration with a new payment provider for the Philippines is currently underway/,
+  );
+  assert.match(settlementPage, /Settlement is not available yet/);
+  assert.match(settlementPage, /In-house Stellar checkout remains available/);
+  assert.match(settlementPage, /Existing settlement history remains stored/);
+  assert.doesNotMatch(settlementPage, /PDAX|quote|withdrawal|provider connection/i);
 });

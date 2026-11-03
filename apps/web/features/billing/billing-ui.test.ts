@@ -14,7 +14,7 @@ test("billing dashboard exposes merchant balances, history, receipts, and disclo
   assert.match(source, /Promotional/);
   assert.match(source, /Ledger/);
   assert.match(source, /Receipts/);
-  assert.match(source, /PDAX and off-ramp charges/);
+  assert.match(source, /Historical PDAX and off-ramp costs/);
   assert.match(source, /merchant-customer refunds do not automatically restore/i);
 });
 

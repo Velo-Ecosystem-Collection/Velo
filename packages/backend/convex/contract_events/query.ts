@@ -3,9 +3,10 @@ import { v } from "convex/values";
 import type { ProjectId } from "../projects/types";
 
 import { internalQuery, query } from "../_generated/server";
+import { requireProjectRole } from "../playground_projects/helpers";
 import { publicPollStatus } from "../poller_state/helpers";
 import { pollerForProject } from "../poller_state/query";
-import { projectOwnerOrNull, requireProjectOwnerByToken } from "../projects/helpers";
+import { requireProjectOwnerByToken } from "../projects/helpers";
 import {
   MAX_SCHEDULED_CONTRACTS,
   MAX_SCHEDULED_PROJECTS,
@@ -19,7 +20,9 @@ export const listByProject = query({
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    if (!(await projectOwnerOrNull(ctx, args.projectId))) {
+    try {
+      await requireProjectRole(ctx, args.projectId, "viewer");
+    } catch {
       return null;
     }
 

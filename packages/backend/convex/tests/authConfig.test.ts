@@ -21,7 +21,7 @@ describe("wallet auth configuration", () => {
       }),
     ).toEqual({
       type: "customJwt",
-      applicationID: "velo-web",
+      applicationID: "velo-web-v2",
       issuer: "http://localhost:3000",
       jwks,
       algorithm: "ES256",

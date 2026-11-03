@@ -39,7 +39,7 @@ test("Payment Intents prompt covers secure SDK setup, lifecycle, and fulfillment
     "durable and idempotent",
     "success redirect",
     "Testnet",
-    "Optional PDAX routing",
+    "retired PDAX route",
     "authentication, persistence, routing, package manager, and deployment conventions",
   ]) {
     assert.ok(paymentIntentsIntegrationPrompt.includes(guidance), `missing guidance: ${guidance}`);

@@ -391,10 +391,12 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
         {canManageProject ? <ProjectMembers projectId={typedProjectId} /> : null}
 
         {project.isOwner ? (
-          <section className="grid gap-4 rounded-lg border border-red-200 bg-red-50/50 p-5">
+          <section className="grid gap-4 rounded-lg border border-red-200 bg-red-50/50 p-5 dark:border-red-900/60 dark:bg-red-950/30">
             <div>
-              <h2 className="text-lg font-semibold tracking-normal text-red-950">Delete project</h2>
-              <p className="mt-1 max-w-3xl text-sm text-zinc-700">
+              <h2 className="text-lg font-semibold tracking-normal text-red-950 dark:text-red-200">
+                Delete project
+              </h2>
+              <p className="mt-1 max-w-3xl text-sm text-zinc-700 dark:text-zinc-300">
                 Deleting retires this project and removes it from normal use. Historical data and
                 on-chain records remain stored, and existing checkouts and admitted Gas requests can
                 finish under their current rules. This project cannot be restored.

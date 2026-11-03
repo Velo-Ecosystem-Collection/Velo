@@ -14,7 +14,6 @@
     "@carts1024/velo-wallets": "workspace:*",
     "@convex-dev/migrations": "^0.3.5",
     "@repo/observability": "workspace:*",
-    "@repo/pdax": "workspace:*",
     "@repo/stellar": "workspace:*",
     "@stellar/stellar-sdk": "14.2.0",
     "@upstash/redis": "^1.38.0",

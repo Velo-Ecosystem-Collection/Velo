@@ -29,6 +29,9 @@ export function FooterSection() {
           <Link href="#velo-pay" className="transition-colors hover:text-zinc-300">
             Velo Pay
           </Link>
+          <Link href="#velo-gas-station" className="transition-colors hover:text-zinc-300">
+            Gas Station
+          </Link>
           <Link href="/docs" className="transition-colors hover:text-zinc-300">
             Docs
           </Link>

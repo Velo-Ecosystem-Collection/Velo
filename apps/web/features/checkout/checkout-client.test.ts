@@ -29,19 +29,22 @@ test("checkout client does not mark Horizon submission success as paid", () => {
   assert.match(checkoutSource, /backend scanner confirms settlement/);
 });
 
-test("checkout client renders recipient details and memo based on anchor", () => {
-  assert.match(
-    checkoutSource,
-    /intent\.anchor\s*===\s*["']pdax["']\s*\?\s*["']PDAX Deposit Address["']\s*:\s*["']Recipient Address["']/,
-  );
-  assert.match(checkoutSource, /intent\.receiverMemo/);
+test("checkout client displays provider-neutral recipient details", () => {
+  assert.match(checkoutSource, /Recipient Address/);
+  assert.doesNotMatch(checkoutSource, /PDAX Deposit Address/);
+  assert.doesNotMatch(checkoutSource, /receiverMemo.*\{intent\.receiverMemo\}/);
   assert.match(checkoutSource, /memo:\s*intent\.receiverMemo/);
 });
 
-test("checkout client blocks payment while PDAX routing is unresolved", () => {
+test("checkout client blocks submissions for legacy PDAX intents", () => {
+  assert.match(checkoutSource, /intent\.anchor === "pdax" && intent\.status !== "pending"/);
+  assert.match(checkoutSource, /cannot accept a new Stellar transaction/);
+  assert.match(checkoutSource, /intent\.anchor !== "pdax"/);
+});
+
+test("checkout client keeps unresolved historical routes unavailable", () => {
   assert.match(checkoutSource, /intent\.status === ["']awaiting_route["']/);
-  assert.match(checkoutSource, /Preparing Payment Route/);
-  assert.match(checkoutSource, /!intent\.receiverAddress \|\| intent\.status !== ["']created["']/);
+  assert.match(checkoutSource, /This payment route is unavailable/);
 });
 
 test("cancelled checkout remains terminal and never retries the same payment intent", () => {

@@ -1,42 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { isCheckoutAnchor, requireApiKeyForAnchor } from "./config.ts";
+import { getCheckoutAnchorError, requireInhouseApiKey } from "./config.ts";
 
-test("checkout anchors accept only the two supported routing targets", () => {
-  assert.equal(isCheckoutAnchor("inhouse"), true);
-  assert.equal(isCheckoutAnchor("pdax"), true);
-  assert.equal(isCheckoutAnchor("default"), false);
-  assert.equal(isCheckoutAnchor(undefined), false);
-});
-
-test("each anchor resolves its dedicated API key", () => {
-  const env = {
-    VELO_INHOUSE_API_KEY: "tk_live_inhouse",
-    VELO_PDAX_API_KEY: "tk_live_pdax",
-  };
-
-  assert.equal(requireApiKeyForAnchor("inhouse", env), "tk_live_inhouse");
-  assert.equal(requireApiKeyForAnchor("pdax", env), "tk_live_pdax");
-});
-
-test("missing API keys report the selected anchor's variable", () => {
-  assert.throws(
-    () =>
-      requireApiKeyForAnchor("pdax", {
-        VELO_INHOUSE_API_KEY: "tk_live_inhouse",
-      }),
-    /VELO_PDAX_API_KEY is required/,
+test("checkout requires and trims the in-house API key", () => {
+  assert.equal(
+    requireInhouseApiKey({ VELO_INHOUSE_API_KEY: " tk_live_inhouse " }),
+    "tk_live_inhouse",
   );
+  assert.throws(() => requireInhouseApiKey({}), /VELO_INHOUSE_API_KEY is required/);
 });
 
-test("in-house and PDAX cannot share one API key", () => {
-  assert.throws(
-    () =>
-      requireApiKeyForAnchor("inhouse", {
-        VELO_INHOUSE_API_KEY: "tk_live_shared",
-        VELO_PDAX_API_KEY: "tk_live_shared",
-      }),
-    /must use different API keys/,
-  );
+test("checkout accepts only omitted or in-house routing", () => {
+  assert.equal(getCheckoutAnchorError(undefined), null);
+  assert.equal(getCheckoutAnchorError("inhouse"), null);
+  assert.deepEqual(getCheckoutAnchorError("pdax"), {
+    status: 409,
+    error: "PDAX payment routing is no longer available. Use an in-house API key and checkout.",
+  });
+  assert.deepEqual(getCheckoutAnchorError("other"), {
+    status: 400,
+    error: "anchor must be 'inhouse'.",
+  });
 });

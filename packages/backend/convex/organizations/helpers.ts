@@ -2,6 +2,8 @@ import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { UserIdentity } from "convex/server";
 
+import { requireIdentity } from "../auth/identity";
+
 function normalizeOwnerAddress(value: string) {
   return value.trim().toUpperCase();
 }
@@ -44,8 +46,7 @@ export async function requireOrganizationOwner(
   ctx: QueryCtx | MutationCtx,
   organizationId: Id<"organizations">,
 ) {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) throw new Error("Not authenticated");
+  const identity = await requireIdentity(ctx);
 
   const organization = await ctx.db.get(organizationId);
   if (!organization || organization.ownerTokenIdentifier !== identity.tokenIdentifier) {

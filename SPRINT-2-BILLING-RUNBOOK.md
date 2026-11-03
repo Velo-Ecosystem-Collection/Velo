@@ -67,5 +67,6 @@ entry, and one settled top-up.
 - Active verification leases defer recovery.
 - Ambiguous or dead-lettered verification creates an exception instead of releasing a possibly
   successful payment.
-- PDAX reservations remain active until final payout success or failure, not merely deposit
-  verification.
+- Historical PDAX reservations are reviewed against their retained settlement records only.
+  No provider reconciliation is available; do not infer payout completion from a deposit or
+  rewrite the reservation without an independently verified historical outcome.

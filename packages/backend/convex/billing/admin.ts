@@ -59,7 +59,6 @@ export const updatePolicy = mutation({
     mainnetCreditEnforcement: v.boolean(),
     billingTopupsEnabled: v.boolean(),
     promoGrantEnabled: v.boolean(),
-    pdaxBillingEnabled: v.boolean(),
     billingKillSwitch: v.boolean(),
     promoCredits: v.optional(v.int64()),
     promoValidityMs: v.optional(v.number()),

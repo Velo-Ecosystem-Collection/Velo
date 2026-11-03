@@ -111,7 +111,7 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
           <WalletIcon />
           <AlertTitle>Connect the owner wallet</AlertTitle>
           <AlertDescription>
-            Private contract state loads only after wallet ownership is verified.
+            Private contract state loads after your wallet membership is verified.
           </AlertDescription>
         </Alert>
         <Button onClick={wallet.connect} className="w-fit">
@@ -137,8 +137,20 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
       <section className="grid gap-4">
         <h1 className="text-3xl font-semibold tracking-normal">Project unavailable</h1>
         <p className="text-sm text-zinc-600">
-          The project does not exist or the connected wallet is not its owner.
+          The project does not exist or the connected wallet does not have access.
         </p>
+        <Button asChild className="w-fit">
+          <Link href="/dashboard">Back to dashboard</Link>
+        </Button>
+      </section>
+    );
+  }
+
+  if (contracts === null) {
+    return (
+      <section className="grid gap-4">
+        <h1 className="text-3xl font-semibold tracking-normal">Project unavailable</h1>
+        <p className="text-sm text-zinc-600">Your project access changed.</p>
         <Button asChild className="w-fit">
           <Link href="/dashboard">Back to dashboard</Link>
         </Button>
@@ -148,7 +160,7 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
 
   const currentProject = project;
   const currentContracts = contracts;
-  const ownerMatches = wallet.address?.toUpperCase() === currentProject.ownerAddress;
+  const ownerMatches = currentProject.isOwner;
   const canManage =
     ownerMatches &&
     currentProject.status === "registered" &&
@@ -317,11 +329,12 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
           </AlertDescription>
         </Alert>
       ) : !ownerMatches ? (
-        <Alert variant="destructive">
+        <Alert>
           <AlertCircleIcon />
-          <AlertTitle>Connected wallet is not the owner</AlertTitle>
+          <AlertTitle>Owner access is required to change Registry state</AlertTitle>
           <AlertDescription>
-            Switch to {shortenAddress(currentProject.ownerAddress)}.
+            You can inspect official contract links. Only the project owner can submit Registry
+            transactions.
           </AlertDescription>
         </Alert>
       ) : currentProject.status !== "registered" ? (
@@ -366,7 +379,7 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
       </form>
 
       <div className="rounded-lg border border-zinc-200 bg-white">
-        <div className="overflow-x-auto w-full">
+        <div className="w-full overflow-x-auto">
           <Table className="table-fixed sm:table-auto">
             <TableHeader>
               <TableRow>
@@ -387,7 +400,7 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
               ) : (
                 currentContracts.map((link) => (
                   <TableRow key={link._id}>
-                    <TableCell className="max-w-40 whitespace-normal break-all font-mono text-xs sm:max-w-[18rem]">
+                    <TableCell className="max-w-40 font-mono text-xs break-all whitespace-normal sm:max-w-[18rem]">
                       <div className="flex items-start gap-1">
                         <span className="min-w-0 flex-1">{link.contractId}</span>
                         <CopyButton value={link.contractId} label="contract ID" />
@@ -396,7 +409,7 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
                     <TableCell>
                       <Badge variant={statusVariant[link.status]}>{statusLabel[link.status]}</Badge>
                     </TableCell>
-                    <TableCell className="hidden md:table-cell font-mono text-xs">
+                    <TableCell className="hidden font-mono text-xs md:table-cell">
                       <div className="flex items-center gap-1">
                         <span>
                           {(link.removeTxHash ?? link.addTxHash)?.slice(0, 16) ?? "Not submitted"}
@@ -410,7 +423,7 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
                         ) : null}
                       </div>
                     </TableCell>
-                    <TableCell className="hidden sm:table-cell text-sm text-zinc-600">
+                    <TableCell className="hidden text-sm text-zinc-600 sm:table-cell">
                       {formatTimestamp(link.lastSyncAt)}
                     </TableCell>
                     <TableCell className="text-right">

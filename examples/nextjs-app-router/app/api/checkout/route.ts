@@ -1,16 +1,11 @@
 import { Velo } from "@carts1024/velo-sdk";
 import { NextResponse } from "next/server";
 
-import {
-  getDemoRedirectUrls,
-  isCheckoutAnchor,
-  requireApiKeyForAnchor,
-  type CheckoutAnchor,
-} from "./config";
+import { getCheckoutAnchorError, getDemoRedirectUrls, requireInhouseApiKey } from "./config";
 
-function createVeloClient(anchor: CheckoutAnchor) {
+function createVeloClient() {
   return new Velo({
-    apiKey: requireApiKeyForAnchor(anchor),
+    apiKey: requireInhouseApiKey(),
     environment: (process.env.VELO_ENV as "testnet" | "production" | "development") || "testnet",
     baseUrl: process.env.VELO_BASE_URL,
   });
@@ -18,22 +13,29 @@ function createVeloClient(anchor: CheckoutAnchor) {
 
 export async function POST(request: Request) {
   try {
-    const { asset = "USDC", anchor } = await request.json().catch(() => ({}));
-    if (!isCheckoutAnchor(anchor)) {
-      return NextResponse.json(
-        { error: 'The checkout anchor must be either "inhouse" or "pdax".' },
-        { status: 400 },
-      );
+    const body: unknown = await request.json().catch(() => null);
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return NextResponse.json({ error: "Request body must be an object." }, { status: 400 });
     }
+    const input = body as Record<string, unknown>;
+    const anchorError = getCheckoutAnchorError(input.anchor);
+    if (anchorError) {
+      return NextResponse.json({ error: anchorError.error }, { status: anchorError.status });
+    }
+    const assetValue = input.asset;
+    if (assetValue !== undefined && typeof assetValue !== "string") {
+      return NextResponse.json({ error: "asset must be a string." }, { status: 400 });
+    }
+    const asset = typeof assetValue === "string" && assetValue ? assetValue : "USDC";
 
-    const velo = createVeloClient(anchor);
+    const velo = createVeloClient();
     const redirectUrls = getDemoRedirectUrls(request.url);
 
     const session = await velo.checkout.sessions.create(
       {
         amount: "10.00",
         asset,
-        anchor,
+        anchor: "inhouse",
         description: `Order #1001 (${asset === "native" ? "XLM" : asset})`,
         ...redirectUrls,
       },

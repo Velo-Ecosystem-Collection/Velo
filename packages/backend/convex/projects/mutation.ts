@@ -244,7 +244,7 @@ export const updateSettings = mutation({
     id: v.id("projects"),
     name: v.string(),
     description: v.string(),
-    defaultPaymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
+    defaultPaymentAnchor: v.optional(v.literal("inhouse")),
   },
   handler: async (ctx, args) => {
     const project = await requireProjectOwner(ctx, args.id);
@@ -365,7 +365,7 @@ export const generateApiKey = mutation({
   args: {
     id: v.id("projects"),
     label: v.string(),
-    paymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
+    paymentAnchor: v.optional(v.literal("inhouse")),
     purpose: v.optional(v.union(v.literal("general"), v.literal("gas"))),
   },
   handler: async (ctx, args) => {
@@ -393,9 +393,7 @@ export const generateApiKey = mutation({
       keyHash: apiKeyHash,
       prefix: `${keyPrefix}${token.slice(0, 4)}...${token.slice(-4)}`,
       label: args.label.trim() || "Default Key",
-      ...(purpose === "general" && args.paymentAnchor !== undefined
-        ? { paymentAnchor: args.paymentAnchor }
-        : {}),
+      ...(purpose === "general" ? { paymentAnchor: args.paymentAnchor ?? "inhouse" } : {}),
       purpose,
       createdAt: now,
       requestCount: 0,
@@ -414,7 +412,7 @@ export const generateApiKeyInternal = internalMutation({
   args: {
     id: v.id("projects"),
     label: v.string(),
-    paymentAnchor: v.optional(v.union(v.literal("inhouse"), v.literal("pdax"))),
+    paymentAnchor: v.optional(v.literal("inhouse")),
     purpose: v.optional(v.union(v.literal("general"), v.literal("gas"))),
   },
   handler: async (ctx, args) => {
@@ -444,9 +442,7 @@ export const generateApiKeyInternal = internalMutation({
       keyHash: apiKeyHash,
       prefix: `${keyPrefix}${token.slice(0, 4)}...${token.slice(-4)}`,
       label: args.label.trim() || "Default Key",
-      ...(purpose === "general" && args.paymentAnchor !== undefined
-        ? { paymentAnchor: args.paymentAnchor }
-        : {}),
+      ...(purpose === "general" ? { paymentAnchor: args.paymentAnchor ?? "inhouse" } : {}),
       purpose,
       createdAt: now,
       requestCount: 0,

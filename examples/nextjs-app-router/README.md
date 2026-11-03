@@ -19,13 +19,9 @@ identity-only recovery semantics, see the
 cp .env.example .env.local
 ```
 
-Create two keys in the local dashboard at http://localhost:3000:
+Create an in-house API key in the local dashboard at http://localhost:3000 and assign it to `VELO_INHOUSE_API_KEY`. Keep it server-side; it must start with `tk_live_`.
 
-- Scope one key to **In-house** and assign it to `VELO_INHOUSE_API_KEY`.
-- Scope the other key to **PDAX** and assign it to `VELO_PDAX_API_KEY`.
-- Do not reuse the same key for both variables. Both values stay server-side and must start with `tk_live_`.
-
-Set `VELO_ENV=development` when using the local Velo API. The checkout route selects the matching SDK client from the requested anchor, so an in-house request is never authenticated with the PDAX-scoped key (or vice versa).
+Set `VELO_ENV=development` when using the local Velo API. Checkout uses Velo's in-house Stellar route. Requests explicitly asking for the retired PDAX route receive an error.
 
 The Gas route uses separate server-only configuration, independent of Checkout's `VELO_BASE_URL`. Generate a **Gas Station · Testnet** key from the project's API Keys page and set it as `VELO_GAS_API_KEY`; the example requires the `tg_test_[a-f0-9]{32}` key shape, which is scoped to Gas endpoints. For Testnet, set `VELO_GAS_ENV=testnet` and `VELO_GAS_BASE_URL=https://www.velo-build.dev`. For local development, set `VELO_GAS_ENV=development` and use a loopback `VELO_GAS_BASE_URL` such as `http://localhost:3000`. The example rejects other network origins. Choose a separate `VELO_GAS_DEMO_TOKEN` for the terminal caller. The local bearer guard demonstrates caller authorization only; production applications must bind this route to their own authenticated user/session and project authorization.
 

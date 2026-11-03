@@ -18,6 +18,18 @@ export const WEBHOOK_EVENT_TYPES = [
   "provider.pdax.event.received",
 ] as const;
 
+export const ACTIVE_WEBHOOK_EVENT_TYPES = [
+  "contract.event",
+  "transaction.succeeded",
+  "transaction.failed",
+  "project.registered",
+  "project.updated",
+  "payment.created",
+  "payment.succeeded",
+  "payment.failed",
+  "payment_access.activated",
+] as const;
+
 export type WebhookEventType = (typeof WEBHOOK_EVENT_TYPES)[number];
 export type WebhookEndpoint = Doc<"webhookEndpoints">;
 export type WebhookEndpointId = Id<"webhookEndpoints">;

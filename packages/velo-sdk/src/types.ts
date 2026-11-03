@@ -47,7 +47,7 @@ export type CreateCheckoutSessionParams = {
   description?: string;
   successUrl?: string;
   cancelUrl?: string;
-  anchor?: "inhouse" | "pdax";
+  anchor?: "inhouse";
 };
 
 export type RequestOptions = {

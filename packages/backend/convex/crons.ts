@@ -6,13 +6,6 @@ const crons = cronJobs();
 const drainPaymentReconciliation = makeFunctionReference<"action">(
   "payment_reconciliation_jobs/actions:drain",
 );
-const reconcileProviderOperations = makeFunctionReference<"action">(
-  "provider_operations/actions:reconcileDue",
-);
-const drainProviderEvents = makeFunctionReference<"action">("provider_events/processing:drain");
-const recoverPdaxRouteJobs = makeFunctionReference<"mutation">(
-  "payment_intents/mutations:recoverPdaxRouteJobs",
-);
 const exportTelemetry = makeFunctionReference<"action">("telemetry_outbox/actions:exportBatch");
 const expireTelemetry = makeFunctionReference<"mutation">("telemetry_outbox/mutations:expire");
 const captureTelemetryGauges = makeFunctionReference<"mutation">("telemetry_outbox/gauges:capture");
@@ -74,31 +67,9 @@ crons.interval("drain payment reconciliation jobs", { minutes: 1 }, drainPayment
 });
 
 crons.interval(
-  "reconcile durable provider operations",
-  { minutes: 1 },
-  reconcileProviderOperations,
-  { limit: SCHEDULED_WORKER_PAGE_SIZE },
-);
-
-crons.interval("recover and drain provider events", { minutes: 1 }, drainProviderEvents, {
-  limit: SCHEDULED_WORKER_PAGE_SIZE,
-});
-
-crons.interval("recover PDAX payment routes", { minutes: 1 }, recoverPdaxRouteJobs, {
-  limit: SCHEDULED_WORKER_PAGE_SIZE,
-});
-
-crons.interval(
   "poll pay access events",
   { minutes: 1 },
   internal.payAccessSync.syncPayAccessEvents,
-  {},
-);
-
-crons.interval(
-  "poll pending payout status from PDAX",
-  { minutes: 2 },
-  internal.settlement.actions.pollPendingPayouts,
   {},
 );
 

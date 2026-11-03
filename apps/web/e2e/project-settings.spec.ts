@@ -70,6 +70,87 @@ test("Project Settings navigation and duplicate-name project slugs are visible",
   await expect(page.getByText("/owner-gas-project", { exact: true })).toBeVisible();
 });
 
+test("owners can add, update, and remove project members with accessible mutation errors", async ({
+  page,
+}) => {
+  await openSettings(page);
+  const ownerAddress = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+  const memberAddress = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHG";
+  const members = page.getByRole("region", { name: "Project members" });
+
+  await expect(members.getByText(ownerAddress, { exact: true })).toBeVisible();
+  await expect(
+    members.getByRole("listitem").first().getByText("Owner", { exact: true }).first(),
+  ).toBeVisible();
+  await expect(members.getByRole("button", { name: `Remove ${ownerAddress}` })).toHaveCount(0);
+
+  await members.getByLabel("Stellar wallet address").fill(memberAddress);
+  await members.getByRole("button", { name: "Add or update member" }).click();
+  await page.waitForFunction(() =>
+    window.__veloGasE2E
+      ?.getCalls()
+      .some(
+        (call) =>
+          call.functionName === "playground_projects/mutations:upsertMember" &&
+          call.status === "pending",
+      ),
+  );
+  await page.evaluate(() =>
+    window.__veloGasE2E?.rejectNext(
+      "playground_projects/mutations:upsertMember",
+      "Member update unavailable",
+    ),
+  );
+  await expect(members.getByRole("alert")).toContainText("Member update unavailable");
+
+  await members.getByLabel("Stellar wallet address").fill(memberAddress);
+  await members.getByRole("button", { name: "Add or update member" }).click();
+  await page.waitForFunction(() =>
+    window.__veloGasE2E
+      ?.getCalls()
+      .some(
+        (call) =>
+          call.functionName === "playground_projects/mutations:upsertMember" &&
+          call.status === "pending",
+      ),
+  );
+  await page.evaluate(() =>
+    window.__veloGasE2E?.resolveNext("playground_projects/mutations:upsertMember"),
+  );
+
+  const member = members.getByText(memberAddress, { exact: true });
+  await expect(member).toBeVisible();
+  await members.getByRole("combobox", { name: `Role for ${memberAddress}` }).selectOption("viewer");
+  await page.waitForFunction(
+    () =>
+      window.__veloGasE2E
+        ?.getCalls()
+        .filter((call) => call.functionName === "playground_projects/mutations:upsertMember")
+        .length === 3,
+  );
+  await page.evaluate(() =>
+    window.__veloGasE2E?.resolveNext("playground_projects/mutations:upsertMember"),
+  );
+  await expect(members.getByRole("combobox", { name: `Role for ${memberAddress}` })).toHaveValue(
+    "viewer",
+  );
+
+  await members.getByRole("button", { name: `Remove ${memberAddress}` }).click();
+  await page.waitForFunction(() =>
+    window.__veloGasE2E
+      ?.getCalls()
+      .some(
+        (call) =>
+          call.functionName === "playground_projects/mutations:removeMember" &&
+          call.status === "pending",
+      ),
+  );
+  await page.evaluate(() =>
+    window.__veloGasE2E?.resolveNext("playground_projects/mutations:removeMember"),
+  );
+  await expect(members.getByText(memberAddress, { exact: true })).toHaveCount(0);
+});
+
 test("retirement dialog traps focus, disables conflicting changes, and keeps errors accessible", async ({
   page,
 }) => {
@@ -97,7 +178,8 @@ test("retirement dialog traps focus, disables conflicting changes, and keeps err
 
   await expect(dialog.getByRole("button", { name: "Deleting project..." })).toBeDisabled();
   await expect(page.locator("#settings-project-name")).toBeDisabled();
-  await expect(page.locator("form button[type=submit]")).toBeDisabled();
+  const settingsForm = page.locator("form").filter({ has: page.locator("#settings-project-name") });
+  await expect(settingsForm.locator('button[type="submit"]')).toBeDisabled();
   await page.evaluate(() =>
     window.__veloGasE2E?.rejectNext("projects/mutation:retire", "Project changed while deleting"),
   );

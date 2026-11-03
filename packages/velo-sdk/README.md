@@ -352,39 +352,27 @@ and require an authorized project API key on a trusted server. Use a
 (`tg_test_...`) for Gas methods; a newly generated general API key is not
 authorized for Gas endpoints.
 
-### Dual-Anchor Routing (V2)
+### Payment routing
 
-Velo SDK (V2) supports routing payments through different anchors: `inhouse` (default) or `pdax`.
+New payment intents use Velo's in-house Stellar route. The optional create parameter accepts only
+`anchor: "inhouse"`. Requests that explicitly ask for PDAX, or that inherit a legacy PDAX project
+default or API-key scope, fail with `PDAX_UNAVAILABLE`; an owner must switch both settings to
+in-house. Velo does not silently reroute these requests.
 
-To request a specific anchor explicitly during checkout session creation, pass the optional `anchor` parameter:
-
-```ts
-const session = await velo.checkout.sessions.create({
-  amount: "10.00",
-  asset: "USDC",
-  anchor: "pdax", // or "inhouse"
-  description: "Dual-anchor payment",
-  successUrl: "https://yourdomain.com/success",
-  cancelUrl: "https://yourdomain.com/cancel",
-});
-```
-
-API keys can be scoped to specific anchors. If an explicit `anchor` conflicts with the API key's scoped anchor, a `VeloValidationError` is thrown.
-
-Retrieving or creating a payment intent in V2 returns the following anchor-aware response properties:
+Retrieval responses retain the historical anchor fields so existing records remain readable:
 
 ```ts
 const intent = await velo.paymentIntents.retrieve("pi_12345");
 
 console.log(intent.correlationId); // Durable Velo journey ID, when available
-console.log(intent.anchor); // 'inhouse' | 'pdax'
-console.log(intent.receiverAddress); // Destination wallet address (e.g. project owner or PDAX deposit address)
-console.log(intent.receiverMemo); // String memo/tag if required (e.g. PDAX tag, else null)
-console.log(intent.anchorDepositCurrency); // Mapped deposit currency (e.g. 'USDCXLM', else null)
+console.log(intent.anchor); // 'inhouse' | 'pdax' for historical records
+console.log(intent.receiverAddress); // Destination wallet address
+console.log(intent.receiverMemo); // Historical provider memo, otherwise null
+console.log(intent.anchorDepositCurrency); // Historical provider currency, otherwise null
 console.log(intent.payerAddress); // Wallet address of the payer, populated after checkout flow
 ```
 
-For PDAX, creation can return `status: "awaiting_route"` with `receiverAddress: null`. The hosted `checkoutUrl` waits automatically. Integrations that need destination fields directly should retrieve the intent until it becomes `created`; they must not construct a payment while it is `awaiting_route`.
+Historical PDAX intents remain readable. They cannot accept new checkout submissions; transactions already submitted remain subject to the existing Stellar ledger verification.
 
 ---
 
@@ -400,9 +388,9 @@ the unsupported-version error, preventing unauthenticated payloads from becoming
 The SDK test suite covers legacy normalization and unsupported-version handling after signature
 verification.
 
-The typed union includes payment, project, contract, transaction, settlement quote/trade/withdrawal,
-and `provider.pdax.event.received` events. The SDK test suite covers settlement and provider event
-shape validation.
+The typed union retains settlement quote/trade/withdrawal and `provider.pdax.event.received` shapes
+so existing consumers can verify and decode historical deliveries. Velo no longer initiates
+provider settlement or emits new provider settlement events.
 
 Delivery IDs represent durable, fenced deliveries. Consumers must still deduplicate by
 `x-velo-delivery`: Velo provides **exactly-once observable transitions**, not exactly-once

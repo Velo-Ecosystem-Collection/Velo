@@ -56,11 +56,11 @@ export function createPaymentIntentFingerprint(args: {
 /** Default payment intent expiry: 30 minutes in milliseconds. */
 export const PAYMENT_INTENT_EXPIRY_MS = 30 * 60 * 1000;
 
-export function mapAssetToPdax(asset: string): string {
-  if (asset === "native" || asset === "XLM") return "XLM";
-  if (asset === "USDC" || asset.startsWith("USDC:")) return "USDCXLM";
-  return asset;
-}
+export const PDAX_UNAVAILABLE = {
+  code: "PDAX_UNAVAILABLE",
+  message:
+    "PDAX payment routing is no longer available. Switch the project default and API key to in-house before creating payments.",
+} as const;
 
 /**
  * Valid status transitions for payment intents.
@@ -96,6 +96,23 @@ export function resolvePaymentAnchor(args: {
 
   if (args.projectDefaultAnchor !== undefined) {
     return args.projectDefaultAnchor;
+  }
+
+  return "inhouse";
+}
+
+/** Resolve an active route and fail closed when a legacy PDAX default is present. */
+export function resolveActivePaymentAnchor(args: {
+  requestedAnchor?: "inhouse" | "pdax";
+  apiKeyAnchor?: "inhouse" | "pdax";
+  projectDefaultAnchor?: "inhouse" | "pdax";
+}): "inhouse" {
+  if (args.requestedAnchor === "pdax") {
+    throw new ConvexError(PDAX_UNAVAILABLE);
+  }
+
+  if (resolvePaymentAnchor(args) === "pdax") {
+    throw new ConvexError(PDAX_UNAVAILABLE);
   }
 
   return "inhouse";

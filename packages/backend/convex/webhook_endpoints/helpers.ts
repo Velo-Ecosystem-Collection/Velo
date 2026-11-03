@@ -2,7 +2,7 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 import type { ProjectId } from "../projects/types";
 
 import { requireProjectRole, requireProjectRoleByToken } from "../playground_projects/helpers";
-import { WEBHOOK_EVENT_TYPES, type WebhookEventType } from "./types";
+import { ACTIVE_WEBHOOK_EVENT_TYPES, WEBHOOK_EVENT_TYPES, type WebhookEventType } from "./types";
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
@@ -10,7 +10,10 @@ export function normalizeOwnerAddress(address: string) {
   return address.trim().toUpperCase();
 }
 
-export function validateEventTypes(eventTypes: string[]): WebhookEventType[] {
+export function validateEventTypes(
+  eventTypes: string[],
+  retainedEventTypes: string[] = [],
+): WebhookEventType[] {
   const unique = Array.from(new Set(eventTypes));
 
   if (unique.length === 0) {
@@ -18,7 +21,13 @@ export function validateEventTypes(eventTypes: string[]): WebhookEventType[] {
   }
 
   for (const eventType of unique) {
-    if (!WEBHOOK_EVENT_TYPES.includes(eventType as WebhookEventType)) {
+    if (
+      !WEBHOOK_EVENT_TYPES.includes(eventType as WebhookEventType) ||
+      (!ACTIVE_WEBHOOK_EVENT_TYPES.includes(
+        eventType as (typeof ACTIVE_WEBHOOK_EVENT_TYPES)[number],
+      ) &&
+        !retainedEventTypes.includes(eventType))
+    ) {
       throw new Error(`Unsupported webhook event type: ${eventType}`);
     }
   }

@@ -2,10 +2,21 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  parseCreatePaymentIntentBody,
   parseListPaymentIntentQuery,
   publicPaymentIntentFromDoc,
   veloErrorResponse,
 } from "../../core/api/payment-intents.ts";
+
+test("explicit legacy PDAX routing passes parsing for the backend to reject clearly", async () => {
+  const parsed = await parseCreatePaymentIntentBody({
+    json: async () => ({ amount: "10.00", anchor: "pdax" }),
+  });
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) throw new Error("expected legacy route to reach the explicit rejection");
+  assert.equal(parsed.body.anchor, "pdax");
+});
 
 test("public payment intent mapper returns contract shape", () => {
   const intent = publicPaymentIntentFromDoc(

@@ -185,6 +185,10 @@ export function CheckoutClient({ paymentIntentId }: CheckoutClientProps) {
 
   const handlePay = useCallback(async () => {
     if (!intent || !wallet.address) return;
+    if (intent.anchor === "pdax") {
+      setError("This legacy PDAX checkout is unavailable. Request a new in-house checkout.");
+      return;
+    }
 
     setError(null);
     setStep("submitting");
@@ -362,18 +366,33 @@ export function CheckoutClient({ paymentIntentId }: CheckoutClientProps) {
   }
 
   // ─── Pending / Processing ───
+  if (intent.anchor === "pdax" && intent.status !== "pending") {
+    return (
+      <CheckoutShell>
+        <Card className="w-full max-w-md border border-white/10 bg-card/85 shadow-2xl backdrop-blur-lg">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-amber-500/20 bg-amber-500/10">
+              <AlertCircleIcon className="h-6 w-6 text-amber-500" />
+            </div>
+            <CardTitle className="text-xl font-bold">Checkout Unavailable</CardTitle>
+            <CardDescription>
+              This legacy PDAX checkout cannot accept a new Stellar transaction. Request a new
+              in-house checkout from the merchant.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </CheckoutShell>
+    );
+  }
+
   if (intent.status === "awaiting_route") {
     return (
       <CheckoutShell>
         <Card className="w-full max-w-md border border-white/10 bg-card/85 shadow-2xl backdrop-blur-lg">
           <CardHeader className="text-center">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-primary/20 bg-primary/10">
-              <Spinner className="h-6 w-6 text-primary" />
-            </div>
-            <CardTitle className="text-xl font-bold">Preparing Payment Route</CardTitle>
+            <CardTitle className="text-xl font-bold">Checkout Unavailable</CardTitle>
             <CardDescription>
-              Velo is securely resolving the PDAX deposit destination. This page updates
-              automatically when payment is ready.
+              This payment route is unavailable. Request a new in-house checkout from the merchant.
             </CardDescription>
           </CardHeader>
         </Card>
@@ -447,6 +466,7 @@ export function CheckoutClient({ paymentIntentId }: CheckoutClientProps) {
     wallet.status === "connected" &&
     !isSubmitting &&
     !timer?.expired &&
+    intent.anchor !== "pdax" &&
     Boolean(intent.receiverAddress);
   const assetLabel = formatAsset(intent.asset);
 
@@ -509,26 +529,13 @@ export function CheckoutClient({ paymentIntentId }: CheckoutClientProps) {
               <span className="font-semibold text-foreground">{assetLabel}</span>
             </div>
             <div className="flex items-center justify-between text-xs sm:text-sm">
-              <span className="font-medium text-muted-foreground">
-                {intent.anchor === "pdax" ? "PDAX Deposit Address" : "Recipient Address"}
-              </span>
+              <span className="font-medium text-muted-foreground">Recipient Address</span>
               <span className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-xs text-foreground">
                 {intent.receiverAddress
                   ? `${intent.receiverAddress.slice(0, 6)}...${intent.receiverAddress.slice(-6)}`
                   : "Route unavailable"}
               </span>
             </div>
-            {intent.anchor === "pdax" && intent.receiverMemo && (
-              <div
-                className="flex items-center justify-between text-xs sm:text-sm"
-                id="checkout-receiver-memo"
-              >
-                <span className="font-medium text-muted-foreground">Memo / Destination Tag</span>
-                <span className="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-xs text-foreground">
-                  {intent.receiverMemo}
-                </span>
-              </div>
-            )}
             {wallet.address && (
               <div className="flex items-center justify-between text-xs sm:text-sm">
                 <span className="font-medium text-muted-foreground">Your Wallet</span>

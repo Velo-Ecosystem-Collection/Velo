@@ -61,7 +61,6 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
   const [isRevokingKey, setIsRevokingKey] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
-  const [selectedAnchor, setSelectedAnchor] = useState<"inhouse" | "pdax">("inhouse");
   const [selectedPurpose, setSelectedPurpose] = useState<"general" | "gas">("general");
   const [newKeyPurpose, setNewKeyPurpose] = useState<"general" | "gas" | null>(null);
 
@@ -82,7 +81,7 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
         id: typedProjectId,
         label,
         purpose: selectedPurpose,
-        ...(selectedPurpose === "general" ? { paymentAnchor: selectedAnchor } : {}),
+        ...(selectedPurpose === "general" ? { paymentAnchor: "inhouse" as const } : {}),
       });
       setNewRawKey(result.rawKey);
       setNewKeyPurpose(selectedPurpose);
@@ -165,7 +164,7 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
     );
   }
 
-  const ownerMatches = wallet.address.toUpperCase() === project.ownerAddress;
+  const ownerMatches = project.isOwner;
 
   if (!ownerMatches) {
     return (
@@ -223,7 +222,6 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
             <Button
               onClick={() => {
                 setApiKeyLabel("");
-                setSelectedAnchor("inhouse");
                 setSelectedPurpose("general");
                 setLocalError(null);
                 setIsGenerateDialogOpen(true);
@@ -326,7 +324,7 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
                         <span className="text-sm text-muted-foreground">—</span>
                       ) : (
                         <Badge variant={key.paymentAnchor === "pdax" ? "warning" : "info"}>
-                          {key.paymentAnchor === "pdax" ? "PDAX" : "In-house"}
+                          {key.paymentAnchor === "pdax" ? "Legacy PDAX · disabled" : "In-house"}
                         </Badge>
                       )}
                     </TableCell>
@@ -380,6 +378,15 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
                   <AlertDescription>{localError}</AlertDescription>
                 </Alert>
               ) : null}
+              {selectedPurpose === "general" ? (
+                <Alert>
+                  <AlertTitle>Payment route</AlertTitle>
+                  <AlertDescription>
+                    New general API keys use in-house Stellar checkout. Existing PDAX-scoped keys
+                    remain visible for history but cannot create payments.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
               <div className="grid gap-2">
                 <Label htmlFor="api-key-name" className="text-foreground">
                   Key label
@@ -415,28 +422,6 @@ export function ProjectApiKeys({ projectId }: { projectId: string }) {
                     : "Use this key with checkout and general project API endpoints. It cannot access Gas Station endpoints."}
                 </p>
               </div>
-              {selectedPurpose === "general" ? (
-                <div className="grid gap-2">
-                  <Label htmlFor="api-key-anchor" className="text-foreground">
-                    Payment routing
-                  </Label>
-                  <select
-                    id="api-key-anchor"
-                    value={selectedAnchor}
-                    onChange={(e) => setSelectedAnchor(e.target.value as "inhouse" | "pdax")}
-                    disabled={isGeneratingKey}
-                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="inhouse">Velo's own process (In-house)</option>
-                    <option value="pdax">PDAX Anchor</option>
-                  </select>
-                  <p className="mt-0.5 text-[11px] text-muted-foreground">
-                    {selectedAnchor === "inhouse"
-                      ? "Standard payment flow routing directly to project owner address."
-                      : "Routed via PDAX. Requires connected PDAX provider. Includes memo tags."}
-                  </p>
-                </div>
-              ) : null}
             </div>
             <DialogFooter className="gap-2 sm:gap-0">
               <Button

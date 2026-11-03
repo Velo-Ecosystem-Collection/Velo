@@ -6,7 +6,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [asset, setAsset] = useState<"USDC" | "native">("USDC");
-  const [anchor, setAnchor] = useState<"inhouse" | "pdax">("inhouse");
 
   const handleCheckout = async () => {
     setLoading(true);
@@ -17,7 +16,6 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           asset,
-          anchor,
         }),
       });
       const data = await res.json();
@@ -103,62 +101,6 @@ export default function Home() {
             XLM
           </button>
         </div>
-      </div>
-
-      <div style={{ marginBottom: "24px" }}>
-        <span
-          style={{
-            display: "block",
-            fontSize: "12px",
-            fontWeight: "600",
-            color: "#a1a1aa",
-            marginBottom: "8px",
-            textTransform: "uppercase",
-            letterSpacing: "0.05em",
-          }}
-        >
-          Routing Anchor (V2)
-        </span>
-        <div style={{ display: "flex", gap: "12px" }}>
-          <button
-            onClick={() => setAnchor("inhouse")}
-            style={{
-              flex: 1,
-              padding: "12px",
-              borderRadius: "8px",
-              background: anchor === "inhouse" ? "#27272a" : "#09090b",
-              color: anchor === "inhouse" ? "#ffffff" : "#a1a1aa",
-              border: anchor === "inhouse" ? "1px solid #3f3f46" : "1px solid #27272a",
-              fontWeight: "600",
-              cursor: "pointer",
-              transition: "all 0.2s",
-            }}
-          >
-            In-House
-          </button>
-          <button
-            onClick={() => setAnchor("pdax")}
-            style={{
-              flex: 1,
-              padding: "12px",
-              borderRadius: "8px",
-              background: anchor === "pdax" ? "#27272a" : "#09090b",
-              color: anchor === "pdax" ? "#ffffff" : "#a1a1aa",
-              border: anchor === "pdax" ? "1px solid #3f3f46" : "1px solid #27272a",
-              fontWeight: "600",
-              cursor: "pointer",
-              transition: "all 0.2s",
-            }}
-          >
-            PDAX
-          </button>
-        </div>
-        <p style={{ color: "#71717a", fontSize: "11px", marginTop: "8px", lineHeight: "1.4" }}>
-          {anchor === "inhouse" &&
-            "Bypasses PDAX lookup and routes payment directly to the merchant's owner address."}
-          {anchor === "pdax" &&
-            "Performs a secure PDAX deposit lookup to generate a temporary deposit address & memo."}
-        </p>
       </div>
 
       <div

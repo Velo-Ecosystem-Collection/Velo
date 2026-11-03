@@ -14,7 +14,7 @@ const consumeRef = makeFunctionReference<"mutation">("billing/mutations:consume"
 const releaseRef = makeFunctionReference<"mutation">("billing/mutations:release");
 
 type ShadowPhase = "would_reserve" | "would_consume" | "would_release";
-type ShadowRoute = "stellar" | "pdax";
+type ShadowRoute = "stellar";
 
 export async function scheduleShadowEvaluation(
   ctx: MutationCtx,
@@ -61,72 +61,15 @@ async function insertDecision(
     correlationId?: string;
     transactionHash?: string;
     settlementTransactionId?: Id<"settlementTransactions">;
-    costs?: {
-      quotedCost?: string;
-      actualCost?: string;
-      spread?: string;
-      failureCost?: string;
-      subsidy?: string;
-      costCurrency?: string;
-      rawCostInputsJson?: string;
-    };
   },
 ) {
   const existing = await existingDecision(ctx, args.idempotencyKey);
   if (existing) return existing._id;
-  const { costs, ...base } = args;
   return await ctx.db.insert("shadowBillingDecisions", {
-    ...base,
-    ...(costs ?? {}),
+    ...args,
     calculationVersion: BILLING_CALCULATION_VERSION,
     createdAt: Date.now(),
   });
-}
-
-async function pdaxCosts(ctx: MutationCtx, settlementTransactionId?: Id<"settlementTransactions">) {
-  if (!settlementTransactionId) return undefined;
-  const settlement = await ctx.db.get(settlementTransactionId);
-  if (!settlement) return undefined;
-  const quote = settlement.quoteId
-    ? await ctx.db
-        .query("settlementQuotes")
-        .withIndex("by_quote_id", (q) => q.eq("quoteId", settlement.quoteId!))
-        .unique()
-    : null;
-  const quotedCost = quote?.totalAmount;
-  const actualCost = settlement.withdrawalDetails?.fee;
-  const spread =
-    quote && settlement.tradeDetails
-      ? (settlement.tradeDetails.price - quote.price) * settlement.tradeDetails.quantity
-      : undefined;
-  const failureCost =
-    settlement.status === "PAYOUT_FAILED" ? (settlement.withdrawalDetails?.fee ?? 0) : 0;
-  return {
-    ...(quotedCost !== undefined ? { quotedCost: String(quotedCost) } : {}),
-    ...(actualCost !== undefined ? { actualCost: String(actualCost) } : {}),
-    ...(spread !== undefined ? { spread: String(spread) } : {}),
-    failureCost: String(failureCost),
-    subsidy: String(actualCost ?? 0),
-    costCurrency: quote?.baseCurrency ?? "PHP",
-    rawCostInputsJson: JSON.stringify({
-      quote: quote
-        ? {
-            quoteId: quote.quoteId,
-            price: quote.price,
-            quantity: quote.quantity,
-            totalAmount: quote.totalAmount,
-          }
-        : null,
-      trade: settlement.tradeDetails ?? null,
-      withdrawal: settlement.withdrawalDetails
-        ? {
-            amount: settlement.withdrawalDetails.amount,
-            fee: settlement.withdrawalDetails.fee,
-            status: settlement.withdrawalDetails.status,
-          }
-        : null,
-    }),
-  };
 }
 
 export const evaluate = internalMutation({
@@ -145,6 +88,9 @@ export const evaluate = internalMutation({
   },
   handler: async (ctx, args) => {
     if (await existingDecision(ctx, args.idempotencyKey)) return { applied: false };
+    if (args.route === "pdax") {
+      return { applied: false, outcome: "disabled" as const };
+    }
     const [project, intent, policy] = await Promise.all([
       ctx.db.get(args.projectId),
       ctx.db.get(args.paymentIntentId),
@@ -157,8 +103,6 @@ export const evaluate = internalMutation({
       throw new Error("Shadow billing payment context not found");
     }
     const network = intent.network ?? "testnet";
-    const costs =
-      args.route === "pdax" ? await pdaxCosts(ctx, args.settlementTransactionId) : undefined;
     const common = {
       organizationId: project.organizationId,
       projectId: project._id,
@@ -171,7 +115,6 @@ export const evaluate = internalMutation({
       correlationId: intent.correlationId,
       transactionHash: args.transactionHash,
       settlementTransactionId: args.settlementTransactionId,
-      costs,
     };
 
     if (intent.intentType === "billing_topup") {
@@ -210,17 +153,12 @@ export const evaluate = internalMutation({
       effectivePolicy.billingKillSwitch ||
       !effectivePolicy.billingShadowMode ||
       !effectivePolicy.billingLedgerWrite ||
-      (args.route === "pdax" && !effectivePolicy.pdaxBillingEnabled) ||
       organizationSettings?.shadowEnabled !== true
     ) {
       await insertDecision(ctx, {
         ...common,
         outcome: "disabled",
-        reason: !project.organizationId
-          ? "organization_not_migrated"
-          : args.route === "pdax" && !effectivePolicy.pdaxBillingEnabled
-            ? "pdax_billing_disabled"
-            : "shadow_policy_disabled",
+        reason: !project.organizationId ? "organization_not_migrated" : "shadow_policy_disabled",
       });
       return { applied: false, outcome: "disabled" as const };
     }
@@ -333,16 +271,6 @@ export const evaluate = internalMutation({
         "mutation",
         "success",
       );
-      if (costs?.spread !== undefined) {
-        await recordMetric(
-          ctx,
-          "velo_billing_pdax_cost_variance",
-          "pdax",
-          "observation",
-          "success",
-          Number(costs.spread),
-        );
-      }
       return { applied: result.applied, outcome: "applied" as const };
     } catch (error) {
       await insertDecision(ctx, {

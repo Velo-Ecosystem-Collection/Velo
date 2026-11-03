@@ -46,11 +46,9 @@ test("legacy API keys without a purpose retain and display both endpoint scopes"
   assert.match(apiKeysSource, /"Legacy · General \+ Gas"/);
 });
 
-test("legacy API keys remain available to the checkout integration selector", () => {
-  assert.match(
-    integrationSource,
-    /apiKeys\?\.filter\(\(k\) => !k\.revoked && k\.purpose !== "gas"\)/,
-  );
+test("checkout integration selector excludes legacy PDAX scoped keys", () => {
+  assert.match(integrationSource, /k\.paymentAnchor !== "pdax"/);
+  assert.match(integrationSource, /Switch this project to in-house checkout/);
 });
 
 test("project api keys page uses theme-aware color tokens", () => {

@@ -59,37 +59,21 @@ export const capture = internalMutation({
   handler: async (ctx) => {
     if (!isConvexTelemetryEnabled()) return { saturated: false };
     const now = Date.now();
-    const [
-      routes,
-      reconciliation,
-      providerEvents,
-      deliveries,
-      pollers,
-      outbox,
-      resilience,
-      intents,
-      uiStages,
-    ] = await Promise.all([
-      ctx.db.query("paymentIntentRouteJobs").take(MAX_SCAN),
+    const [reconciliation, deliveries, pollers, outbox, intents, uiStages] = await Promise.all([
       ctx.db.query("paymentReconciliationJobs").take(MAX_SCAN),
-      ctx.db.query("providerEvents").take(MAX_SCAN),
       ctx.db.query("webhookDeliveries").take(MAX_SCAN),
       ctx.db.query("pollerState").take(MAX_SCAN),
       ctx.db.query("telemetryOutbox").take(MAX_SCAN),
-      ctx.db.query("providerResilience").take(MAX_SCAN),
       ctx.db.query("paymentIntents").take(MAX_SCAN),
       ctx.db
         .query("journeyStages")
         .withIndex("by_name_and_at", (q) => q.eq("name", "ui.rendered"))
         .take(MAX_SCAN),
     ]);
+    const activeReconciliation = reconciliation.filter((row) => row.state !== "dead_letter");
     const values = [
-      [
-        "velo_queue_depth",
-        routes.filter((row) => row.state !== "succeeded" && row.state !== "failed").length,
-      ],
-      ["velo_scanner_backlog", reconciliation.filter((row) => row.state !== "dead_letter").length],
-      ["velo_provider_event_backlog", providerEvents.filter((row) => !row.processed).length],
+      ["velo_queue_depth", activeReconciliation.length],
+      ["velo_scanner_backlog", reconciliation.filter((row) => row.state === "pending").length],
       ["velo_webhook_backlog", deliveries.filter((row) => row.status !== "success").length],
       [
         "velo_cursor_lag_seconds",
@@ -98,17 +82,7 @@ export const capture = internalMutation({
       ["velo_telemetry_dead_letters", outbox.filter((row) => row.state === "dead_letter").length],
       [
         "velo_queue_oldest_seconds",
-        Math.max(
-          0,
-          ...routes
-            .filter((row) => row.state !== "succeeded" && row.state !== "failed")
-            .map((row) => (now - row.createdAt) / 1_000),
-          0,
-        ),
-      ],
-      [
-        "velo_provider_healthy",
-        resilience.some((row) => row.circuitOpenUntil && row.circuitOpenUntil > now) ? 0 : 1,
+        Math.max(0, ...activeReconciliation.map((row) => (now - row.createdAt) / 1_000), 0),
       ],
       [
         "velo_webhook_lag_seconds",
@@ -193,7 +167,7 @@ export const capture = internalMutation({
       });
     }
     return {
-      saturated: [routes, reconciliation, providerEvents, deliveries, pollers, outbox].some(
+      saturated: [reconciliation, deliveries, pollers, outbox].some(
         (rows) => rows.length === MAX_SCAN,
       ),
     };

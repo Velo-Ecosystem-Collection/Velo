@@ -1,11 +1,11 @@
 import { internalQuery, query } from "../_generated/server";
+import { requireIdentity } from "../auth/identity";
 import { findOrganizationForIdentity } from "./helpers";
 
 export const getCurrent = query({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const identity = await requireIdentity(ctx);
 
     const organization = await findOrganizationForIdentity(ctx, identity.tokenIdentifier);
     if (!organization) return null;

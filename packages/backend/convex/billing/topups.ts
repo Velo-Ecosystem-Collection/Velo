@@ -4,6 +4,7 @@ import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
 import { internalMutation, mutation } from "../_generated/server";
+import { requireIdentity } from "../auth/identity";
 import { findOrganizationForIdentity } from "../organizations/helpers";
 import { PAYMENT_INTENT_EXPIRY_MS } from "../payment_intents/helpers";
 import { recordMetric } from "../telemetry_outbox/helpers";
@@ -23,8 +24,7 @@ function normalizedHash(value: string) {
 export const create = mutation({
   args: {},
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const identity = await requireIdentity(ctx);
     const organization = await findOrganizationForIdentity(ctx, identity.tokenIdentifier);
     if (!organization) throw new Error("Organization not found");
     const policy = await ctx.db

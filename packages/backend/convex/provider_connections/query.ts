@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 
-import { internalQuery, query } from "../_generated/server";
+import { query } from "../_generated/server";
 import { requireProjectOwner } from "../projects/helpers";
 
 // Public query: returns connection status, strips sensitive tokens
@@ -27,18 +27,5 @@ export const getByProject = query({
       ...publicConnection
     } = connection;
     return publicConnection;
-  },
-});
-
-// Internal query: returns the full connection with tokens for internal backend operations
-export const getInternal = internalQuery({
-  args: { projectId: v.id("projects"), provider: v.literal("pdax") },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("providerConnections")
-      .withIndex("by_project_provider", (q) =>
-        q.eq("projectId", args.projectId).eq("provider", args.provider),
-      )
-      .unique();
   },
 });

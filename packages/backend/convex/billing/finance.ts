@@ -3,7 +3,7 @@ import { v } from "convex/values";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
-import { internalMutation, mutation, query } from "../_generated/server";
+import { mutation, query } from "../_generated/server";
 import { requireBillingOperator } from "./access";
 
 const SCALE = 1_000_000n;
@@ -15,16 +15,6 @@ function parseUsd(value: string) {
   }
   const [whole = "0", fraction = ""] = normalized.split(".");
   return BigInt(whole) * SCALE + BigInt(fraction.padEnd(6, "0"));
-}
-
-function parseSignedUsd(value: string) {
-  const normalized = value.trim();
-  if (!/^-?(?:0|[1-9]\d*)(?:\.\d{1,6})?$/.test(normalized)) {
-    throw new Error("USD amounts must be decimals with at most 6 places");
-  }
-  const negative = normalized.startsWith("-");
-  const amount = parseUsd(negative ? normalized.slice(1) : normalized);
-  return negative ? -amount : amount;
 }
 
 function formatUsd(value: bigint) {
@@ -137,45 +127,6 @@ export const recordRefund = mutation({
       reason: requiredText(args.reason, "Refund reason"),
       evidenceReference: requiredText(args.evidenceReference, "Refund evidence"),
       recordedBy: operator.walletAddress,
-      recordedAt: Date.now(),
-    });
-  },
-});
-
-export const recordPdaxEconomics = internalMutation({
-  args: {
-    organizationId: v.id("organizations"),
-    paymentIntentId: v.id("paymentIntents"),
-    settlementTransactionId: v.id("settlementTransactions"),
-    quotedCost: v.string(),
-    actualCost: v.string(),
-    passThroughAmount: v.string(),
-    spread: v.string(),
-    failureCost: v.string(),
-    subsidy: v.string(),
-    currency: v.string(),
-    idempotencyKey: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("billingPdaxEconomics")
-      .withIndex("by_idempotency_key", (q) => q.eq("idempotencyKey", args.idempotencyKey))
-      .unique();
-    if (existing) return existing._id;
-    for (const value of [
-      args.quotedCost,
-      args.actualCost,
-      args.passThroughAmount,
-      args.failureCost,
-      args.subsidy,
-    ]) {
-      parseUsd(value);
-    }
-    parseSignedUsd(args.spread);
-    return await ctx.db.insert("billingPdaxEconomics", {
-      ...args,
-      currency: requiredText(args.currency, "PDAX currency").toUpperCase(),
-      idempotencyKey: requiredText(args.idempotencyKey, "PDAX economics idempotency key"),
       recordedAt: Date.now(),
     });
   },

@@ -52,25 +52,36 @@ async function ownerProjects(ctx: QueryCtx, limit = 50) {
     .withIndex("by_wallet_address", (q) => q.eq("walletAddress", walletAddress))
     .order("desc")
     .collect();
+  const activeMemberships = memberships.filter((membership) => membership.role !== "owner");
   const memberProjects = (
-    await Promise.all(memberships.map((membership) => ctx.db.get(membership.projectId)))
+    await Promise.all(activeMemberships.map((membership) => ctx.db.get(membership.projectId)))
   ).filter((project): project is Doc<"projects"> => project !== null);
   const knownProjectIds = new Set([
     ...tokenProjects.map((project) => project._id),
     ...legacyProjects.map((project) => project._id),
   ]);
-  return [
+  const ownerProjectIds = new Set([
+    ...tokenProjects.map((project) => project._id),
+    ...legacyProjects.map((project) => project._id),
+  ]);
+  const roleByProjectId = new Map(
+    activeMemberships.map((membership) => [membership.projectId, membership.role]),
+  );
+  const projects = [
     ...tokenProjects,
     ...legacyProjects.filter(
       (project) => !project.ownerTokenIdentifier && !tokenProjectIds.has(project._id),
     ),
     ...memberProjects.filter((project) => !knownProjectIds.has(project._id)),
-  ]
-    .filter((project) => project.retiredAt === undefined)
-    .slice(0, limit);
+  ].filter((project) => project.retiredAt === undefined);
+
+  return projects.slice(0, limit).map((project) => ({
+    ...project,
+    role: ownerProjectIds.has(project._id) ? ("owner" as const) : roleByProjectId.get(project._id),
+  }));
 }
 
-async function projectWithLogoUrl(ctx: QueryCtx, project: Doc<"projects">) {
+async function projectWithLogoUrl<T extends Doc<"projects">>(ctx: QueryCtx, project: T) {
   const logoUrl = project.logoStorageId
     ? ((await ctx.storage.getUrl(project.logoStorageId)) ?? undefined)
     : undefined;
@@ -195,16 +206,22 @@ export const getDashboardSummary = query({
         summary.webhooks.lastDeliveryAt = latestDelivery.lastAttemptAt;
       }
 
-      const payments = await ctx.db
-        .query("paymentIntents")
-        .withIndex("by_project_created_at", (q) => q.eq("projectId", project._id))
-        .order("desc")
-        .take(50);
-      summary.payments.recent += payments.length;
-      summary.payments.paid += payments.filter((payment) => payment.status === "paid").length;
-      summary.payments.pending += payments.filter((payment) => payment.status === "pending").length;
-      summary.payments.failed += payments.filter((payment) => payment.status === "failed").length;
-      summary.payments.created += payments.filter((payment) => payment.status === "created").length;
+      if (project.role === "owner") {
+        const payments = await ctx.db
+          .query("paymentIntents")
+          .withIndex("by_project_created_at", (q) => q.eq("projectId", project._id))
+          .order("desc")
+          .take(50);
+        summary.payments.recent += payments.length;
+        summary.payments.paid += payments.filter((payment) => payment.status === "paid").length;
+        summary.payments.pending += payments.filter(
+          (payment) => payment.status === "pending",
+        ).length;
+        summary.payments.failed += payments.filter((payment) => payment.status === "failed").length;
+        summary.payments.created += payments.filter(
+          (payment) => payment.status === "created",
+        ).length;
+      }
     }
 
     return summary;
@@ -228,12 +245,11 @@ export const getById = query({
   },
   handler: async (ctx, args) => {
     try {
-      const { identity, project } = await requireProjectRole(ctx, args.id, "viewer");
+      const { identity, project, role } = await requireProjectRole(ctx, args.id, "viewer");
       const isOwner =
         project.ownerTokenIdentifier === identity.tokenIdentifier ||
-        (!project.ownerTokenIdentifier &&
-          project.ownerAddress === normalizeAddress(identity.subject));
-      return { ...(await projectWithLogoUrl(ctx, project)), isOwner };
+        project.ownerAddress === normalizeAddress(identity.subject);
+      return { ...(await projectWithLogoUrl(ctx, project)), isOwner, role };
     } catch {
       return null;
     }

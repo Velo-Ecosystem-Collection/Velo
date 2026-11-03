@@ -119,7 +119,8 @@ export function HeroSection() {
         {/* Tagline */}
         <p className="mb-10 max-w-2xl text-lg leading-relaxed font-light text-zinc-400 md:text-xl">
           Build and operate Stellar apps without stitching the surrounding infrastructure together.
-          Velo connects the workflows you use to build, verify, observe, pay, and settle.
+          Velo connects the workflows you use to build, verify, observe, pay, and sponsor eligible
+          transaction fees on Stellar Testnet.
         </p>
 
         {/* Actions */}

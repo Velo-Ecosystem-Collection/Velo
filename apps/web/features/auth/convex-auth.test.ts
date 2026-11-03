@@ -73,5 +73,6 @@ test("a normal token request reuses a valid cached wallet token", () => {
 
 test("a cached token from the retired signing key is invalid", () => {
   assert.equal(isCurrentWalletAuthKeyId("velo-wallet-auth-v1"), false);
-  assert.equal(isCurrentWalletAuthKeyId("velo-wallet-auth-v2"), true);
+  assert.equal(isCurrentWalletAuthKeyId("velo-wallet-auth-v2"), false);
+  assert.equal(isCurrentWalletAuthKeyId("velo-wallet-auth-v3"), true);
 });

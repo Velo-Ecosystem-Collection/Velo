@@ -4,6 +4,7 @@ import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
 import { mutation } from "../_generated/server";
+import { requireIdentity } from "../auth/identity";
 import { findOrganizationForIdentity } from "../organizations/helpers";
 
 export async function notifyOrganization(
@@ -45,8 +46,7 @@ export async function notifyOrganization(
 export const markRead = mutation({
   args: { notificationId: v.id("billingNotifications") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    const identity = await requireIdentity(ctx);
     const organization = await findOrganizationForIdentity(ctx, identity.tokenIdentifier);
     const notification = await ctx.db.get(args.notificationId);
     if (!organization || !notification || notification.organizationId !== organization._id) {

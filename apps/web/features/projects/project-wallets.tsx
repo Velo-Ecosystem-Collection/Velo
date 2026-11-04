@@ -17,6 +17,7 @@ import {
   type WalletDraftConfig,
   type WalletPalette,
 } from "@carts1024/velo-wallets/config";
+import { WALLET_LOGOS } from "@carts1024/velo-wallets/logos";
 import { api } from "@repo/backend/convex/_generated/api";
 import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/ui/alert";
 import { Badge } from "@repo/ui/components/ui/badge";
@@ -280,6 +281,15 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
                   }
                   aria-label={`Enable ${item.name}`}
                 />
+                {WALLET_LOGOS[item.id] ? (
+                  <img
+                    src={WALLET_LOGOS[item.id]}
+                    alt=""
+                    width={40}
+                    height={40}
+                    className="size-10 shrink-0 rounded-xl border bg-white object-contain p-1"
+                  />
+                ) : null}
                 <span>
                   <span className="block text-sm font-medium">{item.name}</span>
                   <span className="text-xs text-zinc-500">
@@ -700,7 +710,7 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
             appearance={appearance}
             mode={draft.theme === "dark" ? "dark" : paletteTab}
             state={previewState}
-            walletCount={draft.walletIds.length}
+            walletIds={draft.walletIds}
             network={draft.network}
           />
         </div>
@@ -875,16 +885,18 @@ function WalletAppearancePreview({
   appearance,
   mode,
   state,
-  walletCount,
+  walletIds,
   network,
 }: {
   appearance: ReturnType<typeof normalizeWalletAppearance>;
   mode: "light" | "dark";
   state: "disconnected" | "connecting" | "connected" | "error";
-  walletCount: number;
+  walletIds: string[];
   network: WalletDraftConfig["network"];
 }) {
   const palette = appearance.palettes[mode];
+  const selectedWallets = WALLET_CATALOG.filter((wallet) => walletIds.includes(wallet.id));
+  const activeWallet = selectedWallets[0];
   const fontFamilies = {
     system: "ui-sans-serif, system-ui, sans-serif",
     serif: "ui-serif, Georgia, serif",
@@ -925,7 +937,7 @@ function WalletAppearancePreview({
     state === "connecting"
       ? "Connecting…"
       : state === "connected"
-        ? "Freighter · GD7O2C2…3I2SP"
+        ? `${activeWallet?.name ?? "Wallet"} · GD7O2C2…3I2SP`
         : appearance.buttonLabel || "Connect wallet";
 
   return (
@@ -968,7 +980,7 @@ function WalletAppearancePreview({
       </p>
 
       <div
-        className="mt-5 border p-3"
+        className="mt-5 overflow-hidden border"
         style={{
           background: palette.surface,
           borderColor: palette.border,
@@ -976,31 +988,88 @@ function WalletAppearancePreview({
           boxShadow: shadows[appearance.modal.shadow],
         }}
       >
-        <div className="mb-3 flex items-center justify-between">
-          <strong className="text-sm">Connect Wallet</strong>
-          <span aria-hidden="true">×</span>
-        </div>
-        {["Freighter", "Albedo", "xBull"].map((walletName, index) => (
-          <div
-            key={walletName}
-            className="flex items-center gap-2 border-t py-2 text-sm"
+        <div
+          className="flex items-center justify-between border-b px-3 py-2"
+          style={{ borderColor: palette.border }}
+        >
+          <div>
+            <strong className="block text-sm">Connect a wallet</strong>
+            <span className="text-[10px]" style={{ color: palette.mutedText }}>
+              Stellar {network === "public" ? "Mainnet" : "Testnet"}
+            </span>
+          </div>
+          <span
+            aria-hidden="true"
+            className="grid size-7 place-items-center rounded-full border"
             style={{ borderColor: palette.border }}
           >
-            <span
-              className="grid size-7 place-items-center rounded-full text-xs font-bold"
-              style={{
-                background: index === 0 ? palette.accent : palette.surfaceMuted,
-                color: index === 0 ? palette.accentText : palette.text,
-              }}
+            ×
+          </span>
+        </div>
+        <div className="grid gap-3 p-3">
+          <section aria-label="Selected wallets" className="grid content-start gap-1">
+            <p
+              className="mb-1 text-[10px] font-semibold tracking-wide uppercase"
+              style={{ color: palette.mutedText }}
             >
-              {walletName[0]}
-            </span>
-            {walletName}
-          </div>
-        ))}
+              Wallets enabled for this app
+            </p>
+            {selectedWallets.length ? (
+              selectedWallets.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex min-w-0 items-center gap-2 rounded-lg border px-2 py-1.5 text-xs"
+                  style={{
+                    borderColor: item.id === activeWallet?.id ? palette.accent : palette.border,
+                    background: palette.background,
+                  }}
+                >
+                  {WALLET_LOGOS[item.id] ? (
+                    <img
+                      src={WALLET_LOGOS[item.id]}
+                      alt=""
+                      width={30}
+                      height={30}
+                      className="size-[30px] shrink-0 rounded-md border bg-white object-contain p-0.5"
+                    />
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate font-medium">{item.name}</span>
+                  <span className="text-[10px]" style={{ color: palette.mutedText }}>
+                    Select
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="text-xs" style={{ color: palette.mutedText }}>
+                Select a wallet to preview the selector.
+              </p>
+            )}
+          </section>
+          <aside
+            className="rounded-lg border p-3"
+            style={{ borderColor: palette.border, background: palette.background }}
+          >
+            <strong className="text-xs">
+              {state === "connecting" && activeWallet
+                ? `Opening ${activeWallet.name}…`
+                : state === "connected"
+                  ? "Wallet connected"
+                  : "Your Stellar wallet"}
+            </strong>
+            <p className="mt-1 text-xs" style={{ color: palette.mutedText }}>
+              {state === "error"
+                ? "Connection was rejected. Choose a wallet to try again."
+                : state === "connecting"
+                  ? "Approve the connection request in your wallet."
+                  : state === "connected"
+                    ? `Connected to ${activeWallet?.name ?? "wallet"}.`
+                    : "Connect securely with a wallet enabled by this app."}
+            </p>
+          </aside>
+        </div>
       </div>
       <p className="mt-3 text-xs" style={{ color: palette.mutedText }}>
-        {walletCount} wallets · {network === "public" ? "Mainnet" : "Testnet"} · {mode}
+        {selectedWallets.length} wallets · {network === "public" ? "Mainnet" : "Testnet"} · {mode}
       </p>
     </div>
   );

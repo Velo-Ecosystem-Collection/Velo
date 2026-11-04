@@ -4,6 +4,8 @@ Hosted, project-configured multi-wallet integration for Stellar applications. Ve
 
 The npm package bundles its pinned Wallets Kit runtime, so consumers do not need a JSR registry configuration.
 
+The React widget and custom element open Velo's responsive Stellar wallet selector. It lists configured wallets with bundled logos and availability; unavailable choices include an install link when the published settings allow it. Selecting an available wallet requests access through its existing Stellar Wallets Kit module. Logo files ship with the package and CDN bundle, so the selector does not load wallet marks from a third-party image host. The marks are wallet brand assets used to identify connection choices. They come from the corresponding Stellar Wallets Kit icon sources, OneKey's official asset host, and the Noir image already used by Velo's Noir module.
+
 Noir is supported by the `0.1.0-alpha.4` workspace release candidate. Once that version is published, install the `alpha` dist-tag (`pnpm add @carts1024/velo-wallets@alpha`) before an owner publishes a project configuration containing Noir. Older runtimes reject the unknown wallet ID. Install the official [Noir browser extension](https://chromewebstore.google.com/detail/noir/gikfhchijjljpbhokmdmaadgmpbchmjl) as well.
 
 The Noir connection uses its SEP-43 provider at `window.noir.stellar` for address access and transaction, Soroban authorization-entry, and message signing. Velo's disconnect clears the widget's local session; Noir site authorization remains until the user revokes it in the extension.
@@ -61,3 +63,7 @@ Mount the provider only at the client boundary that needs wallet state. Package 
 ```
 
 Local appearance values are merged over the published project configuration and validated before the wallet selector opens. A document may use only one project key and one local appearance override.
+
+The `useVeloWallet().connect()` method remains available for programmatic connections through Stellar Wallets Kit. Passing a configured wallet ID selects that wallet directly before requesting access. Consumers that render `ConnectButton` or `WalletWidget` get Velo's styled selector automatically.
+
+Wallet marks are also available as data URLs from `@carts1024/velo-wallets/logos` via the `WALLET_LOGOS` map, keyed by the published wallet IDs. This entry is intended for client-side presentation such as the project configuration preview.

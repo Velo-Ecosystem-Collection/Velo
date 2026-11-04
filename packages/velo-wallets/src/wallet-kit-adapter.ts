@@ -5,13 +5,20 @@ import { VeloWalletError } from "./errors.js";
 import { NoirModule, NOIR_ID } from "./noir-module.js";
 
 export type WalletKitSession = { address: string; walletId: string | null };
+export type WalletKitOption = {
+  id: string;
+  name: string;
+  isAvailable: boolean;
+  url: string;
+};
 export type WalletKitEvent =
   | { type: "changed"; address: string | null; walletId: string | null; networkPassphrase?: string }
   | { type: "disconnected" };
 
 export interface WalletKitAdapter {
   initialize(config: PublishedWalletConfig): Promise<void>;
-  connect(): Promise<WalletKitSession>;
+  connect(walletId?: string): Promise<WalletKitSession>;
+  listWallets?(): Promise<WalletKitOption[]>;
   disconnect(): Promise<void>;
   signTransaction(xdr: string, address: string): Promise<string>;
   signAuthEntry(authEntry: string, address: string): Promise<string>;
@@ -88,9 +95,34 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
     }
   }
 
-  async connect() {
+  async listWallets() {
     const { StellarWalletsKit } = await import("@creit-tech/stellar-wallets-kit");
-    const result = await StellarWalletsKit.authModal();
+    const wallets = await StellarWalletsKit.refreshSupportedWallets();
+    return wallets.map((wallet) => ({
+      id: wallet.id,
+      name: wallet.name,
+      isAvailable: wallet.isAvailable,
+      url: wallet.url,
+    }));
+  }
+
+  async connect(selectedWalletId?: string) {
+    const { StellarWalletsKit } = await import("@creit-tech/stellar-wallets-kit");
+    let result: { address: string };
+    if (selectedWalletId) {
+      const wallets = await StellarWalletsKit.refreshSupportedWallets();
+      const wallet = wallets.find((item) => item.id === selectedWalletId);
+      if (!wallet || !this.config?.walletIds.includes(selectedWalletId)) {
+        throw new VeloWalletError("WALLET_UNAVAILABLE", "This wallet is not enabled for this app.");
+      }
+      if (!wallet.isAvailable) {
+        throw new VeloWalletError("WALLET_UNAVAILABLE", `${wallet.name} is not available.`);
+      }
+      StellarWalletsKit.setWallet(selectedWalletId);
+      result = await StellarWalletsKit.fetchAddress();
+    } else {
+      result = await StellarWalletsKit.authModal();
+    }
     const walletId = StellarWalletsKit.selectedModule?.productId ?? null;
     if (walletId === NOIR_ID) {
       const network = await StellarWalletsKit.getNetwork();

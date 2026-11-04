@@ -25,6 +25,8 @@ test("Wallets panel exposes configuration and publication lifecycle", () => {
   assert.match(panel, /Publish revision/);
   assert.match(panel, /Disable integration/);
   assert.match(panel, /Live wallet preview/);
+  assert.match(panel, /WALLET_LOGOS\[item\.id\]/);
+  assert.match(panel, /walletIds=\{draft\.walletIds\}/);
   assert.match(panel, /Light palette/);
   assert.match(panel, /Dark palette/);
   assert.match(panel, /Button style/);

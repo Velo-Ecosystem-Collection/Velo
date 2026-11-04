@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   build: {
+    assetsInlineLimit: 200_000,
     emptyOutDir: false,
     lib: {
       entry: "src/element.ts",

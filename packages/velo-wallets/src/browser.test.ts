@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { WalletKitAdapter } from "./wallet-kit-adapter.js";
 
 import { VeloWalletClient } from "./browser.js";
+import { WALLET_CATALOG } from "./config.js";
+import { WALLET_LOGOS } from "./wallet-logos.js";
 
 const publishedConfig = {
   schemaVersion: 1 as const,
@@ -20,6 +22,14 @@ function mockAdapter(): WalletKitAdapter {
   return {
     initialize: vi.fn(async () => undefined),
     connect: vi.fn(async () => ({ address: "GABC", walletId: "freighter" })),
+    listWallets: vi.fn(async () => [
+      {
+        id: "freighter",
+        name: "Freighter",
+        isAvailable: true,
+        url: "https://www.freighter.app/",
+      },
+    ]),
     disconnect: vi.fn(async () => undefined),
     signTransaction: vi.fn(async () => "signed-xdr"),
     signAuthEntry: vi.fn(async () => "signed-auth"),
@@ -31,6 +41,11 @@ function mockAdapter(): WalletKitAdapter {
 describe("VeloWalletClient", () => {
   beforeEach(() => {
     window.localStorage.clear();
+  });
+
+  test("bundles one logo for every supported wallet", () => {
+    expect(Object.keys(WALLET_LOGOS).sort()).toEqual(WALLET_CATALOG.map(({ id }) => id).sort());
+    expect(Object.values(WALLET_LOGOS).every(Boolean)).toBe(true);
   });
 
   test("loads configuration and connects through the injected adapter", async () => {
@@ -75,6 +90,55 @@ describe("VeloWalletClient", () => {
 
     await client.initialize();
     expect(client.getConfig()?.appearance.palettes.light.accent).toBe("#6D28D9");
+  });
+
+  test("lists configured wallets with bundled logos and safe install URLs", async () => {
+    const adapter = mockAdapter();
+    vi.mocked(adapter.listWallets!).mockResolvedValue([
+      { id: "freighter", name: "Freighter", isAvailable: true, url: "https://freighter.app/" },
+      { id: "noir", name: "Noir", isAvailable: false, url: "javascript:alert(1)" },
+      { id: "albedo", name: "Albedo", isAvailable: true, url: "https://albedo.link/" },
+    ]);
+    const client = new VeloWalletClient({
+      projectKey: publishedConfig.projectKey,
+      adapter,
+      fetchConfig: async () => ({ ...publishedConfig, walletIds: ["noir", "freighter"] }),
+    });
+
+    await expect(client.listWallets()).resolves.toEqual([
+      expect.objectContaining({
+        id: "noir",
+        name: "Noir",
+        isAvailable: false,
+        installUrl: null,
+        logo: expect.any(String),
+      }),
+      expect.objectContaining({
+        id: "freighter",
+        isAvailable: true,
+        installUrl: "https://freighter.app/",
+        logo: expect.any(String),
+      }),
+    ]);
+  });
+
+  test("hides unavailable configured wallets when the published setting requests it", async () => {
+    const adapter = mockAdapter();
+    vi.mocked(adapter.listWallets!).mockResolvedValue([
+      { id: "freighter", name: "Freighter", isAvailable: true, url: "" },
+      { id: "noir", name: "Noir", isAvailable: false, url: "" },
+    ]);
+    const client = new VeloWalletClient({
+      projectKey: publishedConfig.projectKey,
+      adapter,
+      fetchConfig: async () => ({
+        ...publishedConfig,
+        walletIds: ["freighter", "noir"],
+        modal: { showInstallLabel: true, hideUnsupportedWallets: true },
+      }),
+    });
+
+    await expect(client.listWallets()).resolves.toMatchObject([{ id: "freighter" }]);
   });
 
   test("persists only the address and wallet id", async () => {

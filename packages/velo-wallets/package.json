@@ -19,6 +19,10 @@
       "types": "./dist/types/browser.d.ts",
       "import": "./dist/browser.js"
     },
+    "./logos": {
+      "types": "./dist/types/wallet-logos.d.ts",
+      "import": "./dist/logos.js"
+    },
     "./element": {
       "types": "./dist/types/element.d.ts",
       "import": "./dist/element.js"

@@ -12,6 +12,27 @@ const kit = vi.hoisted(() => {
       selectedWalletId = walletId;
     }),
     authModal: vi.fn(async () => ({ address: "GABC" })),
+    fetchAddress: vi.fn(async () => ({ address: "GABC" })),
+    refreshSupportedWallets: vi.fn(async () => [
+      {
+        id: "freighter",
+        name: "Freighter",
+        type: "HOT_WALLET",
+        isPlatformWrapper: false,
+        isAvailable: true,
+        url: "https://www.freighter.app/",
+        icon: "https://example.test/freighter.png",
+      },
+      {
+        id: "noir",
+        name: "Noir",
+        type: "HOT_WALLET",
+        isPlatformWrapper: false,
+        isAvailable: true,
+        url: "https://chromewebstore.google.com/detail/noir/example",
+        icon: "data:image/png;base64,AA==",
+      },
+    ]),
     getAddress: vi.fn(async () => ({ address: "GABC" })),
     getNetwork: vi.fn(async () => ({
       network: "TESTNET",
@@ -150,6 +171,46 @@ describe("StellarWalletsKitAdapter", () => {
       networkPassphrase: "Public Global Stellar Network ; September 2015",
     });
     await expect(adapter.connect()).rejects.toMatchObject({ code: "NETWORK_MISMATCH" });
+  });
+
+  test("lists Kit availability and connects directly to a configured wallet", async () => {
+    const adapter = new StellarWalletsKitAdapter();
+    await adapter.initialize(config);
+
+    await expect(adapter.listWallets()).resolves.toContainEqual({
+      id: "freighter",
+      name: "Freighter",
+      isAvailable: true,
+      url: "https://www.freighter.app/",
+    });
+    await expect(adapter.connect("freighter")).resolves.toEqual({
+      address: "GABC",
+      walletId: "freighter",
+    });
+    expect(kit.setWallet).toHaveBeenCalledWith("freighter");
+    expect(kit.fetchAddress).toHaveBeenCalledOnce();
+    expect(kit.authModal).not.toHaveBeenCalled();
+  });
+
+  test("refuses a wallet that is configured but currently unavailable", async () => {
+    vi.mocked(kit.refreshSupportedWallets).mockResolvedValueOnce([
+      {
+        id: "freighter",
+        name: "Freighter",
+        isAvailable: false,
+        isPlatformWrapper: false,
+        type: "HOT_WALLET",
+        url: "https://www.freighter.app/",
+        icon: "",
+      },
+    ]);
+    const adapter = new StellarWalletsKitAdapter();
+    await adapter.initialize(config);
+
+    await expect(adapter.connect("freighter")).rejects.toMatchObject({
+      code: "WALLET_UNAVAILABLE",
+    });
+    expect(kit.fetchAddress).not.toHaveBeenCalled();
   });
 
   test("restores an allowed Noir session without requesting access", async () => {

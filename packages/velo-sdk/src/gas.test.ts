@@ -917,6 +917,7 @@ test("gas submit and status force one attempt while preserving transport semanti
 
 test("gas submit timeout is unknown, status timeout is bounded, and cancellation is caller-owned", async () => {
   const originalFetch = globalThis.fetch;
+  const clock = new FakeClock();
   let calls = 0;
   const identity: GasExecutionIdentity = {
     requestId: "gas-request-0001",
@@ -952,8 +953,15 @@ test("gas submit timeout is unknown, status timeout is bounded, and cancellation
         );
       });
     };
+    clock.install();
+    const submit = velo.gas.submit(
+      { ...identity, transactionXdr: "signed-xdr" },
+      { timeoutMs: 20 },
+    );
+    assert.equal(calls, 1);
+    await clock.advance(20);
     await assert.rejects(
-      () => velo.gas.submit({ ...identity, transactionXdr: "signed-xdr" }, { timeoutMs: 20 }),
+      () => submit,
       (error: unknown) => {
         assert.equal(error instanceof VeloGasSubmissionUnknownError, true);
         const unknown = error as VeloGasSubmissionUnknownError;
@@ -962,12 +970,16 @@ test("gas submit timeout is unknown, status timeout is bounded, and cancellation
         return true;
       },
     );
+    const status = velo.gas.getStatus(identity, { timeoutMs: 20 });
+    assert.equal(calls, 2);
+    await clock.advance(20);
     await assert.rejects(
-      () => velo.gas.getStatus(identity, { timeoutMs: 20 }),
+      () => status,
       (error: unknown) => error instanceof VeloTimeoutError,
     );
     assert.equal(calls, 2);
   } finally {
+    clock.restore();
     globalThis.fetch = originalFetch;
   }
 });

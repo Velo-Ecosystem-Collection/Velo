@@ -260,7 +260,7 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
             <p className="px-2 py-2 text-xs font-semibold tracking-wide text-zinc-500 uppercase">
               Configure
             </p>
-            <div className="grid grid-cols-3 gap-1 md:grid-cols-1">
+            <div className="grid grid-cols-1 gap-1 sm:grid-cols-3 md:grid-cols-1">
               {EDITOR_SECTIONS.map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
@@ -274,7 +274,7 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
                   }`}
                 >
                   <Icon aria-hidden="true" className="size-4 shrink-0" />
-                  <span className="truncate">{label}</span>
+                  <span className="min-w-0 leading-tight break-words">{label}</span>
                 </button>
               ))}
             </div>
@@ -305,12 +305,12 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
                     Transaction signing is included. Auth-entry and message signing depend on each
                     wallet.
                   </p>
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,18rem),1fr))] gap-3">
                     {WALLET_CATALOG.map((item) => (
                       <label
                         key={item.id}
                         htmlFor={`wallet-${item.id}`}
-                        className="flex cursor-pointer gap-3 rounded-md border p-3"
+                        className="flex min-w-0 cursor-pointer items-start gap-3 rounded-md border p-3"
                       >
                         <Checkbox
                           id={`wallet-${item.id}`}
@@ -333,10 +333,10 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
                             className="size-10 shrink-0 rounded-xl border bg-white object-contain p-1"
                           />
                         ) : null}
-                        <span>
+                        <span className="min-w-0 flex-1">
                           <span className="block text-sm font-medium">{item.name}</span>
-                          <span className="text-xs text-zinc-500">
-                            Transaction · wallet-dependent advanced signing
+                          <span className="mt-1 block text-xs leading-relaxed text-zinc-500">
+                            Transaction signing · advanced signing varies by wallet
                           </span>
                         </span>
                       </label>
@@ -416,7 +416,7 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
                   </Button>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-4">
                   <div>
                     <Label htmlFor="wallet-theme">Theme</Label>
                     <NativeSelect
@@ -564,7 +564,7 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
                       </Button>
                     ))}
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-4">
                     {PALETTE_FIELDS.map(([token, label]) => (
                       <ColorControl
                         key={`${paletteTab}-${token}`}
@@ -674,7 +674,7 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
                         Complete these steps after publishing a wallet revision.
                       </p>
                     </div>
-                    <ol className="mb-5 grid min-w-0 gap-3 md:grid-cols-3">
+                    <ol className="mb-5 grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,13rem),1fr))] gap-3">
                       <li className="min-w-0 rounded-md border bg-muted/30 p-3">
                         <p className="text-sm font-medium">1. Allow and publish</p>
                         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">

@@ -48,6 +48,25 @@ test("Wallets panel exposes configuration and publication lifecycle", () => {
   assert.match(panel, /aria-live="polite"/);
 });
 
+test("Wallets editor grids respond to their available width", () => {
+  assert.match(panel, /grid-cols-1 gap-1 sm:grid-cols-3 md:grid-cols-1/);
+  assert.match(panel, /min-w-0[^"]*leading-tight[^"]*break-words/);
+  assert.match(
+    panel,
+    /grid grid-cols-\[repeat\(auto-fit,minmax\(min\(100%,18rem\),1fr\)\)\] gap-3/,
+  );
+  assert.match(panel, /flex min-w-0 cursor-pointer items-start gap-3/);
+  assert.match(panel, /<span className="min-w-0 flex-1">/);
+  assert.match(
+    panel,
+    /grid grid-cols-\[repeat\(auto-fit,minmax\(min\(100%,14rem\),1fr\)\)\] gap-4/,
+  );
+  assert.match(
+    panel,
+    /grid min-w-0 grid-cols-\[repeat\(auto-fit,minmax\(min\(100%,13rem\),1fr\)\)\] gap-3/,
+  );
+});
+
 test("Wallets dropdowns remain legible in light and dark modes", () => {
   assert.match(panel, /NativeSelect/);
   assert.match(panel, /NativeSelectOption/);

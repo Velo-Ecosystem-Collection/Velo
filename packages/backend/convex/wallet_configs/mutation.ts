@@ -61,6 +61,7 @@ export const publish = mutation({
       runtimeMajor: 1,
       network: draft.network,
       walletIds: draft.walletIds,
+      selectorLogo: draft.selectorLogo ?? "velo",
       theme: draft.theme,
       buttonLabel: draft.buttonLabel,
       appearance: draft.appearance,

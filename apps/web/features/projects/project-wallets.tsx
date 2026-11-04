@@ -16,6 +16,7 @@ import {
   type WalletAppearanceStyle,
   type WalletDraftConfig,
   type WalletPalette,
+  type WalletSelectorLogo,
 } from "@carts1024/velo-wallets/config";
 import { WALLET_LOGOS } from "@carts1024/velo-wallets/logos";
 import { api } from "@repo/backend/convex/_generated/api";
@@ -85,6 +86,10 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
   const stored = useQuery(
     api.wallet_configs.query.getDraft,
     wallet.address ? { projectId: typedProjectId } : "skip",
+  );
+  const project = useQuery(
+    api.projects.query.getById,
+    wallet.address ? { id: typedProjectId } : "skip",
   );
   const saveDraft = useMutation(api.wallet_configs.mutation.saveDraft);
   const publish = useMutation(api.wallet_configs.mutation.publish);
@@ -408,6 +413,7 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
                       updateDraft({
                         theme: DEFAULT_WALLET_CONFIG.theme,
                         buttonLabel: DEFAULT_WALLET_CONFIG.buttonLabel,
+                        selectorLogo: DEFAULT_WALLET_CONFIG.selectorLogo,
                         appearance: DEFAULT_WALLET_APPEARANCE_STYLE,
                       })
                     }
@@ -417,6 +423,31 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
                 </div>
 
                 <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,14rem),1fr))] gap-4">
+                  <div>
+                    <Label htmlFor="wallet-selector-logo">Wallet selector logo</Label>
+                    <NativeSelect
+                      id="wallet-selector-logo"
+                      value={draft.selectorLogo ?? "velo"}
+                      onChange={(event) =>
+                        updateDraft({ selectorLogo: event.target.value as WalletSelectorLogo })
+                      }
+                      wrapperClassName="mt-2"
+                    >
+                      <NativeSelectOption value="velo">Velo logo</NativeSelectOption>
+                      <NativeSelectOption value="project">Project logo</NativeSelectOption>
+                      <NativeSelectOption value="none">No logo</NativeSelectOption>
+                    </NativeSelect>
+                    <p className="mt-2 text-xs text-zinc-500">
+                      Upload your project logo in{" "}
+                      <Link
+                        className="font-medium text-zinc-900 underline underline-offset-2 dark:text-zinc-100"
+                        href={`/projects/${projectId}/settings`}
+                      >
+                        Project Settings
+                      </Link>
+                      . Without an uploaded logo, the selector displays no logo.
+                    </p>
+                  </div>
                   <div>
                     <Label htmlFor="wallet-theme">Theme</Label>
                     <NativeSelect
@@ -780,6 +811,8 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
             state={previewState}
             walletIds={draft.walletIds}
             network={draft.network}
+            selectorLogo={draft.selectorLogo ?? "velo"}
+            projectLogoUrl={project?.logoUrl}
           />
         </div>
         <div className="rounded-xl border bg-white p-5">
@@ -955,12 +988,16 @@ function WalletAppearancePreview({
   state,
   walletIds,
   network,
+  selectorLogo,
+  projectLogoUrl,
 }: {
   appearance: ReturnType<typeof normalizeWalletAppearance>;
   mode: "light" | "dark";
   state: "disconnected" | "connecting" | "connected" | "error";
   walletIds: string[];
   network: WalletDraftConfig["network"];
+  selectorLogo: WalletSelectorLogo;
+  projectLogoUrl?: string;
 }) {
   const palette = appearance.palettes[mode];
   const selectedWallets = WALLET_CATALOG.filter((wallet) => walletIds.includes(wallet.id));
@@ -1033,13 +1070,23 @@ function WalletAppearancePreview({
         }}
       >
         <header className="grid justify-items-center gap-3 text-center">
-          <img
-            src={mode === "dark" ? "/velo-logo-dark.png" : "/velo-logo-light.png"}
-            alt="Velo"
-            width={132}
-            height={41}
-            className="h-auto w-[112px]"
-          />
+          {selectorLogo === "velo" ? (
+            <img
+              src={mode === "dark" ? "/velo-logo-dark.png" : "/velo-logo-light.png"}
+              alt="Velo"
+              width={132}
+              height={41}
+              className="max-h-16 w-[112px] object-contain"
+            />
+          ) : selectorLogo === "project" && projectLogoUrl ? (
+            <img
+              src={projectLogoUrl}
+              alt="Project logo"
+              width={132}
+              height={64}
+              className="max-h-16 w-[112px] object-contain"
+            />
+          ) : null}
           <div>
             <h3 className="text-lg font-semibold">Connect your wallet</h3>
             <p className="mt-1 text-xs" style={{ color: palette.mutedText }}>

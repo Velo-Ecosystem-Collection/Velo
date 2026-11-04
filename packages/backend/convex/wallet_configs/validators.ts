@@ -33,6 +33,7 @@ export const walletDraftArgs = {
   walletIds: v.array(v.string()),
   theme: v.union(v.literal("light"), v.literal("dark"), v.literal("system")),
   buttonLabel: v.string(),
+  selectorLogo: v.optional(v.union(v.literal("velo"), v.literal("project"), v.literal("none"))),
   appearance: v.optional(walletAppearanceStyle),
   showInstallLabel: v.boolean(),
   hideUnsupportedWallets: v.boolean(),

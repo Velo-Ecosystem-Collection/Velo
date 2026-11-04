@@ -22,6 +22,13 @@ test("Wallets panel exposes configuration and publication lifecycle", () => {
   assert.match(panel, /label: "Settings"/);
   assert.match(panel, /activeSection === "wallets"/);
   assert.match(panel, /activeSection === "appearance"/);
+  assert.match(panel, /Wallet selector logo/);
+  assert.match(panel, /<NativeSelectOption value="velo">Velo logo<\/NativeSelectOption>/);
+  assert.match(panel, /<NativeSelectOption value="project">Project logo<\/NativeSelectOption>/);
+  assert.match(panel, /<NativeSelectOption value="none">No logo<\/NativeSelectOption>/);
+  assert.match(panel, /href=\{`\/projects\/\$\{projectId\}\/settings`\}/);
+  assert.match(panel, /selectorLogo=\{draft\.selectorLogo \?\? "velo"\}/);
+  assert.match(panel, /projectLogoUrl=\{project\?\.logoUrl\}/);
   assert.match(panel, /activeSection === "settings"/);
   assert.match(panel, /Guided Testnet preset/);
   assert.match(panel, /WALLET_CATALOG/);

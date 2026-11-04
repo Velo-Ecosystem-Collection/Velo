@@ -127,6 +127,7 @@ test("publishing creates immutable revisions and a browser-safe projection", asy
       revision: 1,
       runtimeMajor: 1,
       projectKey: saved.publicKey,
+      selectorLogo: "velo",
       appearance: { theme: "dark", buttonLabel: "Launch wallet" },
     },
   });
@@ -157,6 +158,64 @@ test("publishing creates immutable revisions and a browser-safe projection", asy
   const publications = await owner.query(api.wallet_configs.query.listPublications, { projectId });
   expect(publications.map((publication) => publication.revision)).toEqual([2, 1]);
   expect(publications[1]?.buttonLabel).toBe("Launch wallet");
+});
+
+test("published selector can use the project logo uploaded in Project Settings", async () => {
+  const t = convexTest(schema, modules);
+  const address = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const owner = asWallet(t, address);
+  const projectId = await createProject(owner, address, "wallet-project-logo");
+  const logoStorageId = await t.run(
+    async (ctx) => await ctx.storage.store(new Blob(["project logo"], { type: "image/png" })),
+  );
+  await owner.mutation(api.projects.mutation.setLogo, { id: projectId, logoStorageId });
+
+  const saved = await owner.mutation(api.wallet_configs.mutation.saveDraft, {
+    projectId,
+    network: "testnet",
+    walletIds: ["freighter"],
+    theme: "system",
+    buttonLabel: "Connect wallet",
+    selectorLogo: "project",
+    showInstallLabel: true,
+    hideUnsupportedWallets: false,
+    persistSession: true,
+    allowedOrigins: ["https://merchant.example"],
+  });
+  await owner.mutation(api.wallet_configs.mutation.publish, { projectId });
+
+  const projectLogo = await t.query(api.wallet_configs.query.getPublishedByKey, {
+    publicKey: saved.publicKey,
+    origin: "https://merchant.example",
+  });
+  expect(projectLogo).toMatchObject({
+    status: "ok",
+    config: {
+      selectorLogo: "project",
+      projectLogoUrl: expect.any(String),
+    },
+  });
+
+  await owner.mutation(api.wallet_configs.mutation.saveDraft, {
+    projectId,
+    network: "testnet",
+    walletIds: ["freighter"],
+    theme: "system",
+    buttonLabel: "Connect wallet",
+    selectorLogo: "none",
+    showInstallLabel: true,
+    hideUnsupportedWallets: false,
+    persistSession: true,
+    allowedOrigins: ["https://merchant.example"],
+  });
+  await owner.mutation(api.wallet_configs.mutation.publish, { projectId });
+
+  const noLogo = await t.query(api.wallet_configs.query.getPublishedByKey, {
+    publicKey: saved.publicKey,
+    origin: "https://merchant.example",
+  });
+  expect(noLogo).toMatchObject({ status: "ok", config: { selectorLogo: "none" } });
+  expect(noLogo).not.toHaveProperty("config.projectLogoUrl");
 });
 
 test("public lookup enforces origins and disabled state", async () => {

@@ -12,9 +12,13 @@ const config = {
   modal: { showInstallLabel: true, hideUnsupportedWallets: false },
 };
 
-function mockClient(wallets: VeloWalletOption[], connect = vi.fn(async () => "GABC")) {
+function mockClient(
+  wallets: VeloWalletOption[],
+  connect = vi.fn(async () => "GABC"),
+  configOverrides: { selectorLogo?: "velo" | "project" | "none"; projectLogoUrl?: string } = {},
+) {
   return {
-    getConfig: () => config,
+    getConfig: () => ({ ...config, ...configOverrides }),
     listWallets: vi.fn(async () => wallets),
     connect,
   } as unknown as VeloWalletClient;
@@ -69,6 +73,35 @@ describe("Velo wallet selector", () => {
     expect(dialog.querySelector("[data-status]")?.textContent).toContain("Choose a wallet");
     dialog.querySelector<HTMLButtonElement>(".velo-selector__close")?.click();
     await expect(result).resolves.toBeNull();
+  });
+
+  test("uses the uploaded project logo when selected", async () => {
+    const client = mockClient([], undefined, {
+      selectorLogo: "project",
+      projectLogoUrl: "https://storage.example/project-logo.png",
+    });
+    const result = openWalletSelector(client);
+    const dialog = document.querySelector<HTMLDialogElement>("dialog.velo-selector")!;
+    const brand = dialog.querySelector<HTMLImageElement>(".velo-selector__brand")!;
+
+    await vi.waitFor(() => expect(brand.src).toBe("https://storage.example/project-logo.png"));
+    expect(brand.alt).toBe("Project logo");
+    expect(brand.hidden).toBe(false);
+    dialog.querySelector<HTMLButtonElement>(".velo-selector__close")?.click();
+    await expect(result).resolves.toBeNull();
+  });
+
+  test("hides the selector logo for project-without-logo and no-logo settings", async () => {
+    for (const selectorLogo of ["project", "none"] as const) {
+      const result = openWalletSelector(mockClient([], undefined, { selectorLogo }));
+      const dialog = document.querySelector<HTMLDialogElement>("dialog.velo-selector")!;
+      const brand = dialog.querySelector<HTMLImageElement>(".velo-selector__brand")!;
+
+      expect(brand.hidden).toBe(true);
+      expect(brand.hasAttribute("src")).toBe(false);
+      dialog.querySelector<HTMLButtonElement>(".velo-selector__close")?.click();
+      await expect(result).resolves.toBeNull();
+    }
   });
 
   test("keeps the selector open after rejection and allows retry", async () => {

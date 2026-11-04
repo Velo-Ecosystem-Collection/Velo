@@ -11,7 +11,7 @@ const selectorStyles = `
   .velo-selector * { box-sizing: border-box; }
   .velo-selector__shell { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: min(760px, calc(100dvh - 32px)); }
   .velo-selector__header { position: relative; display: grid; justify-items: center; gap: 12px; padding: 28px 52px 20px; text-align: center; }
-  .velo-selector__brand { display: block; width: 132px; height: auto; }
+  .velo-selector__brand { display: block; width: 132px; max-height: 64px; height: auto; object-fit: contain; }
   .velo-selector__header h2 { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -.02em; }
   .velo-selector__header p { margin: 4px 0 0; color: var(--velo-wallet-muted-text); font-size: .82rem; }
   .velo-selector__close { position: absolute; top: 14px; right: 14px; display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid var(--velo-wallet-border); border-radius: 999px; background: var(--velo-wallet-surface); color: var(--velo-wallet-text); font: inherit; font-size: 1.4rem; cursor: pointer; }
@@ -42,7 +42,7 @@ const selectorStyles = `
     .velo-selector { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
     .velo-selector__shell { max-height: calc(100dvh - 24px); }
     .velo-selector__header { padding: 24px 46px 16px; }
-    .velo-selector__brand { width: 112px; }
+    .velo-selector__brand { width: 112px; max-height: 56px; }
     .velo-selector__header h2 { font-size: 1.2rem; }
     .velo-selector__content { padding-right: 14px; padding-left: 14px; }
     .velo-selector__row { min-height: 60px; }
@@ -93,12 +93,11 @@ function openWalletSelectorOnce(client: VeloWalletClient): Promise<string | null
   dialog.className = "velo-selector";
   dialog.setAttribute("aria-labelledby", "velo-selector-title");
   applyAppearance(dialog, appearance);
-  const brandLogo = dialog.dataset.theme === "dark" ? darkVeloLogo : lightVeloLogo;
   dialog.innerHTML = `
     <style>${selectorStyles}</style>
     <div class="velo-selector__shell">
       <header class="velo-selector__header">
-        <img class="velo-selector__brand" src="${brandLogo}" alt="Velo" width="132" height="41">
+        <img class="velo-selector__brand" alt="Velo" width="132" height="64" hidden>
         <div><h2 id="velo-selector-title">Connect your wallet</h2><p data-network></p></div>
         <button class="velo-selector__close" type="button" aria-label="Close wallet selector">×</button>
       </header>
@@ -123,14 +122,39 @@ function openWalletSelectorOnce(client: VeloWalletClient): Promise<string | null
     let connecting = false;
     let activeConfig = config;
     let selectedWallet: VeloWalletOption | null = null;
+    const brand = dialog.querySelector<HTMLImageElement>(".velo-selector__brand");
     const list = dialog.querySelector<HTMLElement>(".velo-selector__list")!;
     const detailTitle = dialog.querySelector<HTMLElement>("[data-detail-title]")!;
     const detailMessage = dialog.querySelector<HTMLElement>("[data-detail-message]")!;
     const status = dialog.querySelector<HTMLElement>("[data-status]")!;
     const retryButton = dialog.querySelector<HTMLButtonElement>("[data-retry]")!;
-    const brand = dialog.querySelector<HTMLImageElement>(".velo-selector__brand")!;
     const networkLabel = config?.network === "public" ? "Stellar Mainnet" : "Stellar Testnet";
     dialog.querySelector("[data-network]")!.textContent = networkLabel;
+
+    function renderBrand() {
+      if (!brand) return;
+      const selectorLogo = activeConfig?.selectorLogo ?? "velo";
+      const projectLogoUrl = activeConfig?.projectLogoUrl;
+
+      if (selectorLogo === "none" || (selectorLogo === "project" && !projectLogoUrl)) {
+        brand.hidden = true;
+        brand.removeAttribute("src");
+        brand.alt = "";
+        return;
+      }
+
+      brand.hidden = false;
+      if (selectorLogo === "project" && projectLogoUrl) {
+        brand.src = projectLogoUrl;
+        brand.alt = "Project logo";
+        return;
+      }
+
+      brand.src = dialog.dataset.theme === "dark" ? darkVeloLogo : lightVeloLogo;
+      brand.alt = "Velo";
+    }
+
+    renderBrand();
 
     function finish(walletId: string | null) {
       if (settled) return;
@@ -250,8 +274,8 @@ function openWalletSelectorOnce(client: VeloWalletClient): Promise<string | null
         activeConfig = client.getConfig() ?? activeConfig;
         if (activeConfig?.appearance) {
           applyAppearance(dialog, activeConfig.appearance);
-          brand.src = dialog.dataset.theme === "dark" ? darkVeloLogo : lightVeloLogo;
         }
+        renderBrand();
         const currentNetwork =
           activeConfig?.network === "public" ? "Stellar Mainnet" : "Stellar Testnet";
         dialog.querySelector("[data-network]")!.textContent = currentNetwork;

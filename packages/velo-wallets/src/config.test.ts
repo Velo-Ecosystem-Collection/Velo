@@ -110,7 +110,26 @@ describe("wallet configuration", () => {
       session: { persist: true },
     });
     expect(parsed.revision).toBe(2);
+    expect(parsed.selectorLogo).toBe("velo");
     expect(parsed.appearance.palettes.light.accent).toBe("#18181B");
+
+    const projectLogoConfig = parsePublishedWalletConfig({
+      ...parsed,
+      selectorLogo: "project",
+      projectLogoUrl: "https://storage.example/project-logo.png",
+    });
+    expect(projectLogoConfig).toMatchObject({
+      selectorLogo: "project",
+      projectLogoUrl: "https://storage.example/project-logo.png",
+    });
+
+    expect(() =>
+      parsePublishedWalletConfig({
+        ...parsed,
+        selectorLogo: "project",
+        projectLogoUrl: "data:image/png;base64,AA==",
+      }),
+    ).toThrow(/CONFIG_INCOMPATIBLE/);
 
     expect(() =>
       parsePublishedWalletConfig({
@@ -141,5 +160,29 @@ describe("wallet configuration", () => {
       session: { persist: true },
     });
     expect(published.walletIds).toEqual(["noir"]);
+  });
+
+  test("supports selector logo choices and defaults legacy drafts to Velo", () => {
+    expect(DEFAULT_WALLET_CONFIG.selectorLogo).toBe("velo");
+    expect(
+      validateWalletDraft({
+        ...DEFAULT_WALLET_CONFIG,
+        selectorLogo: "none",
+      }),
+    ).toEqual([]);
+    expect(() =>
+      parsePublishedWalletConfig({
+        schemaVersion: 1,
+        revision: 1,
+        runtimeMajor: 1,
+        projectKey: "vw_pk_example",
+        network: "testnet",
+        walletIds: ["freighter"],
+        selectorLogo: "other",
+        appearance: { theme: "system", buttonLabel: "Connect wallet" },
+        modal: { showInstallLabel: true, hideUnsupportedWallets: false },
+        session: { persist: true },
+      }),
+    ).toThrow(/CONFIG_INCOMPATIBLE/);
   });
 });

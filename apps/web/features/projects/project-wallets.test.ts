@@ -18,6 +18,8 @@ const tabs = fs.readFileSync("../../packages/ui/src/components/ui/tabs.tsx", "ut
 test("Wallets panel exposes configuration and publication lifecycle", () => {
   assert.match(panel, /Guided Testnet preset/);
   assert.match(panel, /WALLET_CATALOG/);
+  assert.match(panel, /Upgrade consuming apps before publishing Noir/);
+  assert.match(panel, /chromewebstore\.google\.com\/detail\/noir/);
   assert.match(panel, /Allowed origins/);
   assert.match(panel, /Save draft/);
   assert.match(panel, /Publish revision/);

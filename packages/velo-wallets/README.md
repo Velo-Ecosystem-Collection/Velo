@@ -4,6 +4,10 @@ Hosted, project-configured multi-wallet integration for Stellar applications. Ve
 
 The npm package bundles its pinned Wallets Kit runtime, so consumers do not need a JSR registry configuration.
 
+Noir is supported by the `0.1.0-alpha.4` workspace release candidate. Once that version is published, install the `alpha` dist-tag (`pnpm add @carts1024/velo-wallets@alpha`) before an owner publishes a project configuration containing Noir. Older runtimes reject the unknown wallet ID. Install the official [Noir browser extension](https://chromewebstore.google.com/detail/noir/gikfhchijjljpbhokmdmaadgmpbchmjl) as well.
+
+The Noir connection uses its SEP-43 provider at `window.noir.stellar` for address access and transaction, Soroban authorization-entry, and message signing. Velo's disconnect clears the widget's local session; Noir site authorization remains until the user revokes it in the extension.
+
 ## HTML
 
 ```html

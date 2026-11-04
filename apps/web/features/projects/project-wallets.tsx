@@ -289,6 +289,25 @@ export function ProjectWallets({ projectId }: { projectId: string }) {
               </label>
             ))}
           </div>
+          {draft.walletIds.includes("noir") ? (
+            <Alert className="mt-4">
+              <AlertTitle>Upgrade consuming apps before publishing Noir</AlertTitle>
+              <AlertDescription>
+                Install a Velo Wallets release that includes Noir in every consuming app before
+                publishing this configuration. Older runtimes reject the unknown wallet ID. Users
+                also need the{" "}
+                <a
+                  className="font-medium underline"
+                  href="https://chromewebstore.google.com/detail/noir/gikfhchijjljpbhokmdmaadgmpbchmjl"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Noir browser extension
+                </a>
+                .
+              </AlertDescription>
+            </Alert>
+          ) : null}
           <p className="mt-4 text-xs text-zinc-500">
             WalletConnect, Ledger, and Trezor are deferred from v1 so the hosted runtime stays
             credential-free and predictable.

@@ -1,6 +1,8 @@
 import type { PublishedWalletConfig } from "./config.js";
 
 import { walletKitTheme } from "./appearance.js";
+import { VeloWalletError } from "./errors.js";
+import { NoirModule, NOIR_ID } from "./noir-module.js";
 
 export type WalletKitSession = { address: string; walletId: string | null };
 export type WalletKitEvent =
@@ -32,6 +34,7 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
   private unsubscribers: Array<() => void> = [];
   private themeMedia: MediaQueryList | null = null;
   private themeListener: ((event: MediaQueryListEvent) => void) | null = null;
+  private noirModule: NoirModule | null = null;
 
   async initialize(config: PublishedWalletConfig) {
     if (typeof window === "undefined") throw new Error("Wallet runtime requires a browser.");
@@ -43,6 +46,8 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
     const modules = defaultModules({
       filterBy: (module) => config.walletIds.includes(module.productId),
     });
+    this.noirModule = config.walletIds.includes(NOIR_ID) ? new NoirModule() : null;
+    if (this.noirModule) modules.push(this.noirModule);
     const systemDark =
       config.appearance.theme === "system" &&
       window.matchMedia?.("(prefers-color-scheme: dark)").matches;
@@ -86,9 +91,19 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
   async connect() {
     const { StellarWalletsKit } = await import("@creit-tech/stellar-wallets-kit");
     const result = await StellarWalletsKit.authModal();
+    const walletId = StellarWalletsKit.selectedModule?.productId ?? null;
+    if (walletId === NOIR_ID) {
+      const network = await StellarWalletsKit.getNetwork();
+      if (network.networkPassphrase !== this.requirePassphrase()) {
+        throw new VeloWalletError(
+          "NETWORK_MISMATCH",
+          `Switch Noir to ${this.config?.network === "public" ? "Mainnet" : "Testnet"}.`,
+        );
+      }
+    }
     return {
       address: result.address,
-      walletId: StellarWalletsKit.selectedModule?.productId ?? null,
+      walletId,
     };
   }
 
@@ -96,9 +111,15 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
     try {
       const { StellarWalletsKit } = await import("@creit-tech/stellar-wallets-kit");
       if (session.walletId) StellarWalletsKit.setWallet(session.walletId);
+      if (session.walletId === NOIR_ID && this.noirModule) {
+        return (await this.noirModule.hasMatchingSession(session.address, this.requirePassphrase()))
+          ? session
+          : null;
+      }
       const result = await StellarWalletsKit.getAddress();
       return result.address === session.address ? session : null;
-    } catch {
+    } catch (error) {
+      if (error instanceof VeloWalletError && error.code === "NETWORK_MISMATCH") throw error;
       return null;
     }
   }
@@ -145,6 +166,7 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
     this.unsubscribers = [];
     this.removeThemeListener();
     this.listeners.clear();
+    this.noirModule = null;
   }
 
   private emit(event: WalletKitEvent) {

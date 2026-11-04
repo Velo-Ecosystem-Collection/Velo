@@ -2,11 +2,22 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 const kit = vi.hoisted(() => {
   const callbacks = new Map<string, (event: unknown) => void>();
+  let selectedWalletId = "freighter";
   return {
     callbacks,
     init: vi.fn(),
     setTheme: vi.fn(),
     setNetwork: vi.fn(),
+    setWallet: vi.fn((walletId: string) => {
+      selectedWalletId = walletId;
+    }),
+    authModal: vi.fn(async () => ({ address: "GABC" })),
+    getAddress: vi.fn(async () => ({ address: "GABC" })),
+    getNetwork: vi.fn(async () => ({
+      network: "TESTNET",
+      networkPassphrase: "Test SDF Network ; September 2015",
+    })),
+    disconnect: vi.fn(async () => undefined),
     on: vi.fn((type: string, callback: (event: unknown) => void) => {
       callbacks.set(type, callback);
       if (type === "state-updated") {
@@ -19,8 +30,8 @@ const kit = vi.hoisted(() => {
       }
       return vi.fn();
     }),
-    get selectedModule(): never {
-      throw { code: -3, message: "Please set the wallet first" };
+    get selectedModule() {
+      return { productId: selectedWalletId };
     },
   };
 });
@@ -53,6 +64,17 @@ const config = parsePublishedWalletConfig({
   modal: { showInstallLabel: true, hideUnsupportedWallets: false },
   session: { persist: true },
 });
+const noirConfig = parsePublishedWalletConfig({
+  schemaVersion: 1,
+  revision: 2,
+  runtimeMajor: 1,
+  projectKey: "vw_pk_example",
+  network: "testnet",
+  walletIds: ["noir"],
+  appearance: { theme: "system", buttonLabel: "Connect wallet" },
+  modal: { showInstallLabel: true, hideUnsupportedWallets: false },
+  session: { persist: true },
+});
 
 const mediaListeners = new Set<(event: MediaQueryListEvent) => void>();
 
@@ -60,7 +82,12 @@ describe("StellarWalletsKitAdapter", () => {
   beforeEach(() => {
     kit.callbacks.clear();
     vi.clearAllMocks();
+    kit.setWallet("freighter");
     mediaListeners.clear();
+    vi.mocked(kit.getNetwork).mockResolvedValue({
+      network: "TESTNET",
+      networkPassphrase: "Test SDF Network ; September 2015",
+    });
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
       value: vi.fn(() => ({
@@ -100,5 +127,65 @@ describe("StellarWalletsKitAdapter", () => {
 
     adapter.destroy();
     expect(mediaListeners).toHaveLength(0);
+  });
+
+  test("adds Noir only when selected in the published configuration", async () => {
+    const adapter = new StellarWalletsKitAdapter();
+    await adapter.initialize(noirConfig);
+    expect(kit.init).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modules: expect.arrayContaining([expect.objectContaining({ productId: "noir" })]),
+      }),
+    );
+  });
+
+  test("checks Noir's selected network when connecting", async () => {
+    const adapter = new StellarWalletsKitAdapter();
+    await adapter.initialize(noirConfig);
+    kit.setWallet("noir");
+    await expect(adapter.connect()).resolves.toEqual({ address: "GABC", walletId: "noir" });
+
+    vi.mocked(kit.getNetwork).mockResolvedValueOnce({
+      network: "PUBLIC",
+      networkPassphrase: "Public Global Stellar Network ; September 2015",
+    });
+    await expect(adapter.connect()).rejects.toMatchObject({ code: "NETWORK_MISMATCH" });
+  });
+
+  test("restores an allowed Noir session without requesting access", async () => {
+    const provider = {
+      isNoir: true as const,
+      isConnected: vi.fn(async () => ({ isConnected: true })),
+      isAllowed: vi.fn(async () => ({ isAllowed: true })),
+      requestAccess: vi.fn(async () => ({ address: "GABC" })),
+      getAddress: vi.fn(async () => ({ address: "GABC" })),
+      getNetwork: vi.fn(async () => ({
+        network: "TESTNET",
+        networkPassphrase: "Test SDF Network ; September 2015",
+      })),
+      signTransaction: vi.fn(),
+      signAuthEntry: vi.fn(),
+      signMessage: vi.fn(),
+    };
+    Object.defineProperty(window, "noir", { configurable: true, value: { stellar: provider } });
+    const adapter = new StellarWalletsKitAdapter();
+    await adapter.initialize(noirConfig);
+
+    await expect(adapter.restoreSession?.({ address: "GABC", walletId: "noir" })).resolves.toEqual({
+      address: "GABC",
+      walletId: "noir",
+    });
+    expect(provider.requestAccess).not.toHaveBeenCalled();
+  });
+
+  test("disconnect clears the local Noir session without revoking extension authorization", async () => {
+    const provider = { isNoir: true as const };
+    Object.defineProperty(window, "noir", { configurable: true, value: { stellar: provider } });
+    const adapter = new StellarWalletsKitAdapter();
+    await adapter.initialize(noirConfig);
+
+    await adapter.disconnect();
+    expect(kit.disconnect).toHaveBeenCalledOnce();
+    expect(provider).not.toHaveProperty("disconnect");
   });
 });

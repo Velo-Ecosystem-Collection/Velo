@@ -24,7 +24,7 @@ test("generated integration snippets use the active key and configured endpoints
   assert.match(snippets.react, /apiBaseUrl="https:\/\/app\.velo\.dev"/);
   assert.match(snippets.react, /WalletWidget/);
   assert.doesNotMatch(snippets.react, /useVeloWallet|signMessage|<button/);
-  assert.equal(snippets.install, "pnpm add @carts1024/velo-wallets");
+  assert.equal(snippets.install, "pnpm add @carts1024/velo-wallets@alpha");
   assert.equal(
     snippets.csp,
     "script-src 'self' https://wallets.velo.dev; connect-src 'self' https://app.velo.dev",

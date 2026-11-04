@@ -91,6 +91,31 @@ describe("VeloWalletClient", () => {
     );
   });
 
+  test("disconnect clears the persisted Noir widget session", async () => {
+    const noirConfig = { ...publishedConfig, walletIds: ["noir"] };
+    const adapter = mockAdapter();
+    vi.mocked(adapter.connect).mockResolvedValue({ address: "GABC", walletId: "noir" });
+    Object.defineProperty(window, "noir", {
+      configurable: true,
+      value: { stellar: { isNoir: true } },
+    });
+    const client = new VeloWalletClient({
+      projectKey: publishedConfig.projectKey,
+      adapter,
+      fetchConfig: async () => noirConfig,
+    });
+
+    await client.connect();
+    expect(window.localStorage.getItem("velo-wallets:v1:vw_pk_example:session")).toBe(
+      JSON.stringify({ address: "GABC", walletId: "noir" }),
+    );
+
+    await client.disconnect();
+    expect(adapter.disconnect).toHaveBeenCalledOnce();
+    expect(window.localStorage.getItem("velo-wallets:v1:vw_pk_example:session")).toBeNull();
+    expect(client.getState()).toMatchObject({ status: "disconnected", address: null });
+  });
+
   test("delegates signing without calling configuration fetch again", async () => {
     const adapter = mockAdapter();
     const fetchConfig = vi.fn(async () => publishedConfig);

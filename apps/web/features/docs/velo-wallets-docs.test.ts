@@ -46,7 +46,10 @@ test("Wallets guide clearly separates public browser keys from private server ke
   assert.match(docs, /Signing stays in the browser/);
   assert.match(docs, /does not receive your transaction XDR/);
   assert.match(docs, /Stable npm package/);
-  assert.match(docs, /supports all\s+wallet\s+IDs offered in project configuration, including Noir/);
+  assert.match(
+    docs,
+    /supports all\s+wallet\s+IDs offered in project configuration, including Noir/,
+  );
 });
 
 test("Wallets prompt covers setup, both runtimes, signing boundaries, and Testnet checks", () => {

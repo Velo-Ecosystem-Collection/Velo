@@ -57,19 +57,23 @@ function jsonResponse(payload: unknown, status = 200, headers?: HeadersInit): Re
 }
 
 // Keep mocked response parsing deterministic when a test controls time with FakeClock.
-function jsonResponseWithoutStream(
-  payload: unknown,
-  status = 200,
-  headers?: HeadersInit,
-): Response {
+function jsonResponseWithBody(payload: unknown, status = 200, headers?: HeadersInit): Response {
+  const text = JSON.stringify(payload);
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(text));
+      controller.close();
+    },
+  });
   return {
     ok: status >= 200 && status < 300,
     status,
+    body,
     headers: new Headers({
       "Content-Type": "application/json",
       ...Object.fromEntries(new Headers(headers)),
     }),
-    text: async () => JSON.stringify(payload),
+    text: async () => text,
   } as Response;
 }
 
@@ -870,6 +874,37 @@ test("gas.submit turns an invalid dispatched success response into safe recovery
   }
 });
 
+test("gas.submit treats malformed JSON as an uncertain dispatched submission", async () => {
+  const originalFetch = globalThis.fetch;
+  const identity: GasExecutionIdentity = {
+    requestId: "gas-request-0001",
+    transactionHash: TRANSACTION_HASH,
+  };
+
+  globalThis.fetch = async () =>
+    jsonResponse("upstream response contains private detail", 200, {
+      "Content-Type": "application/json",
+    });
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: BASE_URL });
+    await assert.rejects(
+      () => velo.gas.submit({ ...identity, transactionXdr: "xdr-secret" }),
+      (error: unknown) => {
+        assert.equal(error instanceof VeloGasSubmissionUnknownError, true);
+        const unknown = error as VeloGasSubmissionUnknownError;
+        assert.equal(unknown.reason, "invalid_response");
+        assert.deepEqual(unknown.recovery, identity);
+        assert.equal(unknown.message.includes("private detail"), false);
+        assert.equal(unknown.message.includes("xdr-secret"), false);
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("gas submit and status force one attempt while preserving transport semantics", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
@@ -1191,7 +1226,7 @@ test("gas.waitForResult polls with bounded exponential delays", async () => {
   const returnedStatuses: GasExecutionStatus[] = ["claimed", "submitted", "succeeded"];
   let calls = 0;
   globalThis.fetch = async () =>
-    jsonResponseWithoutStream(validSubmitResult({ status: returnedStatuses[calls++] }), 202);
+    jsonResponseWithBody(validSubmitResult({ status: returnedStatuses[calls++] }), 202);
 
   clock.install();
   try {
@@ -1227,7 +1262,7 @@ test("gas.waitForResult returns the last DTO on exhaustion or deadline", async (
   let calls = 0;
   globalThis.fetch = async () => {
     calls++;
-    return jsonResponseWithoutStream(
+    return jsonResponseWithBody(
       validSubmitResult({ status: "submitted", actualFeeStroops: null }),
       202,
     );
@@ -1310,13 +1345,13 @@ test("gas.waitForResult retries transient status failures and honors Retry-After
   globalThis.fetch = async () => {
     calls++;
     if (calls === 1) {
-      return jsonResponseWithoutStream(
+      return jsonResponseWithBody(
         { error: { type: "provider_error", code: "temporary_failure" } },
         503,
         { "Retry-After": "2" },
       );
     }
-    return jsonResponseWithoutStream(
+    return jsonResponseWithBody(
       validSubmitResult({ status: calls === 2 ? "submitted" : "succeeded" }),
       202,
     );
@@ -1354,18 +1389,18 @@ test("gas.waitForResult retries network, timeout, 408, 429, and 5xx failures", a
   globalThis.fetch = async () => {
     calls++;
     if (calls === 1) {
-      return jsonResponseWithoutStream({ error: { code: "request_timeout" } }, 408);
+      return jsonResponseWithBody({ error: { code: "request_timeout" } }, 408);
     }
     if (calls === 2) {
-      return jsonResponseWithoutStream({ error: { code: "temporary_rate_limit" } }, 429, {
+      return jsonResponseWithBody({ error: { code: "temporary_rate_limit" } }, 429, {
         "Retry-After": "0",
       });
     }
     if (calls === 3) {
-      return jsonResponseWithoutStream({ error: { code: "temporary_failure" } }, 500);
+      return jsonResponseWithBody({ error: { code: "temporary_failure" } }, 500);
     }
     if (calls === 4) throw new TypeError("fetch failed");
-    return jsonResponseWithoutStream(validSubmitResult({ status: "succeeded" }));
+    return jsonResponseWithBody(validSubmitResult({ status: "succeeded" }));
   };
 
   clock.install();
@@ -1402,7 +1437,7 @@ test("gas.waitForResult gives each status request only the remaining wait budget
     if (calls === 1) {
       return new Promise((resolve) => {
         setTimeout(
-          () => resolve(jsonResponseWithoutStream({ error: { code: "temporary_failure" } }, 503)),
+          () => resolve(jsonResponseWithBody({ error: { code: "temporary_failure" } }, 503)),
           60,
         );
       });
@@ -1508,7 +1543,7 @@ test("gas.waitForResult wraps cancellation and supports safe resume", async () =
   let calls = 0;
   globalThis.fetch = async () => {
     calls++;
-    return jsonResponseWithoutStream(validSubmitResult({ status: "submitted" }), 202);
+    return jsonResponseWithBody(validSubmitResult({ status: "submitted" }), 202);
   };
 
   clock.install();
@@ -1547,7 +1582,7 @@ test("gas.waitForResult wraps cancellation and supports safe resume", async () =
         requestId: "gas-request-0001",
         transactionHash: TRANSACTION_HASH,
       });
-      return jsonResponseWithoutStream(validSubmitResult({ status: "succeeded" }));
+      return jsonResponseWithBody(validSubmitResult({ status: "succeeded" }));
     };
     const resumed = await velo.gas.waitForResult(
       {
@@ -1627,7 +1662,7 @@ test("gas.waitForResult snapshots identity and options and never sends XDR", asy
       correlationId: new Headers(request?.headers).get("x-correlation-id"),
     });
     calls++;
-    return jsonResponseWithoutStream(
+    return jsonResponseWithBody(
       validSubmitResult({ status: calls === 1 ? "submitted" : "succeeded" }),
       202,
     );

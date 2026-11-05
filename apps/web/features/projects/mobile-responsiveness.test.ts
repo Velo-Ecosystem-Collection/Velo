@@ -37,6 +37,9 @@ test("dense operational tables progressively reveal secondary columns", () => {
 test("docs and configuration pages provide narrow-screen layouts", () => {
   assert.match(docs, /id="mobile-doc-section"/);
   assert.match(docs, /md:h-\[calc\(100dvh-220px\)\]/);
-  assert.match(wallets, /grid min-w-0 gap-6/);
+  assert.match(
+    wallets,
+    /grid min-w-0 gap-5 xl:grid-cols-\[minmax\(0,1fr\)_minmax\(380px,460px\)\]/,
+  );
   assert.match(publicVerification, /whitespace-normal break-all font-mono/);
 });

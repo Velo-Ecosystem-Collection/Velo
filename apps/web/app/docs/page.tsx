@@ -3,6 +3,7 @@
 import { AppShell } from "@/core/app-shell";
 import { GasIntegrationPromptCard } from "@/features/docs/gas-integration-prompt-card";
 import { PaymentIntentsIntegrationPromptCard } from "@/features/docs/payment-intents-integration-prompt-card";
+import { VeloWalletsIntegrationPromptCard } from "@/features/docs/velo-wallets-integration-prompt-card";
 import { WebhookVerificationIntegrationPromptCard } from "@/features/docs/webhook-verification-integration-prompt-card";
 import {
   CheckIcon,
@@ -518,9 +519,9 @@ export function ConnectedAccount() {
             {activeSection === "intro" && (
               <>
                 <p>
-                  Welcome to the **Velo SDK for Node.js** documentation. The Velo SDK is a
-                  server-side alpha package designed to streamline checkout session creation,
-                  payment state verification, and webhook handling.
+                  Welcome to the **Velo SDK for Node.js** documentation. The Velo SDK is a stable
+                  server-side package designed to streamline checkout session creation, payment
+                  state verification, and webhook handling.
                 </p>
                 <p>
                   By wrapping Velo's secure REST endpoints, the SDK allows you to handle stablecoin
@@ -599,7 +600,7 @@ const session = await velo.checkout.sessions.create({
                   <div className="text-sm">
                     <strong>Server-Side Only Requirement</strong>
                     <p className="mt-1">
-                      This package uses sensitive API credentials and is meant for **Node.js 18+
+                      This package uses sensitive API credentials and is meant for **Node.js 22.6+
                       server environments only**. Do not include this SDK in frontend code or client
                       bundles as it will expose your private key to the web.
                     </p>
@@ -721,9 +722,14 @@ const session = await velo.checkout.sessions.create({
                     </span>
                     <strong className="block text-foreground">Test, then paste</strong>
                     Run the isolated Testnet diagnostics first, then copy the generated HTML or
-                    React snippet into your app.
+                    React snippet into your app. Use the sections below for runtime-specific steps,
+                    then verify the connection in your application.
                   </li>
                 </ol>
+
+                <div className="my-6">
+                  <VeloWalletsIntegrationPromptCard />
+                </div>
 
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
                   What your users can do
@@ -861,6 +867,19 @@ const session = await velo.checkout.sessions.create({
                   frameworks that support custom elements. It requires no package installation.
                 </p>
 
+                <div className="my-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+                  <AlertTriangleIcon className="mt-0.5 size-5 shrink-0 text-amber-600" />
+                  <div className="text-sm">
+                    <strong className="mb-1 block">Hosted runtime release status</strong>
+                    The npm package 1.0.0 is published under the <code>latest</code> tag. The hosted{" "}
+                    <code>/v1/velo-wallet.js</code> runtime has not been updated from that build and
+                    needs a separate deployment. Follow the project-generated HTML snippet, and
+                    confirm that every configured wallet is supported by the hosted runtime. Do not
+                    publish a Noir configuration for this runtime until the matching CDN release is
+                    deployed.
+                  </div>
+                </div>
+
                 <div className="my-6 flex gap-3 rounded-xl border border-border bg-muted/50 p-4">
                   <InfoIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
                   <div className="text-sm">
@@ -921,21 +940,21 @@ const session = await velo.checkout.sessions.create({
               <>
                 <p>
                   Use the React adapter when your interface needs wallet state in several
-                  components. It uses the same runtime, wallet order, methods, and errors as the Web
-                  Component. <code>WalletWidget</code> renders the published connect, connected,
-                  copy, disconnect, status, and error design; <code>ConnectButton</code> remains
-                  available when only a trigger is needed.
+                  components. It exposes the same core wallet methods as the Web Component when both
+                  use compatible runtime releases. The hosted CDN may run an older release than npm;
+                  see the HTML section. <code>WalletWidget</code> renders the published connect,
+                  connected, copy, disconnect, status, and error design; <code>ConnectButton</code>{" "}
+                  remains available when only a trigger is needed.
                 </p>
 
-                <div className="my-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
-                  <AlertTriangleIcon className="mt-0.5 size-5 shrink-0 text-amber-600" />
+                <div className="my-6 flex gap-3 rounded-xl border border-border bg-muted/50 p-4">
+                  <InfoIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
                   <div className="text-sm">
-                    <strong>Staged alpha package</strong>
-                    <p className="mt-1">
-                      Public npm activation may not be available during the alpha. Repository
-                      contributors can use the workspace package. External builders can use the
-                      hosted Web Component until npm publication is enabled.
-                    </p>
+                    <strong className="mb-1 block text-foreground">Stable npm package</strong>
+                    Install <code>@carts1024/velo-wallets</code> from npm; version 1.0.0 is
+                    published under <code>latest</code>. In Next.js App Router, render wallet
+                    controls below a client boundary. The separate hosted CDN has not been updated
+                    to the 1.0.0 build; see the HTML section before choosing the hosted runtime.
                   </div>
                 </div>
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
@@ -1340,7 +1359,7 @@ const session = await velo.checkout.sessions.create({
                     <p className="mt-1">
                       Gas sponsorship must run in a trusted server route or worker. Never put the
                       Gas API key, signed XDR, relayer signer, or recovery credentials in browser
-                      code or browser storage. The current alpha Gas boundary is Stellar Testnet.
+                      code or browser storage. The Gas Station boundary remains Stellar Testnet.
                     </p>
                   </div>
                 </div>
@@ -1579,11 +1598,10 @@ const session = await velo.checkout.sessions.create({
                 </div>
 
                 <p className="text-sm text-muted-foreground">
-                  The workspace SDK source manifest is <code>0.1.0-alpha.4</code>. Check the
-                  selected npm package version and exports before installing; public releases can
-                  lag the workspace source. Set <code>VELO_GAS_BASE_URL</code> explicitly to{" "}
-                  <code>https://www.velo-build.dev</code> for Testnet, especially when using an
-                  older SDK artifact. See the{" "}
+                  SDK <code>1.0.0</code> is available from npm under the <code>latest</code> tag.
+                  Production and Testnet defaults use <code>https://www.velo-build.dev</code>;
+                  configure <code>VELO_GAS_BASE_URL</code> explicitly when using a different trusted
+                  HTTPS origin. Gas Station remains Testnet-only. See the{" "}
                   <a
                     href="https://github.com/Velo-Ecosystem-Collection/Velo/blob/main/docs/velo-gas-station.md"
                     target="_blank"
@@ -1696,8 +1714,7 @@ const session = await velo.checkout.sessions.create({
             {activeSection === "reference" && (
               <>
                 <p>
-                  Here are details on error models, environments, and general Velo SDK alpha release
-                  limits.
+                  Here are details on error models, environments, and the Velo SDK's product scope.
                 </p>
 
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">Error Handling</h3>
@@ -1724,15 +1741,13 @@ const session = await velo.checkout.sessions.create({
                   </li>
                 </ul>
 
-                <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
-                  Alpha Exclusions & Boundaries
-                </h3>
-                <p>During the alpha stage, the following features are not supported:</p>
+                <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">Product Boundaries</h3>
+                <p>The current SDK package does not provide the following features:</p>
                 <ul className="list-disc space-y-1 pl-6 text-zinc-600 dark:text-zinc-400">
                   <li>Refunds, partial captures, and disputes</li>
                   <li>Direct client-side / browser usage</li>
                   <li>React front-end checkout button components</li>
-                  <li>Automatic request retry on creation</li>
+                  <li>Automatic retries for creation requests without an idempotency key</li>
                 </ul>
               </>
             )}

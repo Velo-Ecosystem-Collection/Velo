@@ -527,7 +527,9 @@ export function ProjectSettings({ projectId }: { projectId: string }) {
         </div>
         <div>
           <h2 className="text-base font-semibold tracking-normal">Project logo</h2>
-          <p className="mt-1 text-sm text-zinc-600">Shown in the sidebar project switcher.</p>
+          <p className="mt-1 text-sm text-zinc-600">
+            Shown in the sidebar project switcher and, when selected, the wallet selector.
+          </p>
         </div>
         <div className="flex aspect-square w-32 items-center justify-center overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100">
           {selectedLogoUrl ? (

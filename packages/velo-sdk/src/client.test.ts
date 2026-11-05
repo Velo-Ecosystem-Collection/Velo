@@ -5,6 +5,7 @@ import { Velo } from "./client.ts";
 import {
   VeloAPIError,
   VeloAuthError,
+  VeloInvalidResponseError,
   VeloProviderError,
   VeloRateLimitError,
   VeloSubmissionUnknownError,
@@ -12,6 +13,25 @@ import {
   VeloValidationError,
 } from "./errors.ts";
 import { HttpClient, resolveBaseUrl } from "./http.ts";
+
+function validPaymentIntentPayload(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "pi_123",
+    object: "payment_intent",
+    paymentIntentId: "pi_123",
+    status: "created",
+    amount: "10.00",
+    asset: "USDC",
+    description: null,
+    checkoutUrl: "https://www.velo-build.dev/pay/pi_123",
+    successUrl: null,
+    cancelUrl: null,
+    expiresAt: "2026-09-14T00:00:00.000Z",
+    createdAt: "2026-09-13T00:00:00.000Z",
+    updatedAt: "2026-09-13T00:00:00.000Z",
+    ...overrides,
+  };
+}
 
 test("Velo constructor validates apiKey", () => {
   assert.throws(() => new Velo({ apiKey: "" }), /API key is required/);
@@ -37,6 +57,52 @@ test("resolveBaseUrl works as expected", () => {
     "http://localhost:3000",
   );
   assert.equal(resolveBaseUrl({ apiKey: "key" }), "http://localhost:3000");
+  assert.equal(
+    resolveBaseUrl({
+      apiKey: "key",
+      environment: "development",
+      baseUrl: "http://127.0.0.1:3001/",
+    }),
+    "http://127.0.0.1:3001",
+  );
+});
+
+test("resolveBaseUrl rejects insecure or ambiguous API origins", () => {
+  for (const baseUrl of [
+    "http://api.example.com",
+    "https://user:pass@api.example.com",
+    "https://api.example.com/prefix",
+    "https://api.example.com?tenant=1",
+    "https://api.example.com#fragment",
+  ]) {
+    assert.throws(
+      () => resolveBaseUrl({ apiKey: "key", environment: "testnet", baseUrl }),
+      TypeError,
+    );
+  }
+
+  assert.throws(
+    () =>
+      resolveBaseUrl({
+        apiKey: "key",
+        environment: "development",
+        baseUrl: "http://api.example.com",
+      }),
+    TypeError,
+  );
+  assert.throws(
+    () =>
+      resolveBaseUrl({
+        apiKey: "key",
+        environment: "production",
+        baseUrl: "http://localhost:3000",
+      }),
+    TypeError,
+  );
+  assert.throws(
+    () => resolveBaseUrl({ apiKey: "key", environment: "staging" as never }),
+    TypeError,
+  );
 });
 
 test("HttpClient sets correct authorization and custom headers", async () => {
@@ -69,6 +135,7 @@ test("HttpClient sets correct authorization and custom headers", async () => {
     assert.deepEqual(res, { success: true });
     assert.equal(calledUrl, "https://api.example.com/test");
     assert.equal(calledOptions?.method, "POST");
+    assert.equal(calledOptions?.redirect, "error");
 
     const headers = calledOptions?.headers as Record<string, string>;
     assert.equal(headers["Authorization"], "Bearer test-key");
@@ -77,6 +144,35 @@ test("HttpClient sets correct authorization and custom headers", async () => {
     assert.equal(headers["X-Correlation-Id"], "request-00000001");
     assert.equal(headers.traceparent, "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
     assert.equal(calledOptions?.body, JSON.stringify({ foo: "bar" }));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("HttpClient rejects non-JSON and oversized successful responses", async () => {
+  const originalFetch = globalThis.fetch;
+
+  try {
+    const client = new HttpClient({ apiKey: "test-key", baseUrl: "https://api.example.com" });
+    globalThis.fetch = async () =>
+      new Response("upstream page", {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      });
+    await assert.rejects(
+      () => client.request("GET", "/test"),
+      (error: unknown) => error instanceof VeloInvalidResponseError,
+    );
+
+    globalThis.fetch = async () =>
+      new Response("x".repeat(1_048_577), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    await assert.rejects(
+      () => client.request("GET", "/test"),
+      (error: unknown) => error instanceof VeloInvalidResponseError,
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -278,7 +374,7 @@ test("Velo checkout.sessions.create and paymentIntents.create construct correct 
   globalThis.fetch = async (url, options) => {
     calledUrl = url.toString();
     calledOptions = options;
-    return new Response(JSON.stringify({ id: "pi_123", object: "payment_intent" }), {
+    return new Response(JSON.stringify(validPaymentIntentPayload()), {
       status: 201,
       headers: { "Content-Type": "application/json" },
     });
@@ -287,16 +383,55 @@ test("Velo checkout.sessions.create and paymentIntents.create construct correct 
   try {
     const velo = new Velo({ apiKey: "test-key", baseUrl: "https://api.example.com" });
     const res1 = await velo.checkout.sessions.create({ amount: "10.00", asset: "USDC" });
-    assert.deepEqual(res1, { id: "pi_123", object: "payment_intent" });
+    assert.deepEqual(res1, validPaymentIntentPayload());
     assert.equal(calledUrl, "https://api.example.com/api/v2/payment-intents");
     assert.equal(calledOptions?.method, "POST");
     assert.equal(calledOptions?.body, JSON.stringify({ amount: "10.00", asset: "USDC" }));
 
     const res2 = await velo.paymentIntents.create({ amount: "20.00", asset: "USDC" });
-    assert.deepEqual(res2, { id: "pi_123", object: "payment_intent" });
+    assert.deepEqual(res2, validPaymentIntentPayload());
     assert.equal(calledUrl, "https://api.example.com/api/v2/payment-intents");
     assert.equal(calledOptions?.method, "POST");
     assert.equal(calledOptions?.body, JSON.stringify({ amount: "20.00", asset: "USDC" }));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("payment intent create validates and projects caller input before dispatch", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  let requestBody = "";
+  globalThis.fetch = async (_url, options) => {
+    calls++;
+    requestBody = String(options?.body);
+    return new Response(JSON.stringify(validPaymentIntentPayload()), {
+      status: 201,
+      headers: { "Content-Type": "application/json" },
+    });
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: "https://api.example.com" });
+    for (const params of [
+      null,
+      { amount: "" },
+      { amount: "1e6" },
+      { amount: "0" },
+      { amount: "1.00", description: 42 },
+      { amount: "1.00", anchor: "pdax" },
+    ]) {
+      await assert.rejects(() => velo.paymentIntents.create(params as never), VeloValidationError);
+    }
+    assert.equal(calls, 0);
+
+    await velo.paymentIntents.create({
+      amount: " 10.00 ",
+      asset: "USDC",
+      extraSensitiveField: "must-not-be-sent",
+    } as never);
+    assert.equal(requestBody, JSON.stringify({ amount: "10.00", asset: "USDC" }));
+    assert.equal(calls, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -308,7 +443,7 @@ test("Velo paymentIntents.retrieve retrieves payment intent by id with encoding"
 
   globalThis.fetch = async (url) => {
     calledUrl = url.toString();
-    return new Response(JSON.stringify({ id: "pi_123", object: "payment_intent" }), {
+    return new Response(JSON.stringify(validPaymentIntentPayload()), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -317,7 +452,7 @@ test("Velo paymentIntents.retrieve retrieves payment intent by id with encoding"
   try {
     const velo = new Velo({ apiKey: "test-key", baseUrl: "https://api.example.com" });
     const res = await velo.paymentIntents.retrieve("pi/123");
-    assert.deepEqual(res, { id: "pi_123", object: "payment_intent" });
+    assert.deepEqual(res, validPaymentIntentPayload());
     assert.equal(calledUrl, "https://api.example.com/api/v2/payment-intents/pi%2F123");
   } finally {
     globalThis.fetch = originalFetch;
@@ -358,6 +493,65 @@ test("Velo paymentIntents.list parses query parameters correctly", async () => {
   }
 });
 
+test("payment intent endpoints reject malformed response shapes", async () => {
+  const originalFetch = globalThis.fetch;
+  const velo = new Velo({ apiKey: "test-key", baseUrl: "https://api.example.com" });
+
+  try {
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({ ...validPaymentIntentPayload(), paymentIntentId: "pi_other" }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
+    await assert.rejects(() => velo.paymentIntents.retrieve("pi_123"), VeloInvalidResponseError);
+
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          object: "list",
+          data: [{ ...validPaymentIntentPayload(), status: "unknown" }],
+          hasMore: false,
+          nextCursor: null,
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    await assert.rejects(() => velo.paymentIntents.list(), VeloInvalidResponseError);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("payment intent list validates query parameters before fetch", async () => {
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return new Response(
+      JSON.stringify({ object: "list", data: [], hasMore: false, nextCursor: null }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  };
+
+  try {
+    const velo = new Velo({ apiKey: "test-key", baseUrl: "https://api.example.com" });
+    for (const query of [
+      null,
+      { status: "unknown" },
+      { limit: 1.5 },
+      { limit: -1 },
+      { cursor: 42 },
+    ]) {
+      await assert.rejects(() => velo.paymentIntents.list(query as never), VeloValidationError);
+    }
+    assert.equal(calls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("GET request retries on 500 then succeeds", async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;
@@ -370,7 +564,7 @@ test("GET request retries on 500 then succeeds", async () => {
         { status: 500, headers: { "Content-Type": "application/json" } },
       );
     }
-    return new Response(JSON.stringify({ id: "pi_123", object: "payment_intent" }), {
+    return new Response(JSON.stringify(validPaymentIntentPayload()), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -379,7 +573,7 @@ test("GET request retries on 500 then succeeds", async () => {
   try {
     const velo = new Velo({ apiKey: "test-key", baseUrl: "https://api.example.com" });
     const res = await velo.paymentIntents.retrieve("pi_123");
-    assert.deepEqual(res, { id: "pi_123", object: "payment_intent" });
+    assert.deepEqual(res, validPaymentIntentPayload());
     assert.equal(calls, 2);
   } finally {
     globalThis.fetch = originalFetch;
@@ -425,7 +619,7 @@ test("POST with idempotency key retries on 500", async () => {
         { status: 500, headers: { "Content-Type": "application/json" } },
       );
     }
-    return new Response(JSON.stringify({ id: "pi_123", object: "payment_intent" }), {
+    return new Response(JSON.stringify(validPaymentIntentPayload()), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
@@ -437,7 +631,7 @@ test("POST with idempotency key retries on 500", async () => {
       { amount: "10.00" },
       { idempotencyKey: "idem-1" },
     );
-    assert.deepEqual(res, { id: "pi_123", object: "payment_intent" });
+    assert.deepEqual(res, validPaymentIntentPayload());
     assert.equal(calls, 2);
   } finally {
     globalThis.fetch = originalFetch;
@@ -575,7 +769,7 @@ test("Velo checkout.sessions.create serializes the in-house anchor", async () =>
   globalThis.fetch = async (url, options) => {
     calledUrl = url.toString();
     calledOptions = options;
-    return new Response(JSON.stringify({ id: "pi_123", object: "payment_intent" }), {
+    return new Response(JSON.stringify(validPaymentIntentPayload()), {
       status: 201,
       headers: { "Content-Type": "application/json" },
     });

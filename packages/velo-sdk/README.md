@@ -1,23 +1,25 @@
-# Velo SDK for Node.js (Alpha)
+# Velo SDK for Node.js
 
 The official Velo SDK for Node.js and modern JavaScript environments.
 
 > [!NOTE]
-> This package is currently in **Alpha** (`0.1.0-alpha.4`) and is meant for server-side environments only.
+> `@carts1024/velo-sdk` is a stable ESM package for server-side Node.js. It requires Node.js 22.6 or newer. The stable SDK version does not imply Mainnet, settlement, or browser support; see [Release scope](#release-scope).
 
 ## Installation
 
 ```bash
-npm install @carts1024/velo-sdk@alpha
+npm install @carts1024/velo-sdk
 # or
-pnpm add @carts1024/velo-sdk@alpha
+pnpm add @carts1024/velo-sdk
 # or
-yarn add @carts1024/velo-sdk@alpha
+yarn add @carts1024/velo-sdk
 ```
 
-Version `0.1.0-alpha.4` includes Gas Station support and the corrected Velo
-API host default. Install it with `@alpha` or pin `@0.1.0-alpha.4`; the
-`latest` dist-tag remains on `0.1.0-alpha.2`.
+Version `1.0.0` is published on npm under the `latest` dist-tag. The package
+uses HTTPS for production and Testnet API origins, rejects redirects, and
+limits successful API response bodies to 1 MiB. Custom `baseUrl` values are
+trusted operator configuration and must be HTTPS origins; plain HTTP is
+allowed only for loopback development URLs.
 
 ## Getting Started
 
@@ -58,8 +60,7 @@ console.log(`Payment status: ${paymentIntent.status}`);
 ### Reserving Gas sponsorship
 
 `velo.gas.sponsor()` reserves fee exposure for a user-signed Testnet Soroban
-transaction. It is included in `0.1.0-alpha.4`. Gas Station is an alpha
-Testnet feature; configure the deployed Velo URL explicitly and keep the API
+transaction. Gas Station is a Testnet-only feature; configure the deployed Velo URL explicitly and keep the API
 key, caller authorization, signed XDR, and operation key on the server:
 
 ```ts
@@ -346,8 +347,8 @@ the example has no durable operation store or later status endpoint. The
 workspace setup and recovery guidance.
 
 The package is published as ESM JavaScript with TypeScript declarations and a
-public `alpha` dist-tag. The Gas Station methods are Testnet-only during alpha
-and require an authorized project API key on a trusted server. Use a
+public `latest` dist-tag. Gas Station methods remain Testnet-only and require
+an authorized project API key on a trusted server. Use a
 **Gas Station · Testnet** key
 (`tg_test_...`) for Gas methods; a newly generated general API key is not
 authorized for Gas endpoints.
@@ -394,7 +395,9 @@ provider settlement or emits new provider settlement events.
 
 Delivery IDs represent durable, fenced deliveries. Consumers must still deduplicate by
 `x-velo-delivery`: Velo provides **exactly-once observable transitions**, not exactly-once
-transport. Invalid signatures fail closed.
+transport. The SDK's timestamp tolerance limits stale signatures but does not prevent a valid
+delivery from being replayed within that window. Make the delivery ID unique in a durable store and
+make business effects idempotent. Invalid signatures fail closed.
 
 > [!IMPORTANT]
 > Webhook signature verification requires the **raw, unparsed request body**. Do not parse the request body as JSON prior to calling verify.
@@ -426,13 +429,64 @@ const event = await Velo.webhooks.verify({
 import { NextResponse } from "next/server";
 import { Velo } from "@carts1024/velo-sdk";
 
-export async function POST(request: Request) {
-  // 1. Get the raw text payload (DO NOT call request.json())
-  const payload = await request.text();
+const MAX_WEBHOOK_BODY_BYTES = 1_048_576;
 
-  // 2. Get the signature header
+class PayloadTooLargeError extends Error {}
+
+async function readBoundedRawBody(request: Request): Promise<string> {
+  const contentLength = request.headers.get("content-length");
+  if (
+    contentLength &&
+    /^\d+$/.test(contentLength) &&
+    Number(contentLength) > MAX_WEBHOOK_BODY_BYTES
+  ) {
+    throw new PayloadTooLargeError();
+  }
+
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_WEBHOOK_BODY_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new PayloadTooLargeError();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
+export async function POST(request: Request) {
   const signature = request.headers.get("x-velo-signature");
-  const secret = process.env.VELO_WEBHOOK_SECRET!;
+  const secret = process.env.VELO_WEBHOOK_SECRET;
+  if (!signature || !secret) {
+    return new NextResponse("Missing signature or webhook secret configuration", { status: 400 });
+  }
+
+  // 1. Read the raw request body with a byte limit (DO NOT call request.json()).
+  let payload: string;
+  try {
+    payload = await readBoundedRawBody(request);
+  } catch (error) {
+    return new NextResponse("Invalid webhook request body", {
+      status: error instanceof PayloadTooLargeError ? 413 : 400,
+    });
+  }
 
   try {
     // 3. Verify the signature
@@ -471,7 +525,7 @@ export async function POST(request: Request) {
 
 ### Express.js Example
 
-Ensure you capture the raw body as a string. You can use `express.raw` middleware for this specific route.
+Ensure you capture the raw body as a string. Set a body limit on `express.raw` for this specific route.
 
 ```ts
 import express from "express";
@@ -479,7 +533,7 @@ import { Velo } from "@carts1024/velo-sdk";
 
 const app = express();
 
-app.post("/webhooks", express.raw({ type: "application/json" }), async (req, res) => {
+app.post("/webhooks", express.raw({ type: "application/json", limit: "1mb" }), async (req, res) => {
   // 1. Get raw string payload
   const payload = req.body.toString("utf8");
 
@@ -564,14 +618,25 @@ and `VeloValidationError` are exported for typed handling. Caller-initiated canc
 the caller's `AbortSignal.reason`, so cancellation may surface as a native abort reason rather than
 an SDK-wrapped error.
 
-The package uses the runtime's global `fetch`. Node 18+, serverless, edge, and browsers provide
-different connection-pooling behavior; the SDK sets no agent-specific pool and cannot make a
-browser share connections across origins. Keep API keys server-side and set a deadline below the
-hosting platform's function deadline.
+The package uses Node's global `fetch` and Web Crypto APIs. Node.js 22.6 or newer is required;
+the built package was checked on Node.js 24.22.1. The SDK sets no agent-specific connection pool.
+Keep API keys server-side and set a deadline below the hosting platform's function deadline.
 
 Idempotency keys are scoped to your project. Repeating a request with the same payload and same key will return the cached original response. Repeating with a different payload will throw a `VeloAPIError` with status code `409` (conflict).
 
-### Migration notes for alpha.2 transport
+### Migrating from `0.1.0-alpha.4`
+
+The root ESM entry point retains the existing `Velo`, checkout, PaymentIntent, webhook, and error
+exports. The Gas API remains available. Update these configuration values when moving to `1.0.0`:
+
+- `environment` must be `production`, `testnet`, or `development`; arbitrary strings are rejected.
+- `baseUrl` must be an origin with no path, query, or fragment. Use HTTPS except for loopback HTTP
+  in development. If your prior URL included an application path prefix, configure the API origin
+  and route the API paths at that origin.
+- Checkout `anchor` accepts only `"inhouse"`. PDAX is unavailable for new payment intents.
+- Node.js `22.6.0` or newer is required.
+
+### Migration notes for the alpha.2 transport
 
 - Add an `idempotencyKey` to checkout/session creation before relying on automatic retries.
 - Pass `correlationId` from your order or request context when you need to join SDK calls with Velo API and webhook logs.
@@ -585,12 +650,13 @@ production availability evidence.
 
 ---
 
-## Testnet vs Mainnet & Alpha Limitations
+## Release scope
 
 > [!WARNING]
-> This SDK is currently in **Alpha** (`0.1.0-alpha.4`) and subject to changes.
+> The SDK package is stable at `1.0.0`; Velo product and network capabilities remain limited as described below.
 >
-> - **Stellar Testnet Only**: During the alpha phase, all transactions and checkout sessions are routed through the Stellar Testnet. Mainnet is currently unsupported.
+> - **Stellar Testnet Only**: Gas sponsorship and supported payment flows operate on Stellar Testnet. Mainnet support is not available.
+> - **No settlement support**: The stable package does not add settlement or an external payment provider.
 > - **ESM-Only**: The package uses ESM exports and requires `"type": "module"` or an ESM-compatible bundler/environment. CommonJS `require()` is not supported directly.
-> - **Server-Side Only**: The SDK initializes and communicates using highly sensitive API keys and secrets. Do **NOT** use this SDK in browser environments or client-side code as it will leak your API credentials.
-> - **Browser Limitations**: Direct wallet connection, browser-based payment tracking, and front-end React components are excluded from the current alpha release.
+> - **Server-Side Only**: The SDK uses sensitive API keys and webhook secrets. Do not use it in browser environments or client-side code.
+> - **No browser wallet UI**: Direct wallet connection, browser-based payment tracking, and front-end React components are outside this package.

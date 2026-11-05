@@ -158,14 +158,36 @@ function parseWebhookEvent(payload: string): WebhookEvent {
  * @throws {VeloWebhookSignatureVerificationError} If the verification fails.
  */
 export async function verifyWebhookSignature(params: VerifyWebhookParams): Promise<WebhookEvent> {
+  if (typeof params !== "object" || params === null) {
+    throw new VeloWebhookSignatureVerificationError("Webhook verification parameters are required");
+  }
+
   const { payload, signature: signatureHeader, secret, toleranceSeconds = 300 } = params;
 
-  if (!signatureHeader) {
+  if (typeof signatureHeader !== "string" || signatureHeader === "") {
     throw new VeloWebhookSignatureVerificationError("Missing signature header");
   }
 
-  if (!secret) {
+  if (typeof secret !== "string" || secret === "") {
     throw new VeloWebhookSignatureVerificationError("Missing webhook signing secret");
+  }
+
+  if (typeof payload !== "string") {
+    throw new VeloWebhookSignatureVerificationError("Webhook payload must be a string");
+  }
+
+  if (
+    typeof toleranceSeconds !== "number" ||
+    !Number.isFinite(toleranceSeconds) ||
+    toleranceSeconds < 0
+  ) {
+    throw new VeloWebhookSignatureVerificationError(
+      "Timestamp tolerance must be a finite non-negative number",
+    );
+  }
+
+  if (signatureHeader.length > 512) {
+    throw new VeloWebhookSignatureVerificationError("Invalid signature header format");
   }
 
   const parts = signatureHeader.split(",");
@@ -178,20 +200,35 @@ export async function verifyWebhookSignature(params: VerifyWebhookParams): Promi
     const key = part.slice(0, equalIndex).trim();
     const val = part.slice(equalIndex + 1).trim();
 
-    if (key === "t") timestampStr = val;
-    if (key === "v1") signature = val;
+    if (key === "t") {
+      if (timestampStr !== undefined) {
+        throw new VeloWebhookSignatureVerificationError("Invalid signature header format");
+      }
+      timestampStr = val;
+    }
+    if (key === "v1") {
+      if (signature !== undefined) {
+        throw new VeloWebhookSignatureVerificationError("Invalid signature header format");
+      }
+      signature = val;
+    }
   }
 
-  if (!timestampStr || !signature) {
+  if (
+    timestampStr === undefined ||
+    signature === undefined ||
+    !/^(?:0|[1-9][0-9]*)$/.test(timestampStr) ||
+    !/^[0-9a-f]{64}$/.test(signature)
+  ) {
     throw new VeloWebhookSignatureVerificationError("Invalid signature header format");
   }
 
-  const timestamp = parseInt(timestampStr, 10);
-  if (isNaN(timestamp)) {
+  const timestamp = Number(timestampStr);
+  if (!Number.isSafeInteger(timestamp)) {
     throw new VeloWebhookSignatureVerificationError("Invalid timestamp in header");
   }
 
-  // Check clock drift to prevent replay attacks
+  // This freshness window limits old replays; consumers must still deduplicate delivery IDs.
   const now = Math.floor(Date.now() / 1000);
   if (Math.abs(now - timestamp) > toleranceSeconds) {
     throw new VeloWebhookSignatureVerificationError(
@@ -212,21 +249,17 @@ export async function verifyWebhookSignature(params: VerifyWebhookParams): Promi
       secretKeyData,
       { name: "HMAC", hash: "SHA-256" },
       false,
-      ["sign"],
+      ["verify"],
     );
 
-    // Compute expected signature
-    const signatureBuffer = await globalThis.crypto.subtle.sign(
+    const verified = await globalThis.crypto.subtle.verify(
       "HMAC",
       cryptoKey,
+      hexToArrayBuffer(signature),
       signaturePayloadData,
     );
 
-    // Convert to hexadecimal string
-    const hashArray = Array.from(new Uint8Array(signatureBuffer));
-    const expectedSignature = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-    if (signature !== expectedSignature) {
+    if (!verified) {
       throw new VeloWebhookSignatureVerificationError("Signature mismatch");
     }
 
@@ -235,7 +268,15 @@ export async function verifyWebhookSignature(params: VerifyWebhookParams): Promi
     if (err instanceof VeloWebhookSignatureVerificationError) {
       throw err;
     }
-    const message = err instanceof Error ? err.message : String(err);
-    throw new VeloWebhookSignatureVerificationError(`Verification failed: ${message}`);
+    throw new VeloWebhookSignatureVerificationError("Signature verification failed");
   }
+}
+
+function hexToArrayBuffer(value: string): ArrayBuffer {
+  const buffer = new ArrayBuffer(value.length / 2);
+  const bytes = new Uint8Array(buffer);
+  for (let index = 0; index < value.length; index += 2) {
+    bytes[index / 2] = Number.parseInt(value.slice(index, index + 2), 16);
+  }
+  return buffer;
 }

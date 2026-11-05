@@ -6,6 +6,23 @@ import libraryConfig from "../vite.lib.config.js";
 const walletKitPackage = "@creit-tech/stellar-wallets-kit";
 
 describe("npm release packaging", () => {
+  test("prepares the stable version without preserving the alpha publication tag", () => {
+    const manifest = packageJson as {
+      version?: string;
+      publishConfig?: { access?: string; tag?: string };
+      exports?: Record<string, { import?: string; types?: string }>;
+    };
+    expect(manifest.version).toBe("1.0.1");
+    expect(manifest.publishConfig).toEqual({ access: "public" });
+    expect(Object.keys(manifest.exports ?? {}).sort()).toEqual([
+      "./browser",
+      "./config",
+      "./element",
+      "./logos",
+      "./react",
+    ]);
+  });
+
   test("bundles the JSR-hosted wallet kit for npm-only consumers", () => {
     const manifest = packageJson as {
       dependencies?: Record<string, string>;

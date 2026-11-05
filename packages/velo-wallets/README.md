@@ -4,11 +4,11 @@ Hosted, project-configured multi-wallet integration for Stellar applications. Ve
 
 ## Release status
 
-The workspace package is prepared at version `1.0.0`. It has **not** been published to npm, and the hosted CDN has **not** been deployed from this build. The existing `/v1/velo-wallet.js` runtime remains unchanged. The installation commands below apply after npm publication; CDN consumers need a separate deployment before switching to this release.
+Version `1.0.0` is published to npm. The hosted CDN has **not** been deployed from this build, so its existing `/v1/velo-wallet.js` runtime remains unchanged. CDN consumers need a separate deployment before switching to this release.
 
 ## Installation and compatibility
 
-After publication, install the stable package without an alpha tag:
+Install the stable package without an alpha tag:
 
 ```sh
 npm install @carts1024/velo-wallets

@@ -11,4 +11,4 @@ case ":${PATH:-}:" in
   *) PATH="$pnpm_bin_dir${PATH:+:$PATH}"; export PATH ;;
 esac
 
-"$pnpm_bin" lint:fix && "$pnpm_bin" build
+"$pnpm_bin" lint:fix && VELO_WALLETS_SKIP_CDN_STAGE=1 "$pnpm_bin" build

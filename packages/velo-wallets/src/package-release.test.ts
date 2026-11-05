@@ -12,7 +12,7 @@ describe("npm release packaging", () => {
       publishConfig?: { access?: string; tag?: string };
       exports?: Record<string, { import?: string; types?: string }>;
     };
-    expect(manifest.version).toBe("1.0.0");
+    expect(manifest.version).toBe("1.0.1");
     expect(manifest.publishConfig).toEqual({ access: "public" });
     expect(Object.keys(manifest.exports ?? {}).sort()).toEqual([
       "./browser",

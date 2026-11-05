@@ -1,8 +1,9 @@
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { stageWalletBundle } from "./stage-wallet-bundle-lib.mjs";
+import { stageImmutableWalletBundle, stageWalletBundle } from "./stage-wallet-bundle-lib.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const source = path.join(repositoryRoot, "packages/velo-wallets/dist/cdn/velo-wallet.js");
@@ -16,6 +17,24 @@ if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(packageJson.version)) {
 if (process.env.VELO_WALLETS_SKIP_CDN_STAGE === "1") {
   console.log("Skipped wallet CDN staging for this validation build.");
 } else {
+  // Preserve the bytes already served at this immutable URL before updating /v1/.
+  const legacySource = path.join(
+    repositoryRoot,
+    "packages/velo-wallets/releases/v1.0.0/velo-wallet.js",
+  );
+  const legacyHash = createHash("sha256")
+    .update(await readFile(legacySource))
+    .digest("hex");
+  if (legacyHash !== "913b815dd166cb993272d86e32846b7b0987bf6f3627c6788020890f662bd7e3") {
+    throw new Error("The archived v1.0.0 wallet bundle does not match the deployed asset.");
+  }
+  await stageImmutableWalletBundle({
+    source: legacySource,
+    versionedDestination: path.join(
+      repositoryRoot,
+      "apps/web/public/wallets/v1.0.0/velo-wallet.js",
+    ),
+  });
   const result = await stageWalletBundle({
     source,
     latestDestination: path.join(repositoryRoot, "apps/web/public/wallets/v1/velo-wallet.js"),

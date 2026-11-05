@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export async function stageWalletBundle({ source, latestDestination, versionedDestination }) {
+export async function stageImmutableWalletBundle({ source, versionedDestination }) {
   const sourceContents = await readFile(source);
   await mkdir(path.dirname(versionedDestination), { recursive: true });
 
@@ -30,9 +30,14 @@ export async function stageWalletBundle({ source, latestDestination, versionedDe
     }
   }
 
+  return { versionedCreated: !versionedContents };
+}
+
+export async function stageWalletBundle({ source, latestDestination, versionedDestination }) {
+  const result = await stageImmutableWalletBundle({ source, versionedDestination });
   await mkdir(path.dirname(latestDestination), { recursive: true });
   await copyFile(source, latestDestination);
-  return { versionedCreated: !versionedContents };
+  return result;
 }
 
 function isMissingFile(error) {

@@ -4,7 +4,39 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { stageWalletBundle } from "./stage-wallet-bundle-lib.mjs";
+import { stageImmutableWalletBundle, stageWalletBundle } from "./stage-wallet-bundle-lib.mjs";
+
+test("preserves an archived release while publishing a newer alias", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "velo-wallet-stage-"));
+  try {
+    const oldSource = path.join(root, "old.js");
+    const newSource = path.join(root, "new.js");
+    const oldDestination = path.join(root, "public/v1.0.0/velo-wallet.js");
+    const newDestination = path.join(root, "public/v1.0.1/velo-wallet.js");
+    const latestDestination = path.join(root, "public/v1/velo-wallet.js");
+    await writeFile(oldSource, "old deployed release");
+    await writeFile(newSource, "new release");
+
+    await stageImmutableWalletBundle({ source: oldSource, versionedDestination: oldDestination });
+    await stageWalletBundle({
+      source: newSource,
+      latestDestination,
+      versionedDestination: newDestination,
+    });
+
+    assert.equal(await readFile(oldDestination, "utf8"), "old deployed release");
+    assert.equal(await readFile(newDestination, "utf8"), "new release");
+    assert.equal(await readFile(latestDestination, "utf8"), "new release");
+    await writeFile(oldDestination, "unexpected existing asset");
+    await assert.rejects(
+      stageImmutableWalletBundle({ source: oldSource, versionedDestination: oldDestination }),
+      /Refusing to overwrite existing versioned CDN asset/,
+    );
+    assert.equal(await readFile(latestDestination, "utf8"), "new release");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("creates a new versioned artifact and updates the mutable v1 alias", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "velo-wallet-stage-"));

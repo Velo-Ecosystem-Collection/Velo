@@ -1,6 +1,7 @@
 import { type ModuleInterface, ModuleType } from "@creit-tech/stellar-wallets-kit/types";
 
 import { VeloWalletError } from "./errors.js";
+import { isValidStellarAccountId, isWalletSigningPayload } from "./wallet-validation.js";
 
 export const NOIR_ID = "noir";
 export const NOIR_INSTALL_URL =
@@ -60,30 +61,36 @@ export class NoirModule implements ModuleInterface {
     const result = params?.skipRequestAccess
       ? await provider.getAddress()
       : await provider.requestAccess();
-    return { address: requireString(unwrap(result).address, "address") };
+    return { address: requireAddress(unwrap(result).address) };
   }
 
   async signTransaction(xdr: string, options?: NoirSignOptions) {
+    requireSigningPayload(xdr, "transaction");
+    await this.requireNetwork(options?.networkPassphrase);
     const result = unwrap(await this.requireProvider().signTransaction(xdr, options));
     return {
-      signedTxXdr: requireString(result.signedTxXdr, "signed transaction"),
-      signerAddress: requireString(result.signerAddress, "signer address"),
+      signedTxXdr: requireSigningPayload(result.signedTxXdr, "signed transaction"),
+      signerAddress: requireSignerAddress(result.signerAddress, options?.address),
     };
   }
 
   async signAuthEntry(authEntry: string, options?: NoirSignOptions) {
+    requireSigningPayload(authEntry, "authorization entry");
+    await this.requireNetwork(options?.networkPassphrase);
     const result = unwrap(await this.requireProvider().signAuthEntry(authEntry, options));
     return {
-      signedAuthEntry: requireString(result.signedAuthEntry, "signed authorization entry"),
-      signerAddress: requireString(result.signerAddress, "signer address"),
+      signedAuthEntry: requireSigningPayload(result.signedAuthEntry, "signed authorization entry"),
+      signerAddress: requireSignerAddress(result.signerAddress, options?.address),
     };
   }
 
   async signMessage(message: string, options?: NoirSignOptions) {
+    requireSigningPayload(message, "message");
+    await this.requireNetwork(options?.networkPassphrase);
     const result = unwrap(await this.requireProvider().signMessage(message, options));
     return {
-      signedMessage: requireString(result.signedMessage, "signed message"),
-      signerAddress: requireString(result.signerAddress, "signer address"),
+      signedMessage: requireSigningPayload(result.signedMessage, "signed message"),
+      signerAddress: requireSignerAddress(result.signerAddress, options?.address),
     };
   }
 
@@ -96,12 +103,14 @@ export class NoirModule implements ModuleInterface {
   }
 
   async hasMatchingSession(address: string, expectedNetworkPassphrase: string) {
+    if (!isValidStellarAccountId(address)) return false;
     const provider = this.requireProvider();
     const { isAllowed } = unwrap(await provider.isAllowed());
+    if (typeof isAllowed !== "boolean") return false;
     if (!isAllowed) return false;
 
     const current = unwrap(await provider.getAddress());
-    if (current.address !== address) return false;
+    if (!isValidStellarAccountId(current.address) || current.address !== address) return false;
 
     const network = unwrap(await provider.getNetwork());
     if (network.networkPassphrase !== expectedNetworkPassphrase) {
@@ -111,6 +120,17 @@ export class NoirModule implements ModuleInterface {
       );
     }
     return true;
+  }
+
+  private async requireNetwork(expectedNetworkPassphrase?: string) {
+    if (!expectedNetworkPassphrase) return;
+    const network = await this.getNetwork();
+    if (network.networkPassphrase !== expectedNetworkPassphrase) {
+      throw new VeloWalletError(
+        "NETWORK_MISMATCH",
+        `Switch Noir to ${expectedNetworkPassphrase === "Public Global Stellar Network ; September 2015" ? "Mainnet" : "Testnet"}.`,
+      );
+    }
   }
 
   private requireProvider() {
@@ -126,19 +146,62 @@ export class NoirModule implements ModuleInterface {
 }
 
 function unwrap<T>(response: NoirProviderResponse<T>): T {
-  if (typeof response === "object" && response !== null && "error" in response) {
-    const { code, message, ext } = response.error;
-    if (code === -3 && /network/i.test(message)) {
-      throw new VeloWalletError("NETWORK_MISMATCH", message, response.error);
+  if (typeof response !== "object" || response === null || Array.isArray(response)) {
+    throw new Error("Noir returned an invalid response.");
+  }
+  if ("error" in response) {
+    const error = response.error;
+    if (
+      typeof error !== "object" ||
+      error === null ||
+      typeof error.code !== "number" ||
+      typeof error.message !== "string"
+    ) {
+      throw new Error("Noir returned an invalid error response.");
     }
-    throw { code, message, ext: ext?.join(", ") };
+    const { code, message, ext } = error;
+    if (code === -3 && /network/i.test(message)) {
+      throw new VeloWalletError("NETWORK_MISMATCH", message, error);
+    }
+    throw {
+      code,
+      message,
+      ...(Array.isArray(ext) && ext.every((entry) => typeof entry === "string")
+        ? { ext: ext.join(", ") }
+        : {}),
+    };
   }
   return response as T;
 }
 
 function requireString(value: unknown, label: string) {
-  if (typeof value !== "string" || value.length === 0) {
+  if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error(`Noir did not return a valid ${label}.`);
   }
   return value;
+}
+
+function requireAddress(value: unknown) {
+  if (!isValidStellarAccountId(value)) {
+    throw new VeloWalletError("WALLET_UNAVAILABLE", "Noir returned an invalid Stellar account ID.");
+  }
+  return value;
+}
+
+function requireSigningPayload(value: unknown, label: string) {
+  if (!isWalletSigningPayload(value)) {
+    throw new Error(`Noir did not return a valid ${label}.`);
+  }
+  return value;
+}
+
+function requireSignerAddress(value: unknown, expectedAddress?: string) {
+  const address = requireAddress(value);
+  if (expectedAddress !== undefined && address !== expectedAddress) {
+    throw new VeloWalletError(
+      "SESSION_STALE",
+      "The Noir account changed before signing completed.",
+    );
+  }
+  return address;
 }

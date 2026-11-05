@@ -45,7 +45,7 @@ describe("Velo Wallets Web Component", () => {
       appearance: normalizeWalletAppearance(DEFAULT_WALLET_CONFIG),
     });
     const element = document.createElement("velo-wallet");
-    element.setAttribute("project-key", "vw_pk_example");
+    element.setAttribute("project-key", "vw_pk_00000000000000000000000000000000");
     document.body.append(element);
     await Promise.resolve();
 

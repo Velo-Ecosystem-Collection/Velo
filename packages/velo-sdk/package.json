@@ -1,6 +1,6 @@
 {
   "name": "@carts1024/velo-sdk",
-  "version": "0.1.0-alpha.4",
+  "version": "1.0.0",
   "private": false,
   "description": "Server-side Node.js SDK for Velo payments, webhooks, and Stellar Testnet Gas Station sponsorship.",
   "keywords": [
@@ -29,7 +29,7 @@
   },
   "publishConfig": {
     "access": "public",
-    "tag": "alpha"
+    "tag": "latest"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -44,6 +44,6 @@
     "typescript": "5.9.2"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.6.0"
   }
 }

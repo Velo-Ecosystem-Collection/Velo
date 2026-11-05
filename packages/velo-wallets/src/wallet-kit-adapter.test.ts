@@ -11,8 +11,12 @@ const kit = vi.hoisted(() => {
     setWallet: vi.fn((walletId: string) => {
       selectedWalletId = walletId;
     }),
-    authModal: vi.fn(async () => ({ address: "GABC" })),
-    fetchAddress: vi.fn(async () => ({ address: "GABC" })),
+    authModal: vi.fn(async () => ({
+      address: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    })),
+    fetchAddress: vi.fn(async () => ({
+      address: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    })),
     refreshSupportedWallets: vi.fn(async () => [
       {
         id: "freighter",
@@ -33,7 +37,9 @@ const kit = vi.hoisted(() => {
         icon: "data:image/png;base64,AA==",
       },
     ]),
-    getAddress: vi.fn(async () => ({ address: "GABC" })),
+    getAddress: vi.fn(async () => ({
+      address: "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+    })),
     getNetwork: vi.fn(async () => ({
       network: "TESTNET",
       networkPassphrase: "Test SDF Network ; September 2015",
@@ -56,6 +62,8 @@ const kit = vi.hoisted(() => {
     },
   };
 });
+
+const ACCOUNT_ADDRESS = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 vi.mock("@creit-tech/stellar-wallets-kit", () => ({
   KitEventType: {
@@ -164,7 +172,10 @@ describe("StellarWalletsKitAdapter", () => {
     const adapter = new StellarWalletsKitAdapter();
     await adapter.initialize(noirConfig);
     kit.setWallet("noir");
-    await expect(adapter.connect()).resolves.toEqual({ address: "GABC", walletId: "noir" });
+    await expect(adapter.connect()).resolves.toEqual({
+      address: ACCOUNT_ADDRESS,
+      walletId: "noir",
+    });
 
     vi.mocked(kit.getNetwork).mockResolvedValueOnce({
       network: "PUBLIC",
@@ -184,7 +195,7 @@ describe("StellarWalletsKitAdapter", () => {
       url: "https://www.freighter.app/",
     });
     await expect(adapter.connect("freighter")).resolves.toEqual({
-      address: "GABC",
+      address: ACCOUNT_ADDRESS,
       walletId: "freighter",
     });
     expect(kit.setWallet).toHaveBeenCalledWith("freighter");
@@ -218,8 +229,8 @@ describe("StellarWalletsKitAdapter", () => {
       isNoir: true as const,
       isConnected: vi.fn(async () => ({ isConnected: true })),
       isAllowed: vi.fn(async () => ({ isAllowed: true })),
-      requestAccess: vi.fn(async () => ({ address: "GABC" })),
-      getAddress: vi.fn(async () => ({ address: "GABC" })),
+      requestAccess: vi.fn(async () => ({ address: ACCOUNT_ADDRESS })),
+      getAddress: vi.fn(async () => ({ address: ACCOUNT_ADDRESS })),
       getNetwork: vi.fn(async () => ({
         network: "TESTNET",
         networkPassphrase: "Test SDF Network ; September 2015",
@@ -232,8 +243,10 @@ describe("StellarWalletsKitAdapter", () => {
     const adapter = new StellarWalletsKitAdapter();
     await adapter.initialize(noirConfig);
 
-    await expect(adapter.restoreSession?.({ address: "GABC", walletId: "noir" })).resolves.toEqual({
-      address: "GABC",
+    await expect(
+      adapter.restoreSession?.({ address: ACCOUNT_ADDRESS, walletId: "noir" }),
+    ).resolves.toEqual({
+      address: ACCOUNT_ADDRESS,
       walletId: "noir",
     });
     expect(provider.requestAccess).not.toHaveBeenCalled();

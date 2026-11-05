@@ -43,11 +43,19 @@ export class VeloWalletElement extends BaseElement {
     }
 
     const cssAppearance = readCssAppearanceOverrides(this);
-    this.client = getSharedVeloWalletClient({
-      projectKey,
-      apiBaseUrl: this.getAttribute("api-base") ?? undefined,
-      appearance: mergeAppearanceOverrides(cssAppearance, this.localAppearance),
-    });
+    try {
+      this.client = getSharedVeloWalletClient({
+        projectKey,
+        apiBaseUrl: this.getAttribute("api-base") ?? undefined,
+        appearance: mergeAppearanceOverrides(cssAppearance, this.localAppearance),
+      });
+    } catch (error) {
+      this.renderError(
+        error instanceof Error ? error.message : "Velo Wallets could not initialize.",
+      );
+      this.dispatch("velo:wallet-error", { error });
+      return;
+    }
     if (window.matchMedia) {
       this.themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
       this.themeMedia.addEventListener("change", this.handleThemeChange);
@@ -89,18 +97,21 @@ export class VeloWalletElement extends BaseElement {
   }
 
   signTransaction(xdr: string) {
-    if (!this.client) throw new Error("Velo Wallets element is not connected.");
-    return this.announceSigning("transaction", () => this.client!.signTransaction(xdr));
+    const client = this.client;
+    if (!client) throw new Error("Velo Wallets element is not connected.");
+    return this.announceSigning("transaction", () => client.signTransaction(xdr));
   }
 
   signAuthEntry(authEntry: string) {
-    if (!this.client) throw new Error("Velo Wallets element is not connected.");
-    return this.announceSigning("authorization entry", () => this.client!.signAuthEntry(authEntry));
+    const client = this.client;
+    if (!client) throw new Error("Velo Wallets element is not connected.");
+    return this.announceSigning("authorization entry", () => client.signAuthEntry(authEntry));
   }
 
   signMessage(message: string) {
-    if (!this.client) throw new Error("Velo Wallets element is not connected.");
-    return this.announceSigning("message", () => this.client!.signMessage(message));
+    const client = this.client;
+    if (!client) throw new Error("Velo Wallets element is not connected.");
+    return this.announceSigning("message", () => client.signMessage(message));
   }
 
   private render() {

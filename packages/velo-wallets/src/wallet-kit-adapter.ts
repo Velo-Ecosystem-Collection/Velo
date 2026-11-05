@@ -3,6 +3,7 @@ import type { PublishedWalletConfig } from "./config.js";
 import { walletKitTheme } from "./appearance.js";
 import { VeloWalletError } from "./errors.js";
 import { NoirModule, NOIR_ID } from "./noir-module.js";
+import { isValidStellarAccountId, isWalletSigningPayload } from "./wallet-validation.js";
 
 export type WalletKitSession = { address: string; walletId: string | null };
 export type WalletKitOption = {
@@ -30,6 +31,32 @@ export interface WalletKitAdapter {
 
 const TESTNET_PASSPHRASE = "Test SDF Network ; September 2015";
 const PUBLIC_PASSPHRASE = "Public Global Stellar Network ; September 2015";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readEventPayload(value: unknown) {
+  if (!isRecord(value) || !isRecord(value.payload)) return null;
+  return value.payload;
+}
+
+function requireWalletAddress(value: unknown) {
+  if (!isValidStellarAccountId(value)) {
+    throw new VeloWalletError(
+      "WALLET_UNAVAILABLE",
+      "Wallet returned an invalid Stellar account ID.",
+    );
+  }
+  return value;
+}
+
+function requireSignedValue(value: unknown, label: string) {
+  if (!isWalletSigningPayload(value)) {
+    throw new VeloWalletError("SIGNING_FAILED", `Wallet returned an invalid ${label}.`);
+  }
+  return value;
+}
 
 export function networkPassphrase(config: PublishedWalletConfig) {
   return config.network === "public" ? PUBLIC_PASSPHRASE : TESTNET_PASSPHRASE;
@@ -69,18 +96,40 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
     this.unsubscribers.forEach((unsubscribe) => unsubscribe());
     this.unsubscribers = [
       StellarWalletsKit.on(KitEventType.STATE_UPDATED, (event) => {
+        const payload = readEventPayload(event);
+        if (!payload) {
+          this.emit({ type: "disconnected" });
+          return;
+        }
+        const address = payload.address;
+        const networkPassphrase = payload.networkPassphrase;
+        if (
+          (address !== undefined && address !== null && !isValidStellarAccountId(address)) ||
+          (networkPassphrase !== undefined &&
+            networkPassphrase !== null &&
+            typeof networkPassphrase !== "string")
+        ) {
+          this.emit({ type: "disconnected" });
+          return;
+        }
         this.emit({
           type: "changed",
-          address: event.payload.address ?? null,
+          address: typeof address === "string" ? address : null,
           walletId: null,
-          networkPassphrase: event.payload.networkPassphrase,
+          ...(typeof networkPassphrase === "string" ? { networkPassphrase } : {}),
         });
       }),
       StellarWalletsKit.on(KitEventType.WALLET_SELECTED, (event) => {
+        const payload = readEventPayload(event);
+        const id = payload?.id;
+        if (!payload || (id !== undefined && id !== null && typeof id !== "string")) {
+          this.emit({ type: "disconnected" });
+          return;
+        }
         this.emit({
           type: "changed",
           address: null,
-          walletId: event.payload.id ?? null,
+          walletId: typeof id === "string" ? id : null,
         });
       }),
       StellarWalletsKit.on(KitEventType.DISCONNECT, () => this.emit({ type: "disconnected" })),
@@ -98,12 +147,25 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
   async listWallets() {
     const { StellarWalletsKit } = await import("@creit-tech/stellar-wallets-kit");
     const wallets = await StellarWalletsKit.refreshSupportedWallets();
-    return wallets.map((wallet) => ({
-      id: wallet.id,
-      name: wallet.name,
-      isAvailable: wallet.isAvailable,
-      url: wallet.url,
-    }));
+    if (!Array.isArray(wallets)) return [];
+    return wallets.flatMap((wallet) => {
+      if (
+        !isRecord(wallet) ||
+        typeof wallet.id !== "string" ||
+        typeof wallet.name !== "string" ||
+        typeof wallet.isAvailable !== "boolean"
+      ) {
+        return [];
+      }
+      return [
+        {
+          id: wallet.id,
+          name: wallet.name,
+          isAvailable: wallet.isAvailable,
+          url: typeof wallet.url === "string" ? wallet.url : "",
+        },
+      ];
+    });
   }
 
   async connect(selectedWalletId?: string) {
@@ -111,6 +173,12 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
     let result: { address: string };
     if (selectedWalletId) {
       const wallets = await StellarWalletsKit.refreshSupportedWallets();
+      if (!Array.isArray(wallets)) {
+        throw new VeloWalletError(
+          "WALLET_UNAVAILABLE",
+          "Wallet discovery returned an invalid response.",
+        );
+      }
       const wallet = wallets.find((item) => item.id === selectedWalletId);
       if (!wallet || !this.config?.walletIds.includes(selectedWalletId)) {
         throw new VeloWalletError("WALLET_UNAVAILABLE", "This wallet is not enabled for this app.");
@@ -123,7 +191,13 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
     } else {
       result = await StellarWalletsKit.authModal();
     }
-    const walletId = StellarWalletsKit.selectedModule?.productId ?? null;
+    const selectedModule = StellarWalletsKit.selectedModule;
+    const walletId =
+      typeof selectedModule?.productId === "string" ? selectedModule.productId : null;
+    if (walletId !== null && !this.config?.walletIds.includes(walletId)) {
+      throw new VeloWalletError("WALLET_UNAVAILABLE", "This wallet is not enabled for this app.");
+    }
+    const address = requireWalletAddress(isRecord(result) ? result.address : null);
     if (walletId === NOIR_ID) {
       const network = await StellarWalletsKit.getNetwork();
       if (network.networkPassphrase !== this.requirePassphrase()) {
@@ -134,7 +208,7 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
       }
     }
     return {
-      address: result.address,
+      address,
       walletId,
     };
   }
@@ -149,7 +223,11 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
           : null;
       }
       const result = await StellarWalletsKit.getAddress();
-      return result.address === session.address ? session : null;
+      return isRecord(result) &&
+        isValidStellarAccountId(result.address) &&
+        result.address === session.address
+        ? session
+        : null;
     } catch (error) {
       if (error instanceof VeloWalletError && error.code === "NETWORK_MISMATCH") throw error;
       return null;
@@ -167,7 +245,7 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
       networkPassphrase: this.requirePassphrase(),
       address,
     });
-    return result.signedTxXdr;
+    return requireSignedValue(isRecord(result) ? result.signedTxXdr : null, "signed transaction");
   }
 
   async signAuthEntry(authEntry: string, address: string) {
@@ -176,7 +254,10 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
       networkPassphrase: this.requirePassphrase(),
       address,
     });
-    return result.signedAuthEntry;
+    return requireSignedValue(
+      isRecord(result) ? result.signedAuthEntry : null,
+      "signed authorization entry",
+    );
   }
 
   async signMessage(message: string, address: string) {
@@ -185,7 +266,7 @@ export class StellarWalletsKitAdapter implements WalletKitAdapter {
       networkPassphrase: this.requirePassphrase(),
       address,
     });
-    return result.signedMessage;
+    return requireSignedValue(isRecord(result) ? result.signedMessage : null, "signed message");
   }
 
   subscribe(listener: (event: WalletKitEvent) => void) {

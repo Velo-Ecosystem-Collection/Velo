@@ -1,13 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseOriginLines, walletIntegrationSnippets } from "./wallet-config-form.ts";
+import { DEFAULT_WALLET_CONFIG } from "@carts1024/velo-wallets/config";
+
+import {
+  draftFromDocument,
+  parseOriginLines,
+  walletIntegrationSnippets,
+} from "./wallet-config-form.ts";
 
 test("origin editor removes empty lines and surrounding whitespace", () => {
   assert.deepEqual(parseOriginLines(" http://localhost:3000 \n\nhttps://app.example.com\n"), [
     "http://localhost:3000",
     "https://app.example.com",
   ]);
+});
+
+test("draft hydration keeps selector logo and defaults older records to Velo", () => {
+  const oldDraft = {
+    ...DEFAULT_WALLET_CONFIG,
+    selectorLogo: undefined,
+  };
+  const hydratedOldDraft = draftFromDocument(oldDraft);
+  assert.equal(hydratedOldDraft.selectorLogo, "velo");
+
+  const hydratedProjectDraft = draftFromDocument({ ...oldDraft, selectorLogo: "project" });
+  assert.equal(hydratedProjectDraft.selectorLogo, "project");
 });
 
 test("generated integration snippets use the active key and configured endpoints", () => {

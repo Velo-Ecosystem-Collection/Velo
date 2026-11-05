@@ -68,6 +68,11 @@ export const getPublishedByKey = query({
       buttonLabel: publication.buttonLabel,
       appearance: publication.appearance,
     });
+    const selectorLogo = publication.selectorLogo ?? "velo";
+    const projectLogoUrl =
+      selectorLogo === "project" && project.logoStorageId
+        ? await ctx.storage.getUrl(project.logoStorageId)
+        : null;
 
     return {
       status: "ok" as const,
@@ -78,6 +83,8 @@ export const getPublishedByKey = query({
         projectKey: publication.publicKey,
         network: publication.network,
         walletIds: publication.walletIds,
+        selectorLogo,
+        ...(projectLogoUrl ? { projectLogoUrl } : {}),
         appearance,
         modal: {
           showInstallLabel: publication.showInstallLabel,

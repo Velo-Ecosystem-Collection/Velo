@@ -241,6 +241,90 @@ test("verifyWebhookSignature rejects malformed headers", async () => {
   );
 });
 
+test("verifyWebhookSignature rejects noncanonical or duplicate header values", async () => {
+  const secret = "whsec_testsecret12345";
+  const payload = JSON.stringify({ type: "payment.succeeded" });
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = generateTestSignatureHeader(payload, secret, timestamp).split(",")[1];
+  assert.ok(signature);
+
+  for (const signatureHeader of [
+    `t=${timestamp}suffix,${signature}`,
+    `t=0${timestamp},${signature}`,
+    `t=${timestamp},${signature},t=${timestamp}`,
+    `t=${timestamp},${signature},v1=${"0".repeat(64)}`,
+  ]) {
+    await assert.rejects(
+      () => verifyWebhookSignature({ payload, signature: signatureHeader, secret }),
+      (error: unknown) => {
+        assert.equal(error instanceof VeloWebhookSignatureVerificationError, true);
+        assert.equal((error as Error).message, "Invalid signature header format");
+        return true;
+      },
+    );
+  }
+});
+
+test("verifyWebhookSignature rejects invalid freshness tolerances", async () => {
+  const payload = JSON.stringify({ type: "payment.succeeded" });
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = generateTestSignatureHeader(payload, webhookSecret, timestamp);
+
+  for (const toleranceSeconds of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    await assert.rejects(
+      () => verifyWebhookSignature({ payload, signature, secret: webhookSecret, toleranceSeconds }),
+      (error: unknown) => {
+        assert.equal(error instanceof VeloWebhookSignatureVerificationError, true);
+        assert.equal(
+          (error as Error).message,
+          "Timestamp tolerance must be a finite non-negative number",
+        );
+        return true;
+      },
+    );
+  }
+});
+
+test("verifyWebhookSignature rejects invalid runtime inputs and oversized headers", async () => {
+  const payload = JSON.stringify({ type: "payment.succeeded" });
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = generateTestSignatureHeader(payload, webhookSecret, timestamp);
+
+  for (const params of [
+    null,
+    { payload: 1, signature, secret: webhookSecret },
+    { payload, signature, secret: null },
+    { payload, signature: `${signature},${"x".repeat(512)}`, secret: webhookSecret },
+  ]) {
+    await assert.rejects(
+      () => verifyWebhookSignature(params as never),
+      VeloWebhookSignatureVerificationError,
+    );
+  }
+});
+
+test("verifyWebhookSignature accepts a replay within tolerance for caller deduplication", async () => {
+  const event = baseEvent("payment.succeeded", {
+    paymentIntent: {
+      id: "pi_replayed",
+      amount: "10.00",
+      asset: "USDC",
+      merchantName: "Example",
+      status: "paid",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    },
+  });
+  const payload = JSON.stringify(event);
+  const timestamp = Math.floor(Date.now() / 1000);
+  const signature = generateTestSignatureHeader(payload, webhookSecret, timestamp);
+  const params = { payload, signature, secret: webhookSecret };
+
+  const first = await verifyWebhookSignature(params);
+  const replay = await verifyWebhookSignature(params);
+  assert.equal(first.id, replay.id);
+});
+
 test("verifyWebhookSignature rejects expired timestamps", async () => {
   const secret = "whsec_testsecret12345";
   const payload = JSON.stringify({ type: "payment.succeeded" });

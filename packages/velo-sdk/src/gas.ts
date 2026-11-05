@@ -15,6 +15,7 @@ import {
   VeloError,
   VeloGasWaitError,
   VeloGasSubmissionUnknownError,
+  VeloInvalidResponseError,
   VeloRateLimitError,
   VeloTimeoutError,
   VeloValidationError,
@@ -86,22 +87,21 @@ export function createGasApi(http: HttpClient): GasApi {
   ): Promise<GasSubmitResult> => {
     const normalizedParams = normalizeGasSubmitParams(params);
     const normalizedOptions = normalizeRequestOptions(options);
-    const payload = await http.request<unknown>(
-      "POST",
-      "/api/gas/submit",
-      normalizedParams.body,
-      {
-        ...normalizedOptions,
-        maxRetries: 0,
-        submission: true,
-      },
-      { kind: "submit", recovery: normalizedParams.identity },
-    );
-
     try {
+      const payload = await http.request<unknown>(
+        "POST",
+        "/api/gas/submit",
+        normalizedParams.body,
+        {
+          ...normalizedOptions,
+          maxRetries: 0,
+          submission: true,
+        },
+        { kind: "submit", recovery: normalizedParams.identity },
+      );
       return parseGasSubmitResult(payload, normalizedParams.identity);
     } catch (error) {
-      if (isInvalidResponseError(error)) {
+      if (error instanceof VeloInvalidResponseError || isInvalidResponseError(error)) {
         throw new VeloGasSubmissionUnknownError(normalizedParams.identity, "invalid_response");
       }
       throw error;

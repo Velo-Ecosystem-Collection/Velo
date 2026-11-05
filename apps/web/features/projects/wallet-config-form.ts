@@ -32,6 +32,7 @@ export function draftFromDocument(document: {
   walletIds: string[];
   theme: WalletDraftConfig["theme"];
   buttonLabel: string;
+  selectorLogo?: WalletDraftConfig["selectorLogo"];
   appearance?: WalletAppearanceStyle;
   showInstallLabel: boolean;
   hideUnsupportedWallets: boolean;
@@ -45,6 +46,7 @@ export function draftFromDocument(document: {
     walletIds: [...document.walletIds],
     theme: document.theme,
     buttonLabel: document.buttonLabel,
+    selectorLogo: document.selectorLogo ?? "velo",
     appearance,
     showInstallLabel: document.showInstallLabel,
     hideUnsupportedWallets: document.hideUnsupportedWallets,

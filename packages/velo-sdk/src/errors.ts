@@ -123,6 +123,12 @@ export class VeloAPIError extends VeloError {
   }
 }
 
+export class VeloInvalidResponseError extends VeloAPIError {
+  constructor() {
+    super("Velo API returned an invalid or oversized response.", { code: "invalid_response" });
+  }
+}
+
 export class VeloTimeoutError extends VeloAPIError {
   constructor(message: string, options?: { requestId?: string }) {
     super(message, { ...options, status: 408, code: "timeout" });

@@ -10,19 +10,16 @@ This D4 guide extends the SDK request and recovery guidance in the
 [D3 Gas integration guide](instawards/Velo-Instawards-Deliverable-3-Integration-Guide.md)
 with managed relayer setup, owner funding and activation, and account
 management. The guide describes workspace source behavior and does not claim
-package publication, production deployment, or live Testnet acceptance.
+production deployment or live Testnet acceptance.
 
 This guide is for integrators using the server-side
-<code>@carts1024/velo-sdk</code>. It describes the current workspace source
-(manifest version <code>0.1.0-alpha.4</code>). The public <code>alpha</code>
-dist-tag currently resolves to alpha.3; that published version predates the
-corrected API origin default below, so set
-<code>VELO_GAS_BASE_URL=https://www.velo-build.dev</code> explicitly until
-alpha.4 is published.
+<code>@carts1024/velo-sdk</code>. The stable <code>1.0.0</code> package is
+published under npm's <code>latest</code> tag and includes the Gas methods. The
+package version does not change the Gas Station's Testnet-only scope.
 
 ## Architecture
 
-~~~mermaid
+```mermaid
 sequenceDiagram
     participant Browser
     participant Wallet
@@ -39,7 +36,7 @@ sequenceDiagram
     Stellar-->>Velo: Ledger result and fee evidence
     Velo-->>App: status, inner/outer hashes, actual fee
     App-->>Browser: Safe result projection
-~~~
+```
 
 The SDK is a server boundary over Velo HTTP routes. It does not connect
 directly to Convex and it does not replace the user's wallet.
@@ -91,11 +88,11 @@ those accounts. Managed custody never falls back to that registry after a
 decryption failure and does not silently replace an existing account. Never
 enter a secret key in the dashboard.
 
-| Role | Gas Station capability |
-| --- | --- |
-| Viewer | Read policy, relayer status, telemetry, and activity. |
-| Editor | Read Gas data and save policy changes. |
-| Owner | Provision/retry, fund, activate, pause/resume, and withdraw; also has editor access. |
+| Role   | Gas Station capability                                                               |
+| ------ | ------------------------------------------------------------------------------------ |
+| Viewer | Read policy, relayer status, telemetry, and activity.                                |
+| Editor | Read Gas data and save policy changes.                                               |
+| Owner  | Provision/retry, fund, activate, pause/resume, and withdraw; also has editor access. |
 
 A displayed balance is a verified ledger snapshot, not proof of signer
 readiness. A snapshot older than five minutes is stale. Owners retain access to
@@ -104,23 +101,24 @@ view.
 
 ## Install and configure the SDK
 
-The SDK is ESM-only and requires Node.js 18 or newer. The workspace manifest is
-version <code>0.1.0-alpha.3</code>; publication status is unverified. Confirm
-that the artifact you install includes the Gas methods before using this guide.
+The SDK is ESM-only and requires Node.js 22.6 or newer. Install the stable
+package with <code>npm install @carts1024/velo-sdk</code>. Production and
+Testnet defaults use <code>https://www.velo-build.dev</code>; custom API origins
+must be HTTPS origins.
 Configure these values only in the server, worker, or serverless function
 environment:
 
-~~~dotenv
+```dotenv
 VELO_GAS_API_KEY=tg_test_0123456789abcdef0123456789abcdef
 VELO_GAS_ENV=testnet
 VELO_GAS_BASE_URL=https://www.velo-build.dev
-~~~
+```
 
 Generate this credential from the project's **Gas Station · Testnet** API-key
 option. Its `tg_test_` prefix is scoped to Gas endpoints; a general project API
 key is not authorized for sponsorship.
 
-~~~ts
+```ts
 import { Velo } from "@carts1024/velo-sdk";
 
 const velo = new Velo({
@@ -130,7 +128,7 @@ const velo = new Velo({
   timeoutMs: 30_000,
   maxRetries: 2,
 });
-~~~
+```
 
 The example flow is restricted to Testnet. The verified Velo API origin is
 <code>https://www.velo-build.dev</code>; a GET request to a Gas POST route may
@@ -151,7 +149,7 @@ boundary.
 Signing remains a wallet operation. For example, a browser integration can use
 Velo Wallets or another Stellar wallet:
 
-~~~ts
+```ts
 const signedTransactionXdr = await wallet.signTransaction(unsignedTransactionXdr);
 
 await fetch("/api/gas", {
@@ -162,7 +160,7 @@ await fetch("/api/gas", {
     transactionXdr: signedTransactionXdr,
   }),
 });
-~~~
+```
 
 The browser should send the signed XDR to your own authenticated application
 route. It should not instantiate <code>Velo</code> with a private API key.
@@ -172,13 +170,10 @@ route. It should not instantiate <code>Velo</code> with a private API key.
 Use a caller-owned operation ID to derive a stable idempotency key. Store that
 operation ID with your order or workflow record.
 
-~~~ts
+```ts
 import { VeloGasSubmissionUnknownError } from "@carts1024/velo-sdk";
 
-export async function sponsorGas(
-  operationId: string,
-  signedTransactionXdr: string,
-) {
+export async function sponsorGas(operationId: string, signedTransactionXdr: string) {
   // Authenticate the caller and authorize the project before this function.
   const result = await velo.gas.sponsorAndSubmit(signedTransactionXdr, {
     idempotencyKey: "my-app-gas:" + operationId,
@@ -195,13 +190,13 @@ export async function sponsorGas(
     actualFeeStroops: result.actualFeeStroops,
   };
 }
-~~~
+```
 
 If the handoff crosses the network boundary and the local result is unknown,
 the SDK throws <code>VeloGasSubmissionUnknownError</code>. Persist only its
 recovery identity and reconcile by status:
 
-~~~ts
+```ts
 import { VeloGasSubmissionUnknownError } from "@carts1024/velo-sdk";
 
 try {
@@ -213,7 +208,7 @@ try {
   }
   throw error;
 }
-~~~
+```
 
 Never submit the same signed XDR again after a dispatch-uncertain error.
 Reusing the identity is replay-safe; creating a new operation is not.
@@ -223,11 +218,11 @@ Reusing the identity is replay-safe; creating a new operation is not.
 The SDK maps to two unversioned Velo routes. Most integrators should use the
 SDK methods instead of calling these routes directly:
 
-| SDK operation | HTTP route | Request behavior |
-| --- | --- | --- |
-| `sponsor()` | `POST /api/gas/sponsor` | Sends the signed XDR and requires `Idempotency-Key`. |
-| `submit()` | `POST /api/gas/submit` | Sends the reservation identity and signed XDR once. |
-| `getStatus()` | `POST /api/gas/submit` | Sends only the reservation identity; no XDR. |
+| SDK operation | HTTP route              | Request behavior                                     |
+| ------------- | ----------------------- | ---------------------------------------------------- |
+| `sponsor()`   | `POST /api/gas/sponsor` | Sends the signed XDR and requires `Idempotency-Key`. |
+| `submit()`    | `POST /api/gas/submit`  | Sends the reservation identity and signed XDR once.  |
+| `getStatus()` | `POST /api/gas/submit`  | Sends only the reservation identity; no XDR.         |
 
 The SDK validates response shapes and normalizes hashes, addresses, fees, and
 expiry values before returning them to the caller.
@@ -247,7 +242,7 @@ Do not create or sign a replacement transaction automatically.
 
 Submits the original signed XDR for a reservation:
 
-~~~ts
+```ts
 const reservation = await velo.gas.sponsor(signedTransactionXdr, {
   idempotencyKey: "my-app-gas:" + operationId,
 });
@@ -257,7 +252,7 @@ const result = await velo.gas.submit({
   transactionHash: reservation.transactionHash,
   transactionXdr: signedTransactionXdr,
 });
-~~~
+```
 
 The SDK sends the XDR only during this handoff and does not automatically
 retry it. Prefer <code>sponsorAndSubmit()</code> unless separate reservation
@@ -267,12 +262,12 @@ and handoff steps are required by your workflow.
 
 Status recovery sends only the identity:
 
-~~~ts
+```ts
 const result = await velo.gas.getStatus({
   requestId,
   transactionHash, // inner transaction hash
 });
-~~~
+```
 
 It never sends the signed XDR. The <code>outerTransactionHash</code> is the
 relayer FeeBump hash and is distinct from the inner
@@ -283,14 +278,14 @@ relayer FeeBump hash and is distinct from the inner
 <code>waitForResult()</code> is an optional, bounded observer built from
 repeated identity-only status calls:
 
-~~~ts
+```ts
 const result = await velo.gas.waitForResult(identity, {
   timeoutMs: 30_000,
   maxAttempts: 10,
   initialDelayMs: 500,
   maxDelayMs: 5_000,
 });
-~~~
+```
 
 It never sponsors, submits, cancels, or changes backend reconciliation. A local
 timeout or cancellation stops observation only.
@@ -299,14 +294,14 @@ timeout or cancellation stops observation only.
 
 Only <code>succeeded</code> means the transaction succeeded.
 
-| Status | Meaning |
-| --- | --- |
-| <code>claimed</code> | The backend claimed the execution attempt. |
-| <code>submission_unknown</code> | The send result is uncertain; reconcile by identity. |
-| <code>submitted</code> | The relayer handoff was accepted, but final ledger settlement is not yet proven. |
-| <code>succeeded</code> | Trusted ledger evidence was reconciled. |
-| <code>failed</code> | Terminal non-success result. |
-| <code>cancelled</code> | Terminal non-success result. |
+| Status                          | Meaning                                                                          |
+| ------------------------------- | -------------------------------------------------------------------------------- |
+| <code>claimed</code>            | The backend claimed the execution attempt.                                       |
+| <code>submission_unknown</code> | The send result is uncertain; reconcile by identity.                             |
+| <code>submitted</code>          | The relayer handoff was accepted, but final ledger settlement is not yet proven. |
+| <code>succeeded</code>          | Trusted ledger evidence was reconciled.                                          |
+| <code>failed</code>             | Terminal non-success result.                                                     |
+| <code>cancelled</code>          | Terminal non-success result.                                                     |
 
 <code>actualFeeStroops</code> is a canonical decimal string when trusted
 actual-fee evidence is available. <code>null</code> means unknown; it does not
@@ -396,7 +391,7 @@ rejects other API origins rather than reusing Checkout's <code>VELO_BASE_URL</co
 The repository includes a D3 harness for a compatible deployed web app and
 Convex backend:
 
-~~~bash
+```bash
 node --experimental-strip-types scripts/gas-d3-smoke.mjs --mode preflight
 
 node --experimental-strip-types scripts/gas-d3-smoke.mjs \
@@ -406,7 +401,7 @@ node --experimental-strip-types scripts/gas-d3-smoke.mjs \
 node --experimental-strip-types scripts/gas-d3-smoke.mjs \
   --mode verify \
   --report docs/instawards/Velo-Instawards-Deliverable-3-Smoke-Run.json
-~~~
+```
 
 Preflight must verify Testnet identity, deployment provenance, funded user
 and relayer accounts, enabled policy, and fresh distinct allowed and denied

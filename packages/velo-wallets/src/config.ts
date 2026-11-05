@@ -2,6 +2,7 @@ import { VeloWalletError } from "./errors.js";
 
 export type WalletNetwork = "testnet" | "public";
 export type WalletTheme = "light" | "dark" | "system";
+export type WalletSelectorLogo = "velo" | "project" | "none";
 export type WalletFontFamily = "system" | "serif" | "mono";
 export type WalletButtonVariant = "solid" | "outline" | "soft";
 export type WalletButtonSize = "sm" | "md" | "lg";
@@ -119,6 +120,7 @@ export type WalletDraftConfig = {
   walletIds: string[];
   theme: WalletTheme;
   buttonLabel: string;
+  selectorLogo?: WalletSelectorLogo;
   appearance?: WalletAppearanceStyle;
   showInstallLabel: boolean;
   hideUnsupportedWallets: boolean;
@@ -133,6 +135,8 @@ export type PublishedWalletConfig = {
   projectKey: string;
   network: WalletNetwork;
   walletIds: string[];
+  selectorLogo: WalletSelectorLogo;
+  projectLogoUrl?: string;
   appearance: WalletAppearanceConfig;
   modal: { showInstallLabel: boolean; hideUnsupportedWallets: boolean };
   session: { persist: boolean };
@@ -143,6 +147,7 @@ export const DEFAULT_WALLET_CONFIG: WalletDraftConfig = {
   walletIds: ["freighter"],
   theme: "system",
   buttonLabel: "Connect wallet",
+  selectorLogo: "velo",
   appearance: DEFAULT_WALLET_APPEARANCE_STYLE,
   showInstallLabel: true,
   hideUnsupportedWallets: false,
@@ -218,19 +223,20 @@ export function normalizeWalletAppearance(value: {
 }
 
 function relativeLuminance(color: string) {
-  const channels = [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16));
-  return channels
-    .map((channel) => channel / 255)
-    .map((channel) => (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4))
-    .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index]!, 0);
+  const linearize = (offset: number) => {
+    const channel = Number.parseInt(color.slice(offset, offset + 2), 16) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  };
+  return linearize(1) * 0.2126 + linearize(3) * 0.7152 + linearize(5) * 0.0722;
 }
 
 export function colorContrast(first: string, second: string) {
   if (!HEX_COLOR.test(first) || !HEX_COLOR.test(second)) return 0;
-  const [lighter, darker] = [relativeLuminance(first), relativeLuminance(second)].sort(
-    (a, b) => b - a,
-  );
-  return (lighter! + 0.05) / (darker! + 0.05);
+  const firstLuminance = relativeLuminance(first);
+  const secondLuminance = relativeLuminance(second);
+  const lighter = Math.max(firstLuminance, secondLuminance);
+  const darker = Math.min(firstLuminance, secondLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
 export function validateWalletAppearance(appearance: WalletAppearanceConfig) {
@@ -298,6 +304,14 @@ export function normalizeAllowedOrigin(value: string) {
 
 export function validateWalletDraft(config: WalletDraftConfig) {
   const errors: string[] = [];
+  if (
+    config.selectorLogo !== undefined &&
+    config.selectorLogo !== "velo" &&
+    config.selectorLogo !== "project" &&
+    config.selectorLogo !== "none"
+  ) {
+    errors.push("Choose a supported wallet selector logo option.");
+  }
   const uniqueWalletIds = new Set(config.walletIds);
   if (uniqueWalletIds.size === 0) errors.push("Select at least one wallet.");
   if (uniqueWalletIds.size !== config.walletIds.length) errors.push("Wallets must be unique.");
@@ -336,6 +350,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isWalletSelectorLogo(value: unknown): value is WalletSelectorLogo {
+  return value === "velo" || value === "project" || value === "none";
+}
+
+function isSafeProjectLogoUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    return (
+      !url.username &&
+      !url.password &&
+      (url.protocol === "https:" ||
+        (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)))
+    );
+  } catch {
+    return false;
+  }
+}
+
 function hasValidPublishedStyle(appearance: Record<string, unknown>) {
   if (!("palettes" in appearance)) return true;
   const palettes = appearance.palettes;
@@ -371,15 +404,25 @@ export function parsePublishedWalletConfig(value: unknown): PublishedWalletConfi
   const appearance = value.appearance;
   const modal = value.modal;
   const session = value.session;
+  const selectorLogo = value.selectorLogo === undefined ? "velo" : value.selectorLogo;
   if (
     typeof value.revision !== "number" ||
+    !Number.isSafeInteger(value.revision) ||
+    value.revision < 1 ||
     typeof value.projectKey !== "string" ||
+    value.projectKey.trim().length === 0 ||
     (value.network !== "testnet" && value.network !== "public") ||
     !Array.isArray(value.walletIds) ||
+    value.walletIds.length === 0 ||
     value.walletIds.some((id) => typeof id !== "string" || !WALLET_IDS.includes(id)) ||
+    new Set(value.walletIds).size !== value.walletIds.length ||
+    !isWalletSelectorLogo(selectorLogo) ||
+    (value.projectLogoUrl !== undefined && !isSafeProjectLogoUrl(value.projectLogoUrl)) ||
     !isRecord(appearance) ||
     !["light", "dark", "system"].includes(String(appearance.theme)) ||
     typeof appearance.buttonLabel !== "string" ||
+    appearance.buttonLabel.trim().length < 1 ||
+    appearance.buttonLabel.trim().length > 40 ||
     !hasValidPublishedStyle(appearance) ||
     !isRecord(modal) ||
     typeof modal.showInstallLabel !== "boolean" ||
@@ -408,6 +451,8 @@ export function parsePublishedWalletConfig(value: unknown): PublishedWalletConfi
     projectKey: value.projectKey,
     network: value.network,
     walletIds: value.walletIds as string[],
+    selectorLogo,
+    ...(typeof value.projectLogoUrl === "string" ? { projectLogoUrl: value.projectLogoUrl } : {}),
     appearance: normalizedAppearance,
     modal: modal as PublishedWalletConfig["modal"],
     session: session as PublishedWalletConfig["session"],
@@ -426,6 +471,7 @@ export function draftToPublishedConfig(
     projectKey,
     network: draft.network,
     walletIds: [...draft.walletIds],
+    selectorLogo: draft.selectorLogo ?? "velo",
     appearance: normalizeWalletAppearance(draft),
     modal: {
       showInstallLabel: draft.showInstallLabel,

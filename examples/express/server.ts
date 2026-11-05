@@ -70,7 +70,7 @@ app.post("/api/checkout", async (req, res) => {
 
 // Webhook signature verification
 // Webhooks require the raw body as a string. Use express.raw for this specific endpoint.
-app.post("/webhooks", express.raw({ type: "application/json" }), async (req, res) => {
+app.post("/webhooks", express.raw({ type: "application/json", limit: "1mb" }), async (req, res) => {
   const signature = req.headers["x-velo-signature"];
   const secret = process.env.VELO_WEBHOOK_SECRET;
 

@@ -33,7 +33,7 @@ export type PaymentIntent = {
 export type VeloConfig = {
   apiKey: string;
   baseUrl?: string;
-  environment?: "production" | "testnet" | "development" | string;
+  environment?: "production" | "testnet" | "development";
   /** Total wall-clock deadline for one SDK request, including retries. Defaults to 30 seconds. */
   timeoutMs?: number;
   maxRetries?: number;

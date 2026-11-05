@@ -1,4 +1,5 @@
 import {
+  DEFAULT_WALLET_CONFIG,
   normalizeAllowedOrigin,
   normalizeWalletAppearance,
   validateWalletDraft,
@@ -16,6 +17,7 @@ export function normalizedDraft(config: WalletDraftConfig): WalletDraftConfig {
     ...config,
     theme: normalizedAppearance.theme,
     buttonLabel: normalizedAppearance.buttonLabel,
+    selectorLogo: config.selectorLogo ?? DEFAULT_WALLET_CONFIG.selectorLogo,
     appearance,
     allowedOrigins: config.allowedOrigins.map(normalizeAllowedOrigin),
   };

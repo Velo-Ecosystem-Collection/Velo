@@ -1,53 +1,54 @@
 import type { VeloWalletClient, VeloWalletOption } from "./browser.js";
 
 import { walletPalette, walletCssVariables } from "./appearance.js";
+import darkVeloLogo from "./assets/brand/velo-logo-dark.png";
+import lightVeloLogo from "./assets/brand/velo-logo-light.png";
 import { DEFAULT_WALLET_CONFIG, normalizeWalletAppearance } from "./config.js";
 
 const selectorStyles = `
-  .velo-selector { width: min(900px, calc(100vw - 32px)); max-width: none; max-height: min(720px, calc(100dvh - 32px)); padding: 0; overflow: hidden; border: 1px solid var(--velo-wallet-border); border-radius: var(--velo-wallet-modal-radius); background: var(--velo-wallet-background); color: var(--velo-wallet-text); box-shadow: var(--velo-wallet-shadow); font: 400 16px/1.45 var(--velo-wallet-font-family); }
+  .velo-selector { position: fixed; inset: 0; width: min(440px, calc(100vw - 32px)); max-width: none; max-height: min(760px, calc(100dvh - 32px)); margin: auto; padding: 0; overflow: hidden; border: 1px solid var(--velo-wallet-border); border-radius: var(--velo-wallet-modal-radius); background: var(--velo-wallet-background); color: var(--velo-wallet-text); box-shadow: var(--velo-wallet-shadow); font: 400 16px/1.45 var(--velo-wallet-font-family); }
   .velo-selector::backdrop { background: rgb(12 15 23 / .58); backdrop-filter: blur(3px); }
   .velo-selector * { box-sizing: border-box; }
-  .velo-selector__shell { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 480px; max-height: min(720px, calc(100dvh - 32px)); }
-  .velo-selector__header, .velo-selector__footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; }
-  .velo-selector__header { border-bottom: 1px solid var(--velo-wallet-border); }
-  .velo-selector__header h2 { margin: 0; font-size: 1.25rem; font-weight: 700; letter-spacing: -.02em; }
-  .velo-selector__header p, .velo-selector__footer { margin: 3px 0 0; color: var(--velo-wallet-muted-text); font-size: .8rem; }
-  .velo-selector__close { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border: 1px solid var(--velo-wallet-border); border-radius: 999px; background: var(--velo-wallet-surface); color: var(--velo-wallet-text); font: inherit; font-size: 1.4rem; cursor: pointer; }
-  .velo-selector__content { display: grid; min-height: 0; grid-template-columns: minmax(250px, 36%) minmax(0, 1fr); }
-  .velo-selector__wallets { min-height: 0; overflow: auto; border-right: 1px solid var(--velo-wallet-border); padding: 18px 16px; }
+  .velo-selector__shell { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: min(760px, calc(100dvh - 32px)); }
+  .velo-selector__header { position: relative; display: grid; justify-items: center; gap: 12px; padding: 28px 52px 20px; text-align: center; }
+  .velo-selector__brand { display: block; width: 132px; max-height: 64px; height: auto; object-fit: contain; }
+  .velo-selector__header h2 { margin: 0; font-size: 1.35rem; font-weight: 700; letter-spacing: -.02em; }
+  .velo-selector__header p { margin: 4px 0 0; color: var(--velo-wallet-muted-text); font-size: .82rem; }
+  .velo-selector__close { position: absolute; top: 14px; right: 14px; display: grid; width: 38px; height: 38px; place-items: center; border: 1px solid var(--velo-wallet-border); border-radius: 999px; background: var(--velo-wallet-surface); color: var(--velo-wallet-text); font: inherit; font-size: 1.4rem; cursor: pointer; }
+  .velo-selector__content { min-height: 0; overflow: auto; padding: 0 22px 12px; }
   .velo-selector__eyebrow { margin: 0 8px 10px; color: var(--velo-wallet-muted-text); font-size: .76rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
-  .velo-selector__list { display: grid; gap: 5px; }
-  .velo-selector__row { display: flex; align-items: center; gap: 11px; min-height: 64px; padding: 8px; border: 1px solid transparent; border-radius: calc(var(--velo-wallet-modal-radius) * .75); }
-  .velo-selector__row:hover, .velo-selector__row:focus-within { border-color: var(--velo-wallet-border); background: var(--velo-wallet-surface); }
-  .velo-selector__pick { display: flex; min-width: 0; flex: 1; align-items: center; gap: 11px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
-  .velo-selector__pick:disabled { cursor: wait; }
-  .velo-selector__icon { display: grid; width: 44px; height: 44px; flex: 0 0 auto; place-items: center; overflow: hidden; border: 1px solid var(--velo-wallet-border); border-radius: 13px; background: #fff; }
+  .velo-selector__list { display: grid; gap: 9px; }
+  .velo-selector__row { display: flex; align-items: center; gap: 8px; min-height: 66px; padding: 5px 8px 5px 6px; border: 1px solid var(--velo-wallet-border); border-radius: 999px; background: var(--velo-wallet-surface); }
+  .velo-selector__row:hover, .velo-selector__row:focus-within { border-color: var(--velo-wallet-accent); }
+  .velo-selector__pick { display: flex; min-width: 0; flex: 1; align-items: center; gap: 12px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+  .velo-selector__pick:disabled { cursor: not-allowed; opacity: .72; }
+  .velo-selector__icon { display: grid; width: 48px; height: 48px; flex: 0 0 auto; place-items: center; overflow: hidden; border: 1px solid var(--velo-wallet-border); border-radius: 50%; background: #fff; padding: 4px; }
   .velo-selector__icon img { display: block; width: 100%; height: 100%; object-fit: contain; }
-  .velo-selector__name { display: block; overflow: hidden; font-size: .95rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+  .velo-selector__name { display: block; overflow: hidden; font-size: .98rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
   .velo-selector__availability { display: block; margin-top: 2px; color: var(--velo-wallet-muted-text); font-size: .75rem; }
-  .velo-selector__install { flex: 0 0 auto; color: var(--velo-wallet-accent); font-size: .78rem; font-weight: 650; text-decoration: none; }
+  .velo-selector__chevron { flex: 0 0 auto; margin: 0 8px; color: var(--velo-wallet-muted-text); font-size: 1.5rem; line-height: 1; }
+  .velo-selector__install { flex: 0 0 auto; padding: 8px 10px; border-radius: 999px; color: var(--velo-wallet-accent); font-size: .78rem; font-weight: 650; text-decoration: none; }
   .velo-selector__install:hover { text-decoration: underline; }
-  .velo-selector__details { display: flex; min-width: 0; flex-direction: column; align-items: center; justify-content: center; padding: 32px clamp(24px, 5vw, 64px); text-align: center; }
-  .velo-selector__detail-mark { display: grid; width: 60px; height: 60px; place-items: center; margin-bottom: 14px; border: 1px solid var(--velo-wallet-border); border-radius: 18px; background: var(--velo-wallet-surface); color: var(--velo-wallet-accent); font-size: 1.5rem; }
-  .velo-selector__details h3 { margin: 0; font-size: 1.3rem; font-weight: 700; letter-spacing: -.02em; }
-  .velo-selector__details p { max-width: 360px; margin: 9px 0 0; color: var(--velo-wallet-muted-text); font-size: .92rem; }
-  .velo-selector__hint { margin-top: 26px !important; padding: 12px 14px; border: 1px solid var(--velo-wallet-border); border-radius: 12px; background: var(--velo-wallet-surface); text-align: left; }
+  .velo-selector__details { padding: 6px 28px 18px; text-align: center; }
+  .velo-selector__details h3 { margin: 0; font-size: .95rem; font-weight: 650; }
+  .velo-selector__details p { max-width: 360px; margin: 5px auto 0; color: var(--velo-wallet-muted-text); font-size: .8rem; }
   .velo-selector__status { min-height: 1.4em; color: var(--velo-wallet-muted-text); font-size: .8rem !important; }
   .velo-selector__status[data-kind="error"] { color: var(--velo-wallet-danger); }
-  .velo-selector__footer { border-top: 1px solid var(--velo-wallet-border); }
+  .velo-selector__footer { border-top: 1px solid var(--velo-wallet-border); padding: 14px 20px; color: var(--velo-wallet-muted-text); font-size: .76rem; text-align: center; }
+  .velo-selector__empty { padding: 14px 10px; color: var(--velo-wallet-muted-text); font-size: .9rem; text-align: center; }
+  .velo-selector__retry { display: inline-flex; min-height: 40px; margin-top: 8px; padding: 0 14px; align-items: center; justify-content: center; border: 1px solid var(--velo-wallet-border); border-radius: 999px; background: var(--velo-wallet-surface); color: var(--velo-wallet-text); font: inherit; font-size: .82rem; cursor: pointer; }
   .velo-selector button:focus-visible, .velo-selector a:focus-visible { outline: 3px solid var(--velo-wallet-focus-ring); outline-offset: 3px; }
-  .velo-selector__empty { padding: 12px 8px; color: var(--velo-wallet-muted-text); font-size: .9rem; }
-  @media (max-width: 620px) {
-    .velo-selector { width: min(460px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); }
-    .velo-selector__shell { min-height: min(680px, calc(100dvh - 24px)); max-height: calc(100dvh - 24px); }
-    .velo-selector__header, .velo-selector__footer { padding: 16px; }
-    .velo-selector__content { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; overflow: auto; }
-    .velo-selector__wallets { max-height: 47dvh; border-right: 0; padding: 12px; }
-    .velo-selector__details { padding: 18px 20px 22px; }
-    .velo-selector__detail-mark { display: none; }
-    .velo-selector__details h3 { font-size: 1.05rem; }
-    .velo-selector__details p { margin-top: 4px; }
-    .velo-selector__hint { display: none; }
+  @media (max-width: 480px) {
+    .velo-selector { width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+    .velo-selector__shell { max-height: calc(100dvh - 24px); }
+    .velo-selector__header { padding: 24px 46px 16px; }
+    .velo-selector__brand { width: 112px; max-height: 56px; }
+    .velo-selector__header h2 { font-size: 1.2rem; }
+    .velo-selector__content { padding-right: 14px; padding-left: 14px; }
+    .velo-selector__row { min-height: 60px; }
+    .velo-selector__icon { width: 44px; height: 44px; }
+    .velo-selector__details { padding-right: 18px; padding-left: 18px; }
+    .velo-selector__footer { padding: 12px; }
   }
   @media (prefers-reduced-motion: no-preference) {
     .velo-selector__row { transition: background-color 120ms ease, border-color 120ms ease; }
@@ -96,24 +97,23 @@ function openWalletSelectorOnce(client: VeloWalletClient): Promise<string | null
     <style>${selectorStyles}</style>
     <div class="velo-selector__shell">
       <header class="velo-selector__header">
-        <div><h2 id="velo-selector-title">Connect a wallet</h2><p data-network></p></div>
+        <img class="velo-selector__brand" alt="Velo" width="132" height="64" hidden>
+        <div><h2 id="velo-selector-title">Connect your wallet</h2><p data-network></p></div>
         <button class="velo-selector__close" type="button" aria-label="Close wallet selector">×</button>
       </header>
       <div class="velo-selector__content">
-        <section class="velo-selector__wallets" aria-label="Wallet options">
+        <section aria-label="Wallet options">
           <h3 class="velo-selector__eyebrow">Choose a wallet</h3>
           <div class="velo-selector__list" role="list" aria-live="polite"></div>
         </section>
-        <aside class="velo-selector__details" aria-live="polite" aria-atomic="true">
-          <span class="velo-selector__detail-mark" aria-hidden="true">✦</span>
+        <section class="velo-selector__details" aria-label="Connection status" aria-live="polite" aria-atomic="true">
           <h3 data-detail-title>Your Stellar wallet</h3>
           <p data-detail-message>Connect securely with a wallet enabled by this app.</p>
-          <p class="velo-selector__hint">Your wallet keeps control of your keys. Velo requests permission only to access your public address.</p>
           <p class="velo-selector__status" role="status" data-status>Loading available wallets…</p>
-          <button type="button" data-retry hidden>Try again</button>
-        </aside>
+          <button class="velo-selector__retry" type="button" data-retry hidden>Try again</button>
+        </section>
       </div>
-      <footer class="velo-selector__footer"><span>Velo Wallets</span><span data-network-footer></span></footer>
+      <footer class="velo-selector__footer">Powered by Velo Wallets</footer>
     </div>
   `;
 
@@ -122,6 +122,7 @@ function openWalletSelectorOnce(client: VeloWalletClient): Promise<string | null
     let connecting = false;
     let activeConfig = config;
     let selectedWallet: VeloWalletOption | null = null;
+    const brand = dialog.querySelector<HTMLImageElement>(".velo-selector__brand");
     const list = dialog.querySelector<HTMLElement>(".velo-selector__list")!;
     const detailTitle = dialog.querySelector<HTMLElement>("[data-detail-title]")!;
     const detailMessage = dialog.querySelector<HTMLElement>("[data-detail-message]")!;
@@ -129,7 +130,31 @@ function openWalletSelectorOnce(client: VeloWalletClient): Promise<string | null
     const retryButton = dialog.querySelector<HTMLButtonElement>("[data-retry]")!;
     const networkLabel = config?.network === "public" ? "Stellar Mainnet" : "Stellar Testnet";
     dialog.querySelector("[data-network]")!.textContent = networkLabel;
-    dialog.querySelector("[data-network-footer]")!.textContent = networkLabel;
+
+    function renderBrand() {
+      if (!brand) return;
+      const selectorLogo = activeConfig?.selectorLogo ?? "velo";
+      const projectLogoUrl = activeConfig?.projectLogoUrl;
+
+      if (selectorLogo === "none" || (selectorLogo === "project" && !projectLogoUrl)) {
+        brand.hidden = true;
+        brand.removeAttribute("src");
+        brand.alt = "";
+        return;
+      }
+
+      brand.hidden = false;
+      if (selectorLogo === "project" && projectLogoUrl) {
+        brand.src = projectLogoUrl;
+        brand.alt = "Project logo";
+        return;
+      }
+
+      brand.src = dialog.dataset.theme === "dark" ? darkVeloLogo : lightVeloLogo;
+      brand.alt = "Velo";
+    }
+
+    renderBrand();
 
     function finish(walletId: string | null) {
       if (settled) return;
@@ -187,6 +212,13 @@ function openWalletSelectorOnce(client: VeloWalletClient): Promise<string | null
         const labels = document.createElement("span");
         labels.append(name, availability);
         button.append(icon, labels);
+        if (wallet.isAvailable) {
+          const chevron = document.createElement("span");
+          chevron.className = "velo-selector__chevron";
+          chevron.setAttribute("aria-hidden", "true");
+          chevron.textContent = "›";
+          button.append(chevron);
+        }
         button.addEventListener("click", () => void connect(wallet));
         row.append(button);
 
@@ -240,11 +272,13 @@ function openWalletSelectorOnce(client: VeloWalletClient): Promise<string | null
       try {
         options = await client.listWallets();
         activeConfig = client.getConfig() ?? activeConfig;
-        if (activeConfig?.appearance) applyAppearance(dialog, activeConfig.appearance);
+        if (activeConfig?.appearance) {
+          applyAppearance(dialog, activeConfig.appearance);
+        }
+        renderBrand();
         const currentNetwork =
           activeConfig?.network === "public" ? "Stellar Mainnet" : "Stellar Testnet";
         dialog.querySelector("[data-network]")!.textContent = currentNetwork;
-        dialog.querySelector("[data-network-footer]")!.textContent = currentNetwork;
         renderWallets(options);
         status.textContent = options.length
           ? "Choose a wallet to continue."

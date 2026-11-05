@@ -6,7 +6,7 @@ import { ConnectButton, VeloWalletProvider, WalletWidget } from "./react.js";
 describe("React adapter", () => {
   it("imports and server-renders without accessing browser globals", () => {
     const html = renderToString(
-      <VeloWalletProvider projectKey="vw_pk_example">
+      <VeloWalletProvider projectKey="vw_pk_00000000000000000000000000000000">
         <ConnectButton />
       </VeloWalletProvider>,
     );
@@ -17,7 +17,7 @@ describe("React adapter", () => {
 
   it("server-renders the complete wallet widget with accessible status", () => {
     const html = renderToString(
-      <VeloWalletProvider projectKey="vw_pk_example">
+      <VeloWalletProvider projectKey="vw_pk_00000000000000000000000000000000">
         <WalletWidget />
       </VeloWalletProvider>,
     );

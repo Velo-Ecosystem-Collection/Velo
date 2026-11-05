@@ -3,6 +3,10 @@ import fs from "node:fs";
 import test from "node:test";
 
 const docs = fs.readFileSync("app/docs/page.tsx", "utf8");
+const integrationPrompt = fs.readFileSync(
+  "features/docs/velo-wallets-integration-prompt.ts",
+  "utf8",
+);
 
 test("Docs page gives Velo Wallets its own beginner navigation", () => {
   assert.match(docs, /title: "Wallets Quickstart", category: "Velo Wallets"/);
@@ -40,7 +44,29 @@ test("Wallets guide clearly separates public browser keys from private server ke
   assert.match(docs, /Never put a private Velo API key in a wallet component/);
   assert.match(docs, /Signing stays in the browser/);
   assert.match(docs, /does not receive your transaction XDR/);
-  assert.match(docs, /Staged alpha package/);
+  assert.match(docs, /Stable npm package/);
+  assert.match(docs, /hosted CDN has not been updated/);
+});
+
+test("Wallets prompt covers setup, both runtimes, signing boundaries, and Testnet checks", () => {
+  for (const detail of [
+    "Select the project and open its Wallets page",
+    "allowed website origin exactly",
+    "Save the draft",
+    "Publish the revision",
+    "isolated Testnet diagnostics",
+    "@carts1024/velo-wallets@1.0.0",
+    "VeloWalletProvider",
+    "<velo-wallet project-key=",
+    "velo:wallet-connected",
+    "older v1 parser rejects unknown wallet IDs",
+    "Velo Wallets does not receive signing inputs",
+    "or submit it.",
+    "message-signing request handles both approval and rejection",
+  ]) {
+    assert.ok(integrationPrompt.includes(detail), `missing wallet prompt detail: ${detail}`);
+  }
+  assert.match(docs, /VeloWalletsIntegrationPromptCard/);
 });
 
 test("Wallets reference documents complete public contracts and accessible docs feedback", () => {

@@ -25,6 +25,7 @@ describe("wallet configuration", () => {
       "OneKey Wallet",
       "Bitget Wallet",
       "Cactus Link",
+      "Noir",
     ]);
   });
 
@@ -122,5 +123,23 @@ describe("wallet configuration", () => {
     ).toThrow(/CONFIG_INCOMPATIBLE/);
 
     expect(() => parsePublishedWalletConfig({ schemaVersion: 2 })).toThrow(/CONFIG_INCOMPATIBLE/);
+  });
+
+  test("accepts Noir in draft and published wallet configurations", () => {
+    const draft = { ...DEFAULT_WALLET_CONFIG, walletIds: ["noir"] };
+    expect(validateWalletDraft(draft)).toEqual([]);
+
+    const published = parsePublishedWalletConfig({
+      schemaVersion: 1,
+      revision: 1,
+      runtimeMajor: 1,
+      projectKey: "vw_pk_example",
+      network: "testnet",
+      walletIds: ["noir"],
+      appearance: { theme: "system", buttonLabel: "Connect wallet" },
+      modal: { showInstallLabel: true, hideUnsupportedWallets: false },
+      session: { persist: true },
+    });
+    expect(published.walletIds).toEqual(["noir"]);
   });
 });

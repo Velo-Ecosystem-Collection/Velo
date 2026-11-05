@@ -11,6 +11,7 @@ import {
   type WalletAppearanceOverrides,
   type WalletPalette,
 } from "./config.js";
+import { openWalletSelector } from "./wallet-selector.js";
 
 const EVENT_VERSION = 1;
 const BaseElement: typeof HTMLElement =
@@ -133,7 +134,11 @@ export class VeloWalletElement extends BaseElement {
       </div>
     `;
     this.root.querySelector(".primary")?.addEventListener("click", () => {
-      const action = connected ? Promise.resolve() : this.connect();
+      const action = connected
+        ? Promise.resolve()
+        : openWalletSelector(this.client!).then(() => {
+            this.root?.querySelector<HTMLElement>(".primary")?.focus();
+          });
       action.catch((error) => this.dispatch("velo:wallet-error", { error }));
     });
     this.root.querySelector(".disconnect")?.addEventListener("click", () => {

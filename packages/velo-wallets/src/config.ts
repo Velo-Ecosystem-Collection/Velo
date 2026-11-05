@@ -70,6 +70,7 @@ export const WALLET_CATALOG = [
   { id: "onekey", name: "OneKey Wallet" },
   { id: "BitgetWallet", name: "Bitget Wallet" },
   { id: "cactuslink", name: "Cactus Link" },
+  { id: "noir", name: "Noir" },
 ].map(
   (wallet): WalletCatalogEntry => ({
     ...wallet,

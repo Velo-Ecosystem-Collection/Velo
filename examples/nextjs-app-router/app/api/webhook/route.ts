@@ -1,17 +1,24 @@
-import { NextResponse } from "next/server";
 import { Velo } from "@carts1024/velo-sdk";
+import { NextResponse } from "next/server";
+
+import { readBoundedWebhookBody, WebhookBodyTooLargeError } from "./body.ts";
 
 export async function POST(request: Request) {
-  // 1. Webhook verification requires the raw body as a string.
-  // DO NOT call request.json() before verifying.
-  const payload = await request.text();
-
-  // 2. Extract signature and signing secret.
   const signature = request.headers.get("x-velo-signature");
   const secret = process.env.VELO_WEBHOOK_SECRET;
 
   if (!signature || !secret) {
     return new NextResponse("Missing signature or webhook secret configuration", { status: 400 });
+  }
+
+  // 1. Webhook verification requires the raw body as a string.
+  // DO NOT call request.json() before verifying.
+  let payload: string;
+  try {
+    payload = await readBoundedWebhookBody(request);
+  } catch (error) {
+    const status = error instanceof WebhookBodyTooLargeError ? 413 : 400;
+    return new NextResponse("Invalid webhook request body", { status });
   }
 
   try {

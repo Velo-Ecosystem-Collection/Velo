@@ -2,6 +2,17 @@
 
 All notable changes to the Velo SDK will be documented in this file.
 
+## [1.0.0] - 2026-11-05
+
+### Changed
+
+- Promote the server-side ESM SDK to stable `1.0.0` and publish on npm's `latest` tag.
+- Require Node.js `>=22.6.0`, a maintained LTS line with the global Fetch and Web Crypto APIs used by the package.
+- Require trusted HTTPS API origins, reject redirects, validate successful JSON responses, and bound SDK response reads to 1 MiB.
+- Harden webhook signature parsing and verification; document that consumers must still deduplicate delivery IDs.
+- Preserve payment and Gas recovery behavior. Gas sponsorship and submission remain Testnet-only; Mainnet, settlement, and browser support are not included.
+- Compatibility changes from `0.1.0-alpha.4`: `environment` accepts only `production`, `testnet`, or `development`; `baseUrl` must be an origin (HTTPS, or loopback HTTP in development); checkout `anchor` accepts only `inhouse` because PDAX is unavailable. Existing root ESM exports and supported calls remain available.
+
 ## [0.1.0-alpha.4] - 2026-09-27
 
 ### Changed

@@ -1,5 +1,5 @@
-import { execSync } from "child_process";
-import crypto from "crypto";
+import { execFileSync } from "node:child_process";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 
 import { Velo } from "./client.ts";
 
@@ -10,18 +10,24 @@ async function run() {
 
   // 1. Generate a temporary API Key using Convex CLI
   console.log("Generating a temporary API key for project demopay...");
-  const rawOutput = execSync(
-    `npx convex run projects/mutation:generateApiKeyInternal '{"id": "${PROJECT_ID}", "label": "E2E SDK Test"}'`,
+  const rawOutput = execFileSync(
+    "npx",
+    [
+      "convex",
+      "run",
+      "projects/mutation:generateApiKeyInternal",
+      JSON.stringify({ id: PROJECT_ID, label: "E2E SDK Test" }),
+    ],
     { cwd: "../../apps/web", encoding: "utf8" },
   );
 
   // Extract token using regex matching tk_live_[a-f0-9]{32}
   const match = rawOutput.match(/tk_live_[a-f0-9]{32}/);
   if (!match) {
-    throw new Error(`Failed to extract API key from output: ${rawOutput}`);
+    throw new Error("Failed to extract a temporary API key from Convex CLI output");
   }
   const apiKey = match[0];
-  console.log(`Generated API Key: ${apiKey.slice(0, 12)}...`);
+  console.log("Generated a temporary API key.");
 
   // 2. Initialize Velo client
   const velo = new Velo({
@@ -59,8 +65,14 @@ async function run() {
 
   // 5. Transition to pending using Convex CLI
   console.log("Simulating customer opening the checkout (transition to pending)...");
-  execSync(
-    `npx convex run payment_intents/mutations:updateStatus '{"paymentIntentId": "${session.id}", "status": "pending"}'`,
+  execFileSync(
+    "npx",
+    [
+      "convex",
+      "run",
+      "payment_intents/mutations:updateStatus",
+      JSON.stringify({ paymentIntentId: session.id, status: "pending" }),
+    ],
     { cwd: "../../apps/web" },
   );
 
@@ -72,8 +84,17 @@ async function run() {
 
   // 6. Transition to paid using Convex CLI (simulates ledger verification success)
   console.log("Simulating on-chain payment success (transition to paid)...");
-  execSync(
-    `npx convex run payment_intents/mutations:markVerifiedPaid '{"paymentIntentId": "${session.id}", "txHash": "c8731ea2a4fd43d0221b4c0eb5687c098e6bfcb6a58dbb4d01d698a0a8064cd9"}'`,
+  execFileSync(
+    "npx",
+    [
+      "convex",
+      "run",
+      "payment_intents/mutations:markVerifiedPaid",
+      JSON.stringify({
+        paymentIntentId: session.id,
+        txHash: "c8731ea2a4fd43d0221b4c0eb5687c098e6bfcb6a58dbb4d01d698a0a8064cd9",
+      }),
+    ],
     { cwd: "../../apps/web" },
   );
 
@@ -94,9 +115,9 @@ async function run() {
 
   // 8. Simulate webhook verification
   console.log("Simulating and verifying webhook signature...");
-  const secret = "whsec_48d83b56a6ffd001b6cb3a75975a9254";
+  const secret = `whsec_${randomBytes(32).toString("hex")}`;
   const payloadObj = {
-    id: crypto.randomUUID(),
+    id: randomUUID(),
     type: "payment.succeeded",
     test: true,
     sentAt: new Date().toISOString(),
@@ -118,7 +139,7 @@ async function run() {
   const payload = JSON.stringify(payloadObj);
   const timestamp = Math.floor(Date.now() / 1000);
   const signaturePayload = `${timestamp}.${payload}`;
-  const hmac = crypto.createHmac("sha256", secret);
+  const hmac = createHmac("sha256", secret);
   hmac.update(signaturePayload);
   const hash = hmac.digest("hex");
   const signatureHeader = `t=${timestamp},v1=${hash}`;

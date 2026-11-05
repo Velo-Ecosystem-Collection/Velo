@@ -518,9 +518,9 @@ export function ConnectedAccount() {
             {activeSection === "intro" && (
               <>
                 <p>
-                  Welcome to the **Velo SDK for Node.js** documentation. The Velo SDK is a
-                  server-side alpha package designed to streamline checkout session creation,
-                  payment state verification, and webhook handling.
+                  Welcome to the **Velo SDK for Node.js** documentation. The Velo SDK is a stable
+                  server-side package designed to streamline checkout session creation, payment
+                  state verification, and webhook handling.
                 </p>
                 <p>
                   By wrapping Velo's secure REST endpoints, the SDK allows you to handle stablecoin
@@ -599,7 +599,7 @@ const session = await velo.checkout.sessions.create({
                   <div className="text-sm">
                     <strong>Server-Side Only Requirement</strong>
                     <p className="mt-1">
-                      This package uses sensitive API credentials and is meant for **Node.js 18+
+                      This package uses sensitive API credentials and is meant for **Node.js 22.6+
                       server environments only**. Do not include this SDK in frontend code or client
                       bundles as it will expose your private key to the web.
                     </p>
@@ -1340,7 +1340,7 @@ const session = await velo.checkout.sessions.create({
                     <p className="mt-1">
                       Gas sponsorship must run in a trusted server route or worker. Never put the
                       Gas API key, signed XDR, relayer signer, or recovery credentials in browser
-                      code or browser storage. The current alpha Gas boundary is Stellar Testnet.
+                      code or browser storage. The Gas Station boundary remains Stellar Testnet.
                     </p>
                   </div>
                 </div>
@@ -1579,11 +1579,10 @@ const session = await velo.checkout.sessions.create({
                 </div>
 
                 <p className="text-sm text-muted-foreground">
-                  The workspace SDK source manifest is <code>0.1.0-alpha.4</code>. Check the
-                  selected npm package version and exports before installing; public releases can
-                  lag the workspace source. Set <code>VELO_GAS_BASE_URL</code> explicitly to{" "}
-                  <code>https://www.velo-build.dev</code> for Testnet, especially when using an
-                  older SDK artifact. See the{" "}
+                  SDK <code>1.0.0</code> is available from npm under the <code>latest</code> tag.
+                  Production and Testnet defaults use <code>https://www.velo-build.dev</code>;
+                  configure <code>VELO_GAS_BASE_URL</code> explicitly when using a different trusted
+                  HTTPS origin. Gas Station remains Testnet-only. See the{" "}
                   <a
                     href="https://github.com/Velo-Ecosystem-Collection/Velo/blob/main/docs/velo-gas-station.md"
                     target="_blank"
@@ -1696,8 +1695,7 @@ const session = await velo.checkout.sessions.create({
             {activeSection === "reference" && (
               <>
                 <p>
-                  Here are details on error models, environments, and general Velo SDK alpha release
-                  limits.
+                  Here are details on error models, environments, and the Velo SDK's product scope.
                 </p>
 
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">Error Handling</h3>
@@ -1724,15 +1722,13 @@ const session = await velo.checkout.sessions.create({
                   </li>
                 </ul>
 
-                <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
-                  Alpha Exclusions & Boundaries
-                </h3>
-                <p>During the alpha stage, the following features are not supported:</p>
+                <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">Product Boundaries</h3>
+                <p>The current SDK package does not provide the following features:</p>
                 <ul className="list-disc space-y-1 pl-6 text-zinc-600 dark:text-zinc-400">
                   <li>Refunds, partial captures, and disputes</li>
                   <li>Direct client-side / browser usage</li>
                   <li>React front-end checkout button components</li>
-                  <li>Automatic request retry on creation</li>
+                  <li>Automatic retries for creation requests without an idempotency key</li>
                 </ul>
               </>
             )}

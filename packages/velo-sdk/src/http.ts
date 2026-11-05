@@ -4,6 +4,7 @@ import {
   mapErrorResponse,
   VeloError,
   VeloGasSubmissionUnknownError,
+  VeloInvalidResponseError,
   VeloRateLimitError,
   VeloSubmissionUnknownError,
   VeloTimeoutError,
@@ -11,17 +12,51 @@ import {
 import { abortReason, sleep } from "./sleep.ts";
 
 export function resolveBaseUrl(config: VeloConfig): string {
-  if (config.baseUrl) return config.baseUrl;
-  if (config.environment === "production" || config.environment === "testnet") {
-    return "https://www.velo-build.dev";
+  const environment = config.environment ?? "development";
+  if (environment !== "production" && environment !== "testnet" && environment !== "development") {
+    throw new TypeError("environment must be production, testnet, or development");
   }
-  return "http://localhost:3000";
+
+  const baseUrl =
+    config.baseUrl ??
+    (environment === "production" || environment === "testnet"
+      ? "https://www.velo-build.dev"
+      : "http://localhost:3000");
+  if (typeof baseUrl !== "string" || baseUrl.trim() !== baseUrl || baseUrl === "") {
+    throw new TypeError("baseUrl must be an absolute HTTPS URL or a development loopback URL");
+  }
+
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    throw new TypeError("baseUrl must be an absolute HTTPS URL or a development loopback URL");
+  }
+
+  const isLoopback =
+    url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+  if (
+    url.username !== "" ||
+    url.password !== "" ||
+    url.pathname !== "/" ||
+    url.search !== "" ||
+    url.hash !== "" ||
+    (url.protocol !== "https:" &&
+      !(environment === "development" && isLoopback && url.protocol === "http:"))
+  ) {
+    throw new TypeError(
+      "baseUrl must be an HTTPS origin; HTTP is allowed only for development loopback",
+    );
+  }
+
+  return url.origin;
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 2;
 const DEFAULT_RETRY_BASE_MS = 250;
 const DEFAULT_RETRY_MAX_MS = 2_000;
+const MAX_RESPONSE_BODY_BYTES = 1_048_576;
 const GAS_NON_RETRYABLE_CODES = new Set(["daily_cap_exceeded", "wallet_rate_limited"]);
 
 export type GasTransportPolicy =
@@ -164,17 +199,18 @@ export class HttpClient {
           method,
           headers,
           body: serializedBody,
+          redirect: "error",
           signal: controller.signal,
         });
         const requestId = response.headers.get("x-request-id") ?? undefined;
         const contentType = response.headers.get("content-type") ?? "";
-        const text = await response.text();
+        const text = await readResponseText(response);
         let payload: unknown = text;
-        if (contentType.includes("application/json") && text) {
+        if (isJsonContentType(contentType) && text) {
           try {
             payload = JSON.parse(text);
           } catch {
-            // Preserve the text body so callers still get useful context.
+            if (response.ok) throw new VeloInvalidResponseError();
           }
         }
         if (!response.ok) {
@@ -187,6 +223,9 @@ export class HttpClient {
           const retry = retryAfterMs(response.headers.get("retry-after"));
           if (retry !== undefined) (error as VeloError).retryAfterMs = retry;
           throw error;
+        }
+        if (!isJsonContentType(contentType) || text === "") {
+          throw new VeloInvalidResponseError();
         }
         return payload as T;
       } catch (error) {
@@ -246,4 +285,48 @@ export class HttpClient {
       }
     }
   }
+}
+
+function isJsonContentType(contentType: string): boolean {
+  const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase();
+  return mediaType === "application/json" || (mediaType?.endsWith("+json") ?? false);
+}
+
+async function readResponseText(response: Response): Promise<string> {
+  const contentLength = response.headers.get("content-length");
+  if (
+    contentLength &&
+    /^\d+$/.test(contentLength) &&
+    Number(contentLength) > MAX_RESPONSE_BODY_BYTES
+  ) {
+    throw new VeloInvalidResponseError();
+  }
+
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_RESPONSE_BODY_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new VeloInvalidResponseError();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
 }

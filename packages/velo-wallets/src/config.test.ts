@@ -141,6 +141,17 @@ describe("wallet configuration", () => {
       }),
     ).toThrow(/CONFIG_INCOMPATIBLE/);
 
+    for (const invalid of [
+      { revision: 1.5 },
+      { walletIds: [] },
+      { walletIds: ["freighter", "freighter"] },
+      { appearance: { ...parsed.appearance, buttonLabel: " " } },
+    ]) {
+      expect(() => parsePublishedWalletConfig({ ...parsed, ...invalid })).toThrow(
+        /CONFIG_INCOMPATIBLE/,
+      );
+    }
+
     expect(() => parsePublishedWalletConfig({ schemaVersion: 2 })).toThrow(/CONFIG_INCOMPATIBLE/);
   });
 

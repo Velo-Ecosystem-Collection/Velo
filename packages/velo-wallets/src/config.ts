@@ -223,19 +223,20 @@ export function normalizeWalletAppearance(value: {
 }
 
 function relativeLuminance(color: string) {
-  const channels = [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16));
-  return channels
-    .map((channel) => channel / 255)
-    .map((channel) => (channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4))
-    .reduce((sum, channel, index) => sum + channel * [0.2126, 0.7152, 0.0722][index]!, 0);
+  const linearize = (offset: number) => {
+    const channel = Number.parseInt(color.slice(offset, offset + 2), 16) / 255;
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4;
+  };
+  return linearize(1) * 0.2126 + linearize(3) * 0.7152 + linearize(5) * 0.0722;
 }
 
 export function colorContrast(first: string, second: string) {
   if (!HEX_COLOR.test(first) || !HEX_COLOR.test(second)) return 0;
-  const [lighter, darker] = [relativeLuminance(first), relativeLuminance(second)].sort(
-    (a, b) => b - a,
-  );
-  return (lighter! + 0.05) / (darker! + 0.05);
+  const firstLuminance = relativeLuminance(first);
+  const secondLuminance = relativeLuminance(second);
+  const lighter = Math.max(firstLuminance, secondLuminance);
+  const darker = Math.min(firstLuminance, secondLuminance);
+  return (lighter + 0.05) / (darker + 0.05);
 }
 
 export function validateWalletAppearance(appearance: WalletAppearanceConfig) {
@@ -406,15 +407,22 @@ export function parsePublishedWalletConfig(value: unknown): PublishedWalletConfi
   const selectorLogo = value.selectorLogo === undefined ? "velo" : value.selectorLogo;
   if (
     typeof value.revision !== "number" ||
+    !Number.isSafeInteger(value.revision) ||
+    value.revision < 1 ||
     typeof value.projectKey !== "string" ||
+    value.projectKey.trim().length === 0 ||
     (value.network !== "testnet" && value.network !== "public") ||
     !Array.isArray(value.walletIds) ||
+    value.walletIds.length === 0 ||
     value.walletIds.some((id) => typeof id !== "string" || !WALLET_IDS.includes(id)) ||
+    new Set(value.walletIds).size !== value.walletIds.length ||
     !isWalletSelectorLogo(selectorLogo) ||
     (value.projectLogoUrl !== undefined && !isSafeProjectLogoUrl(value.projectLogoUrl)) ||
     !isRecord(appearance) ||
     !["light", "dark", "system"].includes(String(appearance.theme)) ||
     typeof appearance.buttonLabel !== "string" ||
+    appearance.buttonLabel.trim().length < 1 ||
+    appearance.buttonLabel.trim().length > 40 ||
     !hasValidPublishedStyle(appearance) ||
     !isRecord(modal) ||
     typeof modal.showInstallLabel !== "boolean" ||

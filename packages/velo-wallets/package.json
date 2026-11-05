@@ -1,6 +1,6 @@
 {
   "name": "@carts1024/velo-wallets",
-  "version": "0.1.0-alpha.4",
+  "version": "1.0.0",
   "private": false,
   "files": [
     "dist",
@@ -33,8 +33,7 @@
     }
   },
   "publishConfig": {
-    "access": "public",
-    "tag": "alpha"
+    "access": "public"
   },
   "scripts": {
     "build": "vite build --config vite.lib.config.ts && tsc --project tsconfig.build.json && vite build --config vite.cdn.config.ts",

@@ -1,20 +1,27 @@
-import { copyFile, mkdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { stageWalletBundle } from "./stage-wallet-bundle-lib.mjs";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const source = path.join(repositoryRoot, "packages/velo-wallets/dist/cdn/velo-wallet.js");
 const packageJson = JSON.parse(
   await readFile(path.join(repositoryRoot, "packages/velo-wallets/package.json"), "utf8"),
 );
-const destinations = [
-  path.join(repositoryRoot, "apps/web/public/wallets/v1/velo-wallet.js"),
-  path.join(repositoryRoot, "apps/web/public/wallets/v1.0.0/velo-wallet.js"),
-];
-
-for (const destination of destinations) {
-  await mkdir(path.dirname(destination), { recursive: true });
-  await copyFile(source, destination);
+if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(packageJson.version)) {
+  throw new Error(`Invalid wallet package version: ${packageJson.version}`);
 }
 
-console.log(`Staged ${packageJson.name}@${packageJson.version} CDN bundle at /wallets/v1 and /wallets/v1.0.0.`);
+const result = await stageWalletBundle({
+  source,
+  latestDestination: path.join(repositoryRoot, "apps/web/public/wallets/v1/velo-wallet.js"),
+  versionedDestination: path.join(
+    repositoryRoot,
+    `apps/web/public/wallets/v${packageJson.version}/velo-wallet.js`,
+  ),
+});
+
+console.log(
+  `Staged ${packageJson.name}@${packageJson.version} at /wallets/v1 and /wallets/v${packageJson.version} (versioned asset ${result.versionedCreated ? "created" : "already matched"}; no CDN deployment performed).`,
+);

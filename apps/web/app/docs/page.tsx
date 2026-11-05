@@ -325,10 +325,13 @@ app.listen(3001, () => console.log("Express server running on port 3001"));`,
     walletHtml: `<!-- Paste this where you want the wallet button to appear. -->
 <script
   type="module"
-  src="https://wallets.velo.dev/v1/velo-wallet.js"
+  src="https://www.velo-build.dev/wallets/v1/velo-wallet.js"
 ></script>
 
-<velo-wallet project-key="vw_pk_your_public_project_key"></velo-wallet>`,
+<velo-wallet
+  project-key="vw_pk_your_public_project_key"
+  api-base="https://www.velo-build.dev"
+></velo-wallet>`,
     walletHtmlEvents: `const wallet = document.querySelector("velo-wallet");
 
 wallet.addEventListener("velo:wallet-connected", (event) => {
@@ -398,8 +401,8 @@ export function ConnectedAccount() {
   );
 }`,
     walletCsp: `Content-Security-Policy:
-  script-src 'self' https://wallets.velo.dev;
-  connect-src 'self' https://wallets.velo.dev;`,
+  script-src 'self' https://www.velo-build.dev;
+  connect-src 'self' https://www.velo-build.dev;`,
   };
 
   const categories = Array.from(new Set(SECTIONS.map((s) => s.category)));
@@ -867,16 +870,15 @@ const session = await velo.checkout.sessions.create({
                   frameworks that support custom elements. It requires no package installation.
                 </p>
 
-                <div className="my-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
-                  <AlertTriangleIcon className="mt-0.5 size-5 shrink-0 text-amber-600" />
+                <div className="my-6 flex gap-3 rounded-xl border border-border bg-muted/50 p-4">
+                  <InfoIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
                   <div className="text-sm">
-                    <strong className="mb-1 block">Hosted runtime release status</strong>
-                    The npm package 1.0.0 is published under the <code>latest</code> tag. The hosted{" "}
-                    <code>/v1/velo-wallet.js</code> runtime has not been updated from that build and
-                    needs a separate deployment. Follow the project-generated HTML snippet, and
-                    confirm that every configured wallet is supported by the hosted runtime. Do not
-                    publish a Noir configuration for this runtime until the matching CDN release is
-                    deployed.
+                    <strong className="mb-1 block text-foreground">Hosted runtime</strong>
+                    Velo&apos;s hosted wallet runtime is deployed at{" "}
+                    <code>www.velo-build.dev/wallets/v1/velo-wallet.js</code> and supports all wallet
+                    IDs offered in project configuration, including Noir. Copy the generated HTML
+                    snippet from your project&apos;s Wallets panel so its runtime URL and API base match
+                    your deployment.
                   </div>
                 </div>
 
@@ -941,8 +943,8 @@ const session = await velo.checkout.sessions.create({
                 <p>
                   Use the React adapter when your interface needs wallet state in several
                   components. It exposes the same core wallet methods as the Web Component when both
-                  use compatible runtime releases. The hosted CDN may run an older release than npm;
-                  see the HTML section. <code>WalletWidget</code> renders the published connect,
+                  use compatible runtime releases. HTML uses Velo&apos;s hosted runtime; React uses the
+                  published npm package. <code>WalletWidget</code> renders the published connect,
                   connected, copy, disconnect, status, and error design; <code>ConnectButton</code>{" "}
                   remains available when only a trigger is needed.
                 </p>
@@ -953,8 +955,8 @@ const session = await velo.checkout.sessions.create({
                     <strong className="mb-1 block text-foreground">Stable npm package</strong>
                     Install <code>@carts1024/velo-wallets</code> from npm; version 1.0.0 is
                     published under <code>latest</code>. In Next.js App Router, render wallet
-                    controls below a client boundary. The separate hosted CDN has not been updated
-                    to the 1.0.0 build; see the HTML section before choosing the hosted runtime.
+                    controls below a client boundary. This package and the hosted HTML runtime are
+                    released separately; use the Wallets panel&apos;s generated snippet for HTML.
                   </div>
                 </div>
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">

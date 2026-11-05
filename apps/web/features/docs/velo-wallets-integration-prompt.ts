@@ -16,7 +16,7 @@ Use the project's generated integration snippet and public key. Never put a priv
 ## Choose a runtime that matches this application
 
 - For React, including Next.js App Router, use the published \`@carts1024/velo-wallets@1.0.0\` package from npm. Keep wallet access under a \`"use client"\` boundary in Next.js and mount \`VeloWalletProvider\` only around the interface that needs wallet access. Prefer \`WalletWidget\` for the complete connected/status/error UI or \`ConnectButton\` for a trigger-only interface. Use \`useVeloWallet()\` for state and operations inside the provider.
-- For plain HTML or a framework using custom elements, use the HTML snippet generated on the Velo Wallets page. The hosted \`https://wallets.velo.dev/v1/velo-wallet.js\` CDN runtime has not been updated to the 1.0.0 package build. Do not claim CDN/package parity or enable wallet IDs the deployed runtime cannot parse. In particular, upgrade every consuming runtime before publishing a configuration containing Noir; an older v1 parser rejects unknown wallet IDs. The npm package's Noir support does not prove that the hosted CDN supports it.
+- For plain HTML or a framework using custom elements, use the HTML snippet generated on the Velo Wallets page, including both its script URL and \`api-base\`. The current hosted runtime is \`https://www.velo-build.dev/wallets/v1/velo-wallet.js\` and supports all wallet IDs offered in project configuration, including Noir. A custom Velo host or copied older runtime may differ; verify it supports every configured wallet before publishing.
 - If the project uses a custom Velo host, follow the generated snippet and existing deployment configuration instead of inventing an API URL.
 
 React setup uses the package's public exports:
@@ -42,8 +42,8 @@ export function WalletControls() {
 For the Web Component, retain the generated CDN URL and project key:
 
 \`\`\`html
-<script type="module" src="https://wallets.velo.dev/v1/velo-wallet.js"></script>
-<velo-wallet project-key="vw_pk_your_public_project_key"></velo-wallet>
+<script type="module" src="https://www.velo-build.dev/wallets/v1/velo-wallet.js"></script>
+<velo-wallet project-key="vw_pk_your_public_project_key" api-base="https://www.velo-build.dev"></velo-wallet>
 \`\`\`
 
 Listen for \`velo:wallet-connected\` and \`velo:wallet-error\` and use the documented element methods only after checking the component's available public API. If the app has a Content Security Policy, use the exact generated values for the wallet bundle in \`script-src\` and the configuration endpoint in \`connect-src\`.

@@ -1630,7 +1630,7 @@ function wr(e, t, n = si.u, r, i) {
 			let n = li.get(e.n);
 			return n ? n(e, t) : t.r(e.n, e.v[0] == "dark");
 		}(e, t);
-		return a ? typeof a == "string" ? ({r, p: n} = dr(e, t, n, r), Cr(wr(kr(a), t, n, r, e.i), e.n)) : Array.isArray(a) ? a.map((e) => {
+		return a ? typeof a == "string" ? ({r: r, p: n} = dr(e, t, n, r), Cr(wr(kr(a), t, n, r, e.i), e.n)) : Array.isArray(a) ? a.map((e) => {
 			var t, i;
 			return {
 				o: 0,
@@ -6877,7 +6877,7 @@ var as, os, ss, cs = t((() => {
 	})(e, function() {
 		var e = {};
 		function t(e) {
-			if (!/^(?:[A-Za-z0-9+/]{2}[A-Za-z0-9+/]{2})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(e)) throw TypeError("invalid encoding");
+			if (!/^(?:[A-Za-z0-9+\/]{2}[A-Za-z0-9+\/]{2})*(?:[A-Za-z0-9+\/]{2}==|[A-Za-z0-9+\/]{3}=)?$/.test(e)) throw TypeError("invalid encoding");
 		}
 		return e.decodeUTF8 = function(e) {
 			if (typeof e != "string") throw TypeError("expected string");

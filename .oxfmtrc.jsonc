@@ -1,4 +1,6 @@
 {
+  // Archived release bundles must retain their original bytes.
+  "ignorePatterns": ["packages/velo-wallets/releases/**"],
   "experimentalSortImports": {
     "groups": [
       ["^node:", "value"], // Node.js built-ins

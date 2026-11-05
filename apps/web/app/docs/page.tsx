@@ -875,10 +875,10 @@ const session = await velo.checkout.sessions.create({
                   <div className="text-sm">
                     <strong className="mb-1 block text-foreground">Hosted runtime</strong>
                     Velo&apos;s hosted wallet runtime is deployed at{" "}
-                    <code>www.velo-build.dev/wallets/v1/velo-wallet.js</code> and supports all wallet
-                    IDs offered in project configuration, including Noir. Copy the generated HTML
-                    snippet from your project&apos;s Wallets panel so its runtime URL and API base match
-                    your deployment.
+                    <code>www.velo-build.dev/wallets/v1/velo-wallet.js</code> and supports all
+                    wallet IDs offered in project configuration, including Noir. Copy the generated
+                    HTML snippet from your project&apos;s Wallets panel so its runtime URL and API
+                    base match your deployment.
                   </div>
                 </div>
 
@@ -943,10 +943,10 @@ const session = await velo.checkout.sessions.create({
                 <p>
                   Use the React adapter when your interface needs wallet state in several
                   components. It exposes the same core wallet methods as the Web Component when both
-                  use compatible runtime releases. HTML uses Velo&apos;s hosted runtime; React uses the
-                  published npm package. <code>WalletWidget</code> renders the published connect,
-                  connected, copy, disconnect, status, and error design; <code>ConnectButton</code>{" "}
-                  remains available when only a trigger is needed.
+                  use compatible runtime releases. HTML uses Velo&apos;s hosted runtime; React uses
+                  the published npm package. <code>WalletWidget</code> renders the published
+                  connect, connected, copy, disconnect, status, and error design;{" "}
+                  <code>ConnectButton</code> remains available when only a trigger is needed.
                 </p>
 
                 <div className="my-6 flex gap-3 rounded-xl border border-border bg-muted/50 p-4">

@@ -22,7 +22,7 @@ export function walletIntegrationSnippets(options: {
   return {
     html: `<script type="module" src="${cdnBaseUrl}/v1/velo-wallet.js"></script>\n\n<velo-wallet\n  id="stellar-wallet"\n  project-key="${options.projectKey}"\n  api-base="${apiBaseUrl}"\n></velo-wallet>\n\n<script>\n  const wallet = document.querySelector("#stellar-wallet");\n\n  wallet.addEventListener("velo:wallet-connected", (event) => {\n    console.log("Connected", event.detail.address);\n  });\n\n  wallet.addEventListener("velo:wallet-error", (event) => {\n    console.error("Wallet error", event.detail.error);\n  });\n</script>`,
     react: `"use client";\n\nimport { VeloWalletProvider, WalletWidget } from "@carts1024/velo-wallets/react";\n\nexport function WalletControls() {\n  return (\n    <VeloWalletProvider projectKey="${options.projectKey}" apiBaseUrl="${apiBaseUrl}">\n      <WalletWidget />\n    </VeloWalletProvider>\n  );\n}`,
-    install: "pnpm add @carts1024/velo-wallets",
+    install: "pnpm add @carts1024/velo-wallets@alpha",
     csp: `script-src 'self' ${new URL(cdnBaseUrl).origin}; connect-src 'self' ${new URL(apiBaseUrl).origin}`,
   };
 }

@@ -33,6 +33,7 @@ import {
   type WalletAppearanceConfig,
   type WalletAppearanceOverrides,
 } from "./config.js";
+import { openWalletSelector } from "./wallet-selector.js";
 
 const WalletContext = createContext<VeloWalletClient | null>(null);
 const defaultAppearance = normalizeWalletAppearance(DEFAULT_WALLET_CONFIG);
@@ -86,7 +87,7 @@ export function useVeloWallet() {
   return {
     ...state,
     appearance: client.getConfig()?.appearance ?? defaultAppearance,
-    connect: () => client.connect(),
+    connect: (walletId?: string) => client.connect(walletId),
     disconnect: () => client.disconnect(),
     getAddress: () => Promise.resolve(client.getAddress()),
     signTransaction: (xdr: string) => client.signTransaction(xdr),
@@ -170,7 +171,7 @@ export function ConnectButton(props: ButtonHTMLAttributes<HTMLButtonElement>) {
       onClick={(event) => {
         props.onClick?.(event);
         if (!event.defaultPrevented) {
-          const action = connected ? wallet.disconnect() : wallet.connect();
+          const action = connected ? wallet.disconnect() : openWalletSelector(wallet.client);
           action.catch(() => undefined);
         }
       }}

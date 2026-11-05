@@ -12,6 +12,7 @@ import {
   StellarWalletsKitAdapter,
   type WalletKitAdapter,
 } from "./wallet-kit-adapter.js";
+import { WALLET_LOGOS } from "./wallet-logos.js";
 
 export type VeloWalletStatus =
   | "idle"
@@ -29,6 +30,14 @@ export type VeloWalletState = {
   walletName: string | null;
   network: WalletNetwork;
   error: VeloWalletError | null;
+};
+
+export type VeloWalletOption = {
+  id: string;
+  name: string;
+  logo: string;
+  isAvailable: boolean;
+  installUrl: string | null;
 };
 
 export type VeloWalletClientOptions = {
@@ -181,11 +190,39 @@ export class VeloWalletClient {
     }
   }
 
-  async connect() {
+  async listWallets(): Promise<VeloWalletOption[]> {
+    await this.initialize();
+    const config = this.requireConfig();
+    const discovered = this.adapter.listWallets
+      ? await this.adapter.listWallets()
+      : config.walletIds.map((id) => ({
+          id,
+          name: walletName(id) ?? id,
+          isAvailable: true,
+          url: "",
+        }));
+    const byId = new Map(discovered.map((wallet) => [wallet.id, wallet]));
+    return config.walletIds
+      .map((id) => {
+        const wallet = byId.get(id);
+        const entry = WALLET_CATALOG.find((item) => item.id === id);
+        const installUrl = safeInstallUrl(wallet?.url);
+        return {
+          id,
+          name: entry?.name ?? wallet?.name ?? id,
+          logo: WALLET_LOGOS[id] ?? "",
+          isAvailable: wallet?.isAvailable ?? false,
+          installUrl,
+        };
+      })
+      .filter((wallet) => !config.modal.hideUnsupportedWallets || wallet.isAvailable);
+  }
+
+  async connect(walletId?: string) {
     await this.initialize();
     this.patchState({ status: "connecting", error: null });
     try {
-      const session = await this.adapter.connect();
+      const session = await this.adapter.connect(walletId);
       this.patchState({
         status: "connected",
         address: session.address,
@@ -296,6 +333,16 @@ export class VeloWalletClient {
 
   private clearSession() {
     if (typeof window !== "undefined") window.localStorage.removeItem(this.storageKey());
+  }
+}
+
+function safeInstallUrl(value: string | undefined) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@carts1024/velo-wallets",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "private": false,
   "files": [
     "dist",
@@ -18,6 +18,10 @@
     "./browser": {
       "types": "./dist/types/browser.d.ts",
       "import": "./dist/browser.js"
+    },
+    "./logos": {
+      "types": "./dist/types/wallet-logos.d.ts",
+      "import": "./dist/logos.js"
     },
     "./element": {
       "types": "./dist/types/element.d.ts",

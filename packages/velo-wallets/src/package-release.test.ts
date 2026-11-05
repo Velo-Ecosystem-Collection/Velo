@@ -20,4 +20,15 @@ describe("npm release packaging", () => {
     expect(external).not.toContain(walletKitPackage);
     expect(external).not.toContain(`${walletKitPackage}/modules/utils`);
   });
+
+  test("publishes the bundled wallet logo map for browser-side previews", () => {
+    const manifest = packageJson as {
+      exports?: Record<string, { import?: string; types?: string }>;
+    };
+    expect(manifest.exports?.["./logos"]).toEqual({
+      types: "./dist/types/wallet-logos.d.ts",
+      import: "./dist/logos.js",
+    });
+    expect(libraryConfig.build?.assetsInlineLimit).toBeGreaterThanOrEqual(200_000);
+  });
 });

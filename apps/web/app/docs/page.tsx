@@ -91,7 +91,7 @@ export default function DocsPage() {
 const velo = new Velo({
   apiKey: process.env.VELO_API_KEY!,
   environment: "testnet", // 'production' | 'testnet' | 'development'
-  timeoutMs: 10000,       // optional timeout (default 10s)
+  timeoutMs: 10_000,      // optional total request deadline; default is 30s
 });`,
     createCheckout: `const session = await velo.checkout.sessions.create(
   {
@@ -102,11 +102,15 @@ const velo = new Velo({
     cancelUrl: "https://your-merchant-site.com/cancel",
   },
   {
-    idempotencyKey: "order-1001-attempt-1", // Optional but highly recommended
+    idempotencyKey: "order-1001-attempt-1", // Derive from the persisted attempt and reuse on recovery
   }
 );
 
-// Redirect the customer to: session.checkoutUrl`,
+if (session.checkoutUrl) {
+  // Redirect the customer to session.checkoutUrl.
+} else {
+  // Persist session.id and session.status; do not redirect to a missing URL.
+}`,
     retrieveIntent: `const intent = await velo.paymentIntents.retrieve("pi_12345");
 console.log(\`Payment status: \${intent.status}\`);`,
     listIntents: `const page = await velo.paymentIntents.list({
@@ -134,20 +138,69 @@ const velo = new Velo({
   timeoutMs: 30_000,
 });
 
+const MAX_GAS_BODY_BYTES = 64 * 1_024;
+class GasBodyTooLargeError extends Error {}
+
+async function readBoundedRawBody(request: Request): Promise<string> {
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_GAS_BODY_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new GasBodyTooLargeError();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
 export async function POST(request: Request) {
   // Authenticate the caller and authorize the project before reading the body.
-  const body = (await request.json()) as {
-    operationId?: string;
-    signedTransactionXdr?: string;
-  };
-  const operationId = body.operationId?.trim();
-
-  if (!operationId || !body.signedTransactionXdr) {
+  let parsedBody: unknown;
+  try {
+    parsedBody = JSON.parse(await readBoundedRawBody(request));
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Invalid Gas request" },
+      { status: error instanceof GasBodyTooLargeError ? 413 : 400 },
+    );
+  }
+  if (typeof parsedBody !== "object" || parsedBody === null || Array.isArray(parsedBody)) {
     return NextResponse.json({ error: "Invalid Gas request" }, { status: 400 });
   }
+  const body = parsedBody as {
+    operationId?: unknown;
+    signedTransactionXdr?: unknown;
+  };
+  if (
+    typeof body.operationId !== "string" ||
+    typeof body.signedTransactionXdr !== "string" ||
+    body.operationId.trim() === "" ||
+    body.operationId.trim().length > 128 ||
+    body.signedTransactionXdr.trim() === ""
+  ) {
+    return NextResponse.json({ error: "Invalid Gas request" }, { status: 400 });
+  }
+  const operationId = body.operationId.trim();
+  const signedTransactionXdr = body.signedTransactionXdr;
 
   try {
-    const result = await velo.gas.sponsorAndSubmit(body.signedTransactionXdr, {
+    const result = await velo.gas.sponsorAndSubmit(signedTransactionXdr, {
       idempotencyKey: "my-app-gas:" + operationId,
       correlationId: "my-app-gas:" + operationId,
       timeoutMs: 30_000,
@@ -200,7 +253,7 @@ if (status.status === "succeeded") {
 }`,
     webhookVerify: `import { Velo } from "@carts1024/velo-sdk";
 
-// rawBody must be the raw, unparsed request body string
+// rawBody must be untouched and capped at 1 MiB before it is buffered
 const event = await Velo.webhooks.verify({
   payload: rawBody,
   signature: request.headers["x-velo-signature"],
@@ -230,9 +283,15 @@ export async function POST() {
       successUrl: "https://yourdomain.com/success",
       cancelUrl: "https://yourdomain.com/cancel",
     }, {
-      idempotencyKey: \`order-1001-\${Date.now()}\`
+      idempotencyKey: "order-1001-attempt-1", // Reuse this persisted attempt key on recovery
     });
 
+    if (!session.checkoutUrl) {
+      return NextResponse.json(
+        { paymentIntentId: session.id, status: session.status },
+        { status: 202 },
+      );
+    }
     return NextResponse.json({ url: session.checkoutUrl });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Checkout error";
@@ -243,12 +302,52 @@ export async function POST() {
 import { NextResponse } from "next/server";
 import { Velo } from "@carts1024/velo-sdk";
 
-export async function POST(request: Request) {
-  // Retrieve the RAW body text for signature checking
-  const payload = await request.text();
-  const signature = request.headers.get("x-velo-signature");
-  const secret = process.env.VELO_WEBHOOK_SECRET!;
+const MAX_WEBHOOK_BODY_BYTES = 1_048_576;
+class PayloadTooLargeError extends Error {}
 
+async function readBoundedRawBody(request: Request): Promise<string> {
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_WEBHOOK_BODY_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new PayloadTooLargeError();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
+export async function POST(request: Request) {
+  const signature = request.headers.get("x-velo-signature");
+  const secret = process.env.VELO_WEBHOOK_SECRET;
+  if (!signature) return new NextResponse("Invalid webhook", { status: 400 });
+  if (!secret) return new NextResponse("Webhook unavailable", { status: 500 });
+
+  // Read the untouched raw body once, with a 1 MiB byte limit.
+  let payload: string;
+  try {
+    payload = await readBoundedRawBody(request);
+  } catch (error) {
+    return new NextResponse("Invalid webhook body", {
+      status: error instanceof PayloadTooLargeError ? 413 : 400,
+    });
+  }
   try {
     const event = await Velo.webhooks.verify({
       payload,
@@ -275,12 +374,13 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-const velo = new Velo({ apiKey: process.env.VELO_API_KEY! });
-
-app.use(express.json());
+const velo = new Velo({
+  apiKey: process.env.VELO_API_KEY!,
+  environment: "testnet",
+});
 
 // 1. Checkout session route
-app.post("/api/checkout", async (req, res) => {
+app.post("/api/checkout", express.json({ limit: "1mb" }), async (req, res) => {
   try {
     const session = await velo.checkout.sessions.create({
       amount: "10.00",
@@ -289,17 +389,29 @@ app.post("/api/checkout", async (req, res) => {
       successUrl: "https://yourdomain.com/success",
       cancelUrl: "https://yourdomain.com/cancel",
     }, {
-      idempotencyKey: req.body.orderId,
+      idempotencyKey: "order-1001-attempt-1", // Use the persisted key for this authorized attempt
     });
 
+    if (!session.checkoutUrl) {
+      return res.status(202).json({
+        paymentIntentId: session.id,
+        status: session.status,
+      });
+    }
+    if (!session.checkoutUrl) {
+      return res.status(202).json({
+        paymentIntentId: session.id,
+        status: session.status,
+      });
+    }
     res.status(201).json({ url: session.checkoutUrl });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
 });
 
-// 2. Webhook route capturing raw body string
-app.post("/webhooks", express.raw({ type: "application/json" }), async (req, res) => {
+// 2. Webhook route with bounded raw-body capture.
+app.post("/webhooks", express.raw({ type: "application/json", limit: "1mb" }), async (req, res) => {
   const payload = req.body.toString("utf8");
   const signature = req.headers["x-velo-signature"];
   const secret = process.env.VELO_WEBHOOK_SECRET!;
@@ -544,14 +656,23 @@ export function ConnectedAccount() {
                 {renderCodeBlock(
                   `import { Velo } from "@carts1024/velo-sdk";
 
-const velo = new Velo({ apiKey: process.env.VELO_API_KEY! });
+const velo = new Velo({
+  apiKey: process.env.VELO_API_KEY!,
+  environment: "testnet",
+});
 const session = await velo.checkout.sessions.create({
   amount: "10.00",
   asset: "USDC",
   description: "Order #1001"
+}, {
+  idempotencyKey: "order-1001-attempt-1", // Stable key from this persisted checkout attempt
 });
 
-// redirect the user to session.checkoutUrl`,
+if (session.checkoutUrl) {
+  // Redirect the customer to session.checkoutUrl.
+} else {
+  // Persist session.id and session.status; do not redirect to a missing URL.
+}`,
                   "introDemo",
                 )}
 
@@ -581,6 +702,10 @@ const session = await velo.checkout.sessions.create({
                 <p>
                   Install the Velo SDK into your server environment using your favorite package
                   manager:
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Velo SDK 1.0.0 is published on npm&apos;s latest tag. It requires Node.js 22.6 or
+                  newer and runs on a server only.
                 </p>
 
                 <h4 className="mt-6 font-mono text-sm font-semibold text-muted-foreground uppercase">
@@ -652,8 +777,10 @@ const session = await velo.checkout.sessions.create({
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">No</td>
                         <td className="px-4 py-3">
-                          Defaults to `"testnet"`. Routes requests to the corresponding backend
-                          network.
+                          Defaults to `"development"`. Selects the default API origin:
+                          localhost for development and `https://www.velo-build.dev` for
+                          production or Testnet. This setting does not verify Stellar network
+                          readiness.
                         </td>
                       </tr>
                       <tr>
@@ -661,8 +788,9 @@ const session = await velo.checkout.sessions.create({
                         <td className="px-4 py-3 font-mono text-muted-foreground">string</td>
                         <td className="px-4 py-3 text-muted-foreground">No</td>
                         <td className="px-4 py-3">
-                          Overrides the target API server URL. Mainly used for local development and
-                          sandbox setups.
+                          Overrides the API origin. SDK 1.0 requires an HTTPS origin with no
+                          embedded credentials, path, query, or fragment; HTTP is allowed only for
+                          a loopback development origin.
                         </td>
                       </tr>
                       <tr>
@@ -670,7 +798,7 @@ const session = await velo.checkout.sessions.create({
                         <td className="px-4 py-3 font-mono text-muted-foreground">number</td>
                         <td className="px-4 py-3 text-muted-foreground">No</td>
                         <td className="px-4 py-3">
-                          Specifies maximum connection wait time (defaults to `10000` / 10s).
+                          Total wall-clock budget across request attempts (defaults to `30000` / 30s).
                         </td>
                       </tr>
                     </tbody>
@@ -1332,7 +1460,7 @@ const session = await velo.checkout.sessions.create({
   amount: "10.00",
   asset: "USDC",
   description: "Order #1001",
-  checkoutUrl: "https://pay.velo.xyz/pay/pi_12345",
+  checkoutUrl: "https://www.velo-build.dev/pay/pi_12345",
   successUrl: "https://yourdomain.com/success",
   cancelUrl: "https://yourdomain.com/cancel",
   expiresAt: "2026-07-01T00:30:00.000Z",

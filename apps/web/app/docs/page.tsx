@@ -460,6 +460,32 @@ async function requestSignature(transactionXdr) {
   return signedXdr;
 }`,
     walletReactInstall: `pnpm add @carts1024/velo-wallets`,
+    walletViteApp: `import {
+  VeloWalletProvider,
+  WalletWidget,
+} from "@carts1024/velo-wallets/react";
+
+export default function App() {
+  return (
+    <main>
+      <VeloWalletProvider
+        projectKey="vw_pk_your_public_project_key"
+        apiBaseUrl="https://www.velo-build.dev"
+      >
+        <WalletWidget />
+      </VeloWalletProvider>
+    </main>
+  );
+}`,
+    walletViteMain: `import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App";
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);`,
     walletReactProvider: `"use client";
 
 import {
@@ -469,14 +495,15 @@ import {
 
 export function WalletControls() {
   return (
-    <VeloWalletProvider projectKey="vw_pk_your_public_project_key">
+    <VeloWalletProvider
+      projectKey="vw_pk_your_public_project_key"
+      apiBaseUrl="https://www.velo-build.dev"
+    >
       <WalletWidget />
     </VeloWalletProvider>
   );
 }`,
-    walletReactHook: `"use client";
-
-import { useState } from "react";
+    walletReactHook: `import { useState } from "react";
 import { useVeloWallet } from "@carts1024/velo-wallets/react";
 
 export function ConnectedAccount() {
@@ -777,10 +804,9 @@ if (session.checkoutUrl) {
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">No</td>
                         <td className="px-4 py-3">
-                          Defaults to `"development"`. Selects the default API origin:
-                          localhost for development and `https://www.velo-build.dev` for
-                          production or Testnet. This setting does not verify Stellar network
-                          readiness.
+                          Defaults to `"development"`. Selects the default API origin: localhost for
+                          development and `https://www.velo-build.dev` for production or Testnet.
+                          This setting does not verify Stellar network readiness.
                         </td>
                       </tr>
                       <tr>
@@ -789,8 +815,8 @@ if (session.checkoutUrl) {
                         <td className="px-4 py-3 text-muted-foreground">No</td>
                         <td className="px-4 py-3">
                           Overrides the API origin. SDK 1.0 requires an HTTPS origin with no
-                          embedded credentials, path, query, or fragment; HTTP is allowed only for
-                          a loopback development origin.
+                          embedded credentials, path, query, or fragment; HTTP is allowed only for a
+                          loopback development origin.
                         </td>
                       </tr>
                       <tr>
@@ -798,7 +824,8 @@ if (session.checkoutUrl) {
                         <td className="px-4 py-3 font-mono text-muted-foreground">number</td>
                         <td className="px-4 py-3 text-muted-foreground">No</td>
                         <td className="px-4 py-3">
-                          Total wall-clock budget across request attempts (defaults to `30000` / 30s).
+                          Total wall-clock budget across request attempts (defaults to `30000` /
+                          30s).
                         </td>
                       </tr>
                     </tbody>
@@ -1083,8 +1110,10 @@ if (session.checkoutUrl) {
                     <strong className="mb-1 block text-foreground">Stable npm package</strong>
                     Install <code>@carts1024/velo-wallets</code> from npm; version 1.0.0 is
                     published under <code>latest</code>. In Next.js App Router, render wallet
-                    controls below a client boundary. This package and the hosted HTML runtime are
-                    released separately; use the Wallets panel&apos;s generated snippet for HTML.
+                    controls below a client boundary. Vite + React apps can mount the provider
+                    directly; they do not need a <code>&quot;use client&quot;</code> directive. This
+                    package and the hosted HTML runtime are released separately; use the Wallets
+                    panel&apos;s generated values for the project key and API base URL.
                   </div>
                 </div>
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
@@ -1093,13 +1122,27 @@ if (session.checkoutUrl) {
                 {renderCodeBlock(codeSnippets.walletReactInstall, "walletReactInstall")}
 
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
-                  2. Add the provider at a client boundary
+                  2. Add the provider to a Vite + React app
                 </h3>
                 <p>
-                  In Next.js App Router, keep the <code>&quot;use client&quot;</code> line. Mount
-                  the provider around only the part of the interface that needs wallet access.
+                  Put this component in <code>src/App.tsx</code> and mount the provider around only
+                  the part of the interface that needs wallet access. Copy the exact{" "}
+                  <code>projectKey</code> and <code>apiBaseUrl</code> values from your
+                  project&apos;s generated React snippet.
                 </p>
-                {renderCodeBlock(codeSnippets.walletReactProvider, "walletReactProvider")}
+                {renderCodeBlock(codeSnippets.walletViteApp, "walletViteApp")}
+
+                <p>
+                  Render the app from Vite&apos;s React entry point, usually{" "}
+                  <code>src/main.tsx</code>:
+                </p>
+                {renderCodeBlock(codeSnippets.walletViteMain, "walletViteMain")}
+
+                <p>
+                  Add the exact local and deployed website origins to the Wallets configuration.
+                  Vite commonly serves locally from <code>http://localhost:5173</code>; if the port
+                  changes, allow the origin shown in your browser.
+                </p>
 
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
                   3. Read state and call wallet methods
@@ -1107,9 +1150,16 @@ if (session.checkoutUrl) {
                 <p>
                   A component inside <code>VeloWalletProvider</code> can call{" "}
                   <code>useVeloWallet()</code>. Always check the status before asking the user to
-                  sign.
+                  sign. In Next.js App Router, put the <code>&quot;use client&quot;</code> directive
+                  at the top of components that use wallet hooks.
                 </p>
                 {renderCodeBlock(codeSnippets.walletReactHook, "walletReactHook")}
+
+                <p>
+                  For a Next.js App Router provider, keep the client directive and use the generated
+                  project key and API base URL:
+                </p>
+                {renderCodeBlock(codeSnippets.walletReactProvider, "walletReactProvider")}
 
                 <div className="my-6 flex gap-3 rounded-xl border border-border bg-muted/50 p-4">
                   <InfoIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />

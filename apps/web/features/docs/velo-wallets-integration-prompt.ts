@@ -15,15 +15,48 @@ Use the project's generated integration snippet and public key. Never put a priv
 
 ## Choose a runtime that matches this application
 
-- For React, including Next.js App Router, use the published \`@carts1024/velo-wallets@1.0.0\` package from npm. Keep wallet access under a \`"use client"\` boundary in Next.js and mount \`VeloWalletProvider\` only around the interface that needs wallet access. Prefer \`WalletWidget\` for the complete connected/status/error UI or \`ConnectButton\` for a trigger-only interface. Use \`useVeloWallet()\` for state and operations inside the provider.
+- For React, use the published \`@carts1024/velo-wallets@1.0.0\` package from npm. In a Vite React app, mount \`VeloWalletProvider\` in the client-rendered component tree and render the app with React DOM; Vite does not need a \`"use client"\` directive. Copy both \`projectKey\` and \`apiBaseUrl\` from the Wallets page's generated React snippet. In Next.js App Router, keep wallet access below a \`"use client"\` boundary. In either setup, mount the provider only around the interface that needs wallet access. Prefer \`WalletWidget\` for the complete connected/status/error UI or \`ConnectButton\` for a trigger-only interface. Use \`useVeloWallet()\` for state and operations inside the provider.
 - For plain HTML or a framework using custom elements, use the HTML snippet generated on the Velo Wallets page, including both its script URL and \`api-base\`. The current hosted runtime is \`https://www.velo-build.dev/wallets/v1/velo-wallet.js\` and supports all wallet IDs offered in project configuration, including Noir. A custom Velo host or copied older runtime may differ; verify it supports every configured wallet before publishing.
 - If the project uses a custom Velo host, follow the generated snippet and existing deployment configuration instead of inventing an API URL.
 
-React setup uses the package's public exports:
+Install the package with the package manager already used by the project:
 
 \`\`\`sh
 npm install @carts1024/velo-wallets
 \`\`\`
+
+For Vite + React, put the provider in the app component and use the exact values from the generated React snippet:
+
+\`\`\`tsx
+import { VeloWalletProvider, WalletWidget } from "@carts1024/velo-wallets/react";
+
+export default function App() {
+  return (
+    <VeloWalletProvider
+      projectKey="vw_pk_your_public_project_key"
+      apiBaseUrl="https://www.velo-build.dev"
+    >
+      <WalletWidget />
+    </VeloWalletProvider>
+  );
+}
+\`\`\`
+
+Render that component from the Vite React entry point, typically \`src/main.tsx\`:
+
+\`\`\`tsx
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App";
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);
+\`\`\`
+
+For Next.js App Router, keep the client directive on the provider component:
 
 \`\`\`tsx
 "use client";
@@ -32,7 +65,10 @@ import { VeloWalletProvider, WalletWidget } from "@carts1024/velo-wallets/react"
 
 export function WalletControls() {
   return (
-    <VeloWalletProvider projectKey="vw_pk_your_public_project_key">
+    <VeloWalletProvider
+      projectKey="vw_pk_your_public_project_key"
+      apiBaseUrl="https://www.velo-build.dev"
+    >
       <WalletWidget />
     </VeloWalletProvider>
   );

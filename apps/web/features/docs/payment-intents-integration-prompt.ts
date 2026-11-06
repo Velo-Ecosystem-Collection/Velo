@@ -131,7 +131,7 @@ You are modifying an existing application. First inspect the project and its ins
 
 ## 2. Understand the payment boundary
 
-\`velo.paymentIntents.create()\` and \`velo.checkout.sessions.create()\` call the same \`POST /api/v2/payment-intents\` endpoint and both return a \`PaymentIntent\`. Checkout Sessions is an alternative SDK name for the same creation request; the example below uses it. Choose one method and do not call both as separate steps. The returned \`checkoutUrl\` may be null. When present, the buyer follows it and uses their wallet to review and sign the Stellar payment; Velo hosts the buyer's wallet interaction. The merchant server still owns the order, its access rules, and fulfillment. Velo confirms a payment only after trusted backend ledger verification. A success redirect, browser callback, client-submitted PaymentIntent ID, or transaction hash is not proof of payment.
+\`velo.paymentIntents.create()\` and \`velo.checkout.sessions.create()\` call the same \`POST /api/v2/payment-intents\` endpoint and both return a \`PaymentIntent\`. Checkout Sessions is an alternative SDK name for the same creation request; the example below uses it. Choose one method; do not call both methods as separate steps. The returned \`checkoutUrl\` may be null. When present, the buyer follows it and uses their wallet to review and sign the Stellar payment; Velo hosts the buyer's wallet interaction. The merchant server still owns the order, its access rules, and fulfillment. Velo confirms a payment only after trusted backend ledger verification. A success redirect, browser callback, client-submitted PaymentIntent ID, or transaction hash is not proof of payment.
 
 ## 3. Verify project, network, asset, and webhook prerequisites
 

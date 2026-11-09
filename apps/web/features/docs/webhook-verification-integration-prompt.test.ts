@@ -122,7 +122,8 @@ test("Webhook Verification prompt covers safe setup, middleware order, and durab
     "selected SDK release's registry metadata/package contents",
     "server-only environment configuration",
     "x-velo-signature",
-    "request.text()",
+    "1 MiB byte limit while streaming it",
+    "request.body?.getReader()",
     "any global `express.json()` middleware",
     "x-velo-delivery",
     "not part of the signed body",
@@ -141,7 +142,7 @@ test("Webhook Verification prompt covers safe setup, middleware order, and durab
   );
   assert.match(
     webhookVerificationIntegrationPrompt,
-    /Register the webhook route with `express\.raw\(\{ type: "application\/json" \}\)` \*\*before\*\* any global `express\.json\(\)` middleware/,
+    /Register the webhook route with `express\.raw\(\{ type: "application\/json", limit: "1mb" \}\)` \*\*before\*\* any global `express\.json\(\)` middleware/,
   );
   assert.doesNotMatch(
     webhookVerificationIntegrationPrompt,

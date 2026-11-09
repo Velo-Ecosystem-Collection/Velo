@@ -30,8 +30,9 @@ test("Wallets guide covers the safe configure, publish, and diagnostics journey"
 });
 
 test("Wallets guide includes complete HTML and React examples", () => {
-  assert.match(docs, /https:\/\/wallets\.velo\.dev\/v1\/velo-wallet\.js/);
-  assert.match(docs, /<velo-wallet project-key=/);
+  assert.match(docs, /https:\/\/www\.velo-build\.dev\/wallets\/v1\/velo-wallet\.js/);
+  assert.match(docs, /api-base="https:\/\/www\.velo-build\.dev"/);
+  assert.match(docs, /<velo-wallet\s+project-key=/);
   assert.match(docs, /velo:wallet-connected/);
   assert.match(docs, /VeloWalletProvider/);
   assert.match(docs, /WalletWidget/);
@@ -45,7 +46,10 @@ test("Wallets guide clearly separates public browser keys from private server ke
   assert.match(docs, /Signing stays in the browser/);
   assert.match(docs, /does not receive your transaction XDR/);
   assert.match(docs, /Stable npm package/);
-  assert.match(docs, /hosted CDN has not been updated/);
+  assert.match(
+    docs,
+    /supports all\s+wallet\s+IDs offered in project configuration, including Noir/,
+  );
 });
 
 test("Wallets prompt covers setup, both runtimes, signing boundaries, and Testnet checks", () => {
@@ -59,7 +63,9 @@ test("Wallets prompt covers setup, both runtimes, signing boundaries, and Testne
     "VeloWalletProvider",
     "<velo-wallet project-key=",
     "velo:wallet-connected",
-    "older v1 parser rejects unknown wallet IDs",
+    "www.velo-build.dev/wallets/v1/velo-wallet.js",
+    "api-base",
+    "including Noir",
     "Velo Wallets does not receive signing inputs",
     "or submit it.",
     "message-signing request handles both approval and rejection",

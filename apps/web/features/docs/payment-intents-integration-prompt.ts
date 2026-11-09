@@ -46,7 +46,7 @@ export async function createPaymentIntentForAttempt(
   checkoutUrl: string | null;
 }> {
   // Load this already-persisted attempt for the authorized order before dispatch.
-  const intent: PaymentIntent = await velo.paymentIntents.create(
+  const intent: PaymentIntent = await velo.checkout.sessions.create(
     {
       amount: trustedOrder.amount,
       asset: trustedOrder.asset,
@@ -131,7 +131,7 @@ You are modifying an existing application. First inspect the project and its ins
 
 ## 2. Understand the payment boundary
 
-\`velo.paymentIntents.create()\` and \`velo.checkout.sessions.create()\` call the same \`POST /api/v2/payment-intents\` endpoint and both return a \`PaymentIntent\`. Use \`paymentIntents.create()\` as the primary creation method below. Checkout Sessions is an alternative SDK name for the same creation request when that framing better fits the app; do not call both methods as separate steps. The returned \`checkoutUrl\` may be null. When present, the buyer follows it and uses their wallet to review and sign the Stellar payment; Velo hosts the buyer's wallet interaction. The merchant server still owns the order, its access rules, and fulfillment. Velo confirms a payment only after trusted backend ledger verification. A success redirect, browser callback, client-submitted PaymentIntent ID, or transaction hash is not proof of payment.
+\`velo.paymentIntents.create()\` and \`velo.checkout.sessions.create()\` call the same \`POST /api/v2/payment-intents\` endpoint and both return a \`PaymentIntent\`. Checkout Sessions is an alternative SDK name for the same creation request; the example below uses it. Choose one method; do not call both methods as separate steps. The returned \`checkoutUrl\` may be null. When present, the buyer follows it and uses their wallet to review and sign the Stellar payment; Velo hosts the buyer's wallet interaction. The merchant server still owns the order, its access rules, and fulfillment. Velo confirms a payment only after trusted backend ledger verification. A success redirect, browser callback, client-submitted PaymentIntent ID, or transaction hash is not proof of payment.
 
 ## 3. Verify project, network, asset, and webhook prerequisites
 
@@ -145,8 +145,9 @@ Check and report each item before claiming the integration is ready:
 
 ## 4. Verify and install the compatible SDK
 
-- Use the project's package manager and Node.js 18 or newer. The Velo SDK is server-side and ESM-compatible; keep its imports in Node.js server code and do not bundle it into browser code.
+- Use the project's package manager and Node.js 22.6.0 or newer. The published Velo SDK is stable at 1.0.0, ESM-only, and server-side; keep its imports in compatible Node.js server code and do not bundle it into browser code. If selecting a later release, confirm that release's engine requirement before installing.
 - Before adding a dependency, inspect the exact selected published \`@carts1024/velo-sdk\` release, package exports, README, and changelog. Verify that this release actually exports \`Velo\`, \`velo.paymentIntents.create()\`, \`velo.paymentIntents.retrieve()\`, \`velo.paymentIntents.list()\`, and \`Velo.webhooks.verify()\`. Confirm \`velo.checkout.sessions.create()\` only if choosing that equivalent creation method. Do not infer support from a mutable \`latest\` or \`alpha\` tag or from the repository source alone.
+- For SDK 1.0.0, set \`environment\` to \`production\`, \`testnet\`, or \`development\`. Any configured \`baseUrl\` must be an HTTPS origin with no path, query, or fragment; plain HTTP is allowed only for loopback development. Checkout \`anchor\` supports \`inhouse\`; do not select the retired PDAX route.
 - Install the verified version with the existing package manager, for example \`pnpm add @carts1024/velo-sdk\`, \`npm install @carts1024/velo-sdk\`, or \`yarn add @carts1024/velo-sdk\`. Record the selected version and confirm its exports after installation.
 - If the published release or host runtime is incompatible, stop before wiring the application to unpublished source or adding a new service. Report the blocker and ask for the product decision needed to proceed.
 
@@ -199,6 +200,7 @@ ${paymentIntentsPromptSdkExamples.listPaymentIntents}
 ## 8. Verify webhooks and fulfill durably
 
 - Read the incoming request body as raw text/bytes before parsing JSON. Verify the \`x-velo-signature\` header with \`Velo.webhooks.verify()\` and the server-only \`VELO_WEBHOOK_SECRET\`. Reject invalid/missing signatures before processing payload fields.
+- Enforce a 1 MiB request-body limit while streaming the raw body, before buffering it in memory. Return \`413\` for oversized requests and pass the bounded, untouched body to signature verification.
 - Read \`x-velo-delivery\` and deduplicate deliveries durably. Webhook transport may be retried or replayed; a repeated delivery must not create a second fulfillment.
 - For a verified \`payment.succeeded\` event, match \`event.paymentIntent.id\` and project identity to the stored order/payment-attempt association. Validate the expected amount, asset, ownership, and current order state against trusted persisted data. Never let an event choose an unrelated order or overwrite a newer terminal state.
 - Make fulfillment durable and idempotent. In one database transaction, record the delivery/confirmed payment and either apply an idempotent fulfillment or enqueue a durable outbox/job with a unique order/payment key. Acknowledge success only after durable processing or enqueueing has committed. If persistence/enqueueing fails, return a retryable failure so delivery can be retried.

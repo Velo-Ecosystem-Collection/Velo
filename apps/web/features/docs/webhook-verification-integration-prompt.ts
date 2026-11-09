@@ -2,7 +2,7 @@ export const webhookVerificationPromptExamples = {
   verification: `import { Velo, type WebhookEvent } from "@carts1024/velo-sdk";
 
 export async function verifyVeloWebhook(
-  rawBody: string, // untouched result of request.text()
+  rawBody: string, // untouched UTF-8 output of the bounded raw-body reader
   signatureHeader: string | null, // request.headers.get("x-velo-signature")
   secret: string,
 ): Promise<WebhookEvent> {
@@ -34,7 +34,7 @@ Verification establishes that the signed body was produced by a holder of the we
 
 ## 3. Confirm runtime and install the verified SDK release
 
-- This integration requires a compatible server-side Node.js environment with ESM support (Node.js 18 or newer for this SDK). If the project is browser-only, Edge-only, or otherwise incompatible, explain the blocker and propose a small Node.js endpoint; do not introduce infrastructure or alter deployment settings without the user's decision.
+- This integration requires a compatible server-side Node.js environment with ESM support (Node.js 22.6.0 or newer for SDK 1.0.0). If the project is browser-only, Edge-only, or otherwise incompatible, explain the blocker and propose a small Node.js endpoint; do not introduce infrastructure or alter deployment settings without the user's decision.
 - Inspect the selected SDK release's registry metadata/package contents and verify its public package export includes \`Velo.webhooks.verify\` and the \`WebhookEvent\` type. Do not assume a mutable \`latest\`/alpha tag or workspace source matches the selected release. If the needed API is absent, report the exact release blocker before installing anything.
 - Install the selected compatible release with the repository's existing package manager and record the exact version. Do not switch package managers or add an unpublished/source dependency silently.
 - Configure a reachable HTTPS webhook endpoint in Velo and subscribe it to only the event types the app needs. Keep \`VELO_WEBHOOK_SECRET\` in server-only environment configuration; never put it in client code, logs, prompts, or browser-visible responses. Use placeholders in examples and tests.
@@ -54,18 +54,59 @@ After successful verification, use the event union's narrowing by \`event.type\`
 
 ### Next.js App Router (Node runtime)
 
-Use a route handler such as \`app/api/webhooks/velo/route.ts\`. Set \`export const runtime = "nodejs";\`, read \`await request.text()\` exactly once (never \`request.json()\` first), and get \`request.headers.get("x-velo-signature")\` plus \`request.headers.get("x-velo-delivery")\`. Return a client error for missing/invalid signature or malformed signed content. After verification, check configured project/resource associations, then call the application's durable acceptance function. Respond success only after a database transaction has durably inserted/claimed the delivery and its processing job/outbox record; return a retryable 5xx if durable acceptance fails.
+Use a route handler such as \`app/api/webhooks/velo/route.ts\`. Set \`export const runtime = "nodejs";\`, read the raw body exactly once without calling \`request.json()\`, and enforce a 1 MiB byte limit while streaming it. Return \`413\` for an oversized body. Then get \`request.headers.get("x-velo-signature")\` plus \`request.headers.get("x-velo-delivery")\`. Return a client error for missing/invalid signature or malformed signed content. After verification, check configured project/resource associations, then call the application's durable acceptance function. Respond success only after a database transaction has durably inserted/claimed the delivery and its processing job/outbox record; return a retryable 5xx if durable acceptance fails.
 
 \`\`\`ts
 export const runtime = "nodejs";
 
+const MAX_WEBHOOK_BODY_BYTES = 1_048_576;
+
+class PayloadTooLargeError extends Error {}
+
+async function readBoundedRawBody(request: Request): Promise<string> {
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_WEBHOOK_BODY_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new PayloadTooLargeError();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
 export async function POST(request: Request) {
-  const rawBody = await request.text();
   const signature = request.headers.get("x-velo-signature");
   const deliveryId = request.headers.get("x-velo-delivery");
   const secret = process.env.VELO_WEBHOOK_SECRET;
   if (!signature || !deliveryId) return new Response("Invalid webhook", { status: 400 });
   if (!secret) return new Response("Webhook unavailable", { status: 500 });
+
+  let rawBody: string;
+  try {
+    rawBody = await readBoundedRawBody(request);
+  } catch (error) {
+    return new Response("Invalid webhook body", {
+      status: error instanceof PayloadTooLargeError ? 413 : 400,
+    });
+  }
 
   let event: WebhookEvent;
   try {
@@ -89,10 +130,10 @@ export async function POST(request: Request) {
 
 ## Express
 
-Register the webhook route with \`express.raw({ type: "application/json" })\` **before** any global \`express.json()\` middleware. Otherwise JSON middleware consumes/parses the stream first and verification no longer receives the signed raw body. Convert the route's Buffer to UTF-8 once, read \`x-velo-signature\` and \`x-velo-delivery\`, verify, and durably accept as above. Register ordinary JSON middleware after the webhook route so other endpoints keep their existing behavior. Do not copy middleware order from an example that puts global JSON parsing first.
+Register the webhook route with \`express.raw({ type: "application/json", limit: "1mb" })\` **before** any global \`express.json()\` middleware. The limit matches the SDK's published webhook example. Otherwise JSON middleware consumes/parses the stream first and verification no longer receives the signed raw body. Convert the bounded route Buffer to UTF-8 once, read \`x-velo-signature\` and \`x-velo-delivery\`, verify, and durably accept as above. Register ordinary JSON middleware after the webhook route so other endpoints keep their existing behavior. Do not copy middleware order from an example that puts global JSON parsing first.
 
 \`\`\`ts
-app.post("/webhooks/velo", express.raw({ type: "application/json" }), async (req, res) => {
+app.post("/webhooks/velo", express.raw({ type: "application/json", limit: "1mb" }), async (req, res) => {
   const rawBody = req.body.toString("utf8");
   const signature = req.header("x-velo-signature") ?? null;
   const deliveryId = req.header("x-velo-delivery");
@@ -115,7 +156,7 @@ app.post("/webhooks/velo", express.raw({ type: "application/json" }), async (req
   }
 });
 
-app.use(express.json()); // Register after the raw-body webhook route.
+app.use(express.json({ limit: "1mb" })); // Register after the raw-body webhook route.
 
 // Import express, Velo, and WebhookEvent. Implement durable acceptance with
 // this application's existing transaction/queue pattern.

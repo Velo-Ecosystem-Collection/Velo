@@ -692,7 +692,7 @@ export function ProjectPlaygroundPanel({
           </CardHeader>
           <CardContent className="grid gap-3">
             {access?.role === "owner" ? (
-              <div className="grid gap-2 sm:grid-cols-[1fr_8rem_auto]">
+              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_auto]">
                 <Input
                   value={memberAddress}
                   onChange={(event) => setMemberAddress(event.target.value)}
@@ -702,7 +702,7 @@ export function ProjectPlaygroundPanel({
                 <select
                   value={memberRole}
                   onChange={(event) => setMemberRole(event.target.value as "editor" | "viewer")}
-                  className="h-11 rounded-md border bg-background px-3 text-sm"
+                  className="h-11 min-w-0 rounded-md border bg-background px-3 text-sm"
                 >
                   <option value="viewer">Viewer</option>
                   <option value="editor">Editor</option>

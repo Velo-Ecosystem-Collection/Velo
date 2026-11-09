@@ -29,7 +29,7 @@ test("Payment Intents prompt covers secure SDK setup, lifecycle, and fulfillment
   }
 
   for (const guidance of [
-    "Node.js 18 or newer",
+    "Node.js 22.6.0 or newer",
     "server-only environment configuration",
     "stable attempt identity/idempotency key",
     "same idempotency key and identical inputs",

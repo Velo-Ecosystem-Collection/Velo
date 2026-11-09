@@ -91,7 +91,7 @@ export default function DocsPage() {
 const velo = new Velo({
   apiKey: process.env.VELO_API_KEY!,
   environment: "testnet", // 'production' | 'testnet' | 'development'
-  timeoutMs: 10000,       // optional timeout (default 10s)
+  timeoutMs: 10_000,      // optional total request deadline; default is 30s
 });`,
     createCheckout: `const session = await velo.checkout.sessions.create(
   {
@@ -102,11 +102,15 @@ const velo = new Velo({
     cancelUrl: "https://your-merchant-site.com/cancel",
   },
   {
-    idempotencyKey: "order-1001-attempt-1", // Optional but highly recommended
+    idempotencyKey: "order-1001-attempt-1", // Derive from the persisted attempt and reuse on recovery
   }
 );
 
-// Redirect the customer to: session.checkoutUrl`,
+if (session.checkoutUrl) {
+  // Redirect the customer to session.checkoutUrl.
+} else {
+  // Persist session.id and session.status; do not redirect to a missing URL.
+}`,
     retrieveIntent: `const intent = await velo.paymentIntents.retrieve("pi_12345");
 console.log(\`Payment status: \${intent.status}\`);`,
     listIntents: `const page = await velo.paymentIntents.list({
@@ -134,20 +138,69 @@ const velo = new Velo({
   timeoutMs: 30_000,
 });
 
+const MAX_GAS_BODY_BYTES = 64 * 1_024;
+class GasBodyTooLargeError extends Error {}
+
+async function readBoundedRawBody(request: Request): Promise<string> {
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_GAS_BODY_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new GasBodyTooLargeError();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
 export async function POST(request: Request) {
   // Authenticate the caller and authorize the project before reading the body.
-  const body = (await request.json()) as {
-    operationId?: string;
-    signedTransactionXdr?: string;
-  };
-  const operationId = body.operationId?.trim();
-
-  if (!operationId || !body.signedTransactionXdr) {
+  let parsedBody: unknown;
+  try {
+    parsedBody = JSON.parse(await readBoundedRawBody(request));
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Invalid Gas request" },
+      { status: error instanceof GasBodyTooLargeError ? 413 : 400 },
+    );
+  }
+  if (typeof parsedBody !== "object" || parsedBody === null || Array.isArray(parsedBody)) {
     return NextResponse.json({ error: "Invalid Gas request" }, { status: 400 });
   }
+  const body = parsedBody as {
+    operationId?: unknown;
+    signedTransactionXdr?: unknown;
+  };
+  if (
+    typeof body.operationId !== "string" ||
+    typeof body.signedTransactionXdr !== "string" ||
+    body.operationId.trim() === "" ||
+    body.operationId.trim().length > 128 ||
+    body.signedTransactionXdr.trim() === ""
+  ) {
+    return NextResponse.json({ error: "Invalid Gas request" }, { status: 400 });
+  }
+  const operationId = body.operationId.trim();
+  const signedTransactionXdr = body.signedTransactionXdr;
 
   try {
-    const result = await velo.gas.sponsorAndSubmit(body.signedTransactionXdr, {
+    const result = await velo.gas.sponsorAndSubmit(signedTransactionXdr, {
       idempotencyKey: "my-app-gas:" + operationId,
       correlationId: "my-app-gas:" + operationId,
       timeoutMs: 30_000,
@@ -200,7 +253,7 @@ if (status.status === "succeeded") {
 }`,
     webhookVerify: `import { Velo } from "@carts1024/velo-sdk";
 
-// rawBody must be the raw, unparsed request body string
+// rawBody must be untouched and capped at 1 MiB before it is buffered
 const event = await Velo.webhooks.verify({
   payload: rawBody,
   signature: request.headers["x-velo-signature"],
@@ -230,9 +283,15 @@ export async function POST() {
       successUrl: "https://yourdomain.com/success",
       cancelUrl: "https://yourdomain.com/cancel",
     }, {
-      idempotencyKey: \`order-1001-\${Date.now()}\`
+      idempotencyKey: "order-1001-attempt-1", // Reuse this persisted attempt key on recovery
     });
 
+    if (!session.checkoutUrl) {
+      return NextResponse.json(
+        { paymentIntentId: session.id, status: session.status },
+        { status: 202 },
+      );
+    }
     return NextResponse.json({ url: session.checkoutUrl });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Checkout error";
@@ -243,12 +302,52 @@ export async function POST() {
 import { NextResponse } from "next/server";
 import { Velo } from "@carts1024/velo-sdk";
 
-export async function POST(request: Request) {
-  // Retrieve the RAW body text for signature checking
-  const payload = await request.text();
-  const signature = request.headers.get("x-velo-signature");
-  const secret = process.env.VELO_WEBHOOK_SECRET!;
+const MAX_WEBHOOK_BODY_BYTES = 1_048_576;
+class PayloadTooLargeError extends Error {}
 
+async function readBoundedRawBody(request: Request): Promise<string> {
+  const reader = request.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_WEBHOOK_BODY_BYTES) {
+        await reader.cancel().catch(() => undefined);
+        throw new PayloadTooLargeError();
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+}
+
+export async function POST(request: Request) {
+  const signature = request.headers.get("x-velo-signature");
+  const secret = process.env.VELO_WEBHOOK_SECRET;
+  if (!signature) return new NextResponse("Invalid webhook", { status: 400 });
+  if (!secret) return new NextResponse("Webhook unavailable", { status: 500 });
+
+  // Read the untouched raw body once, with a 1 MiB byte limit.
+  let payload: string;
+  try {
+    payload = await readBoundedRawBody(request);
+  } catch (error) {
+    return new NextResponse("Invalid webhook body", {
+      status: error instanceof PayloadTooLargeError ? 413 : 400,
+    });
+  }
   try {
     const event = await Velo.webhooks.verify({
       payload,
@@ -275,12 +374,13 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-const velo = new Velo({ apiKey: process.env.VELO_API_KEY! });
-
-app.use(express.json());
+const velo = new Velo({
+  apiKey: process.env.VELO_API_KEY!,
+  environment: "testnet",
+});
 
 // 1. Checkout session route
-app.post("/api/checkout", async (req, res) => {
+app.post("/api/checkout", express.json({ limit: "1mb" }), async (req, res) => {
   try {
     const session = await velo.checkout.sessions.create({
       amount: "10.00",
@@ -289,17 +389,29 @@ app.post("/api/checkout", async (req, res) => {
       successUrl: "https://yourdomain.com/success",
       cancelUrl: "https://yourdomain.com/cancel",
     }, {
-      idempotencyKey: req.body.orderId,
+      idempotencyKey: "order-1001-attempt-1", // Use the persisted key for this authorized attempt
     });
 
+    if (!session.checkoutUrl) {
+      return res.status(202).json({
+        paymentIntentId: session.id,
+        status: session.status,
+      });
+    }
+    if (!session.checkoutUrl) {
+      return res.status(202).json({
+        paymentIntentId: session.id,
+        status: session.status,
+      });
+    }
     res.status(201).json({ url: session.checkoutUrl });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
 });
 
-// 2. Webhook route capturing raw body string
-app.post("/webhooks", express.raw({ type: "application/json" }), async (req, res) => {
+// 2. Webhook route with bounded raw-body capture.
+app.post("/webhooks", express.raw({ type: "application/json", limit: "1mb" }), async (req, res) => {
   const payload = req.body.toString("utf8");
   const signature = req.headers["x-velo-signature"];
   const secret = process.env.VELO_WEBHOOK_SECRET!;
@@ -325,10 +437,13 @@ app.listen(3001, () => console.log("Express server running on port 3001"));`,
     walletHtml: `<!-- Paste this where you want the wallet button to appear. -->
 <script
   type="module"
-  src="https://wallets.velo.dev/v1/velo-wallet.js"
+  src="https://www.velo-build.dev/wallets/v1/velo-wallet.js"
 ></script>
 
-<velo-wallet project-key="vw_pk_your_public_project_key"></velo-wallet>`,
+<velo-wallet
+  project-key="vw_pk_your_public_project_key"
+  api-base="https://www.velo-build.dev"
+></velo-wallet>`,
     walletHtmlEvents: `const wallet = document.querySelector("velo-wallet");
 
 wallet.addEventListener("velo:wallet-connected", (event) => {
@@ -345,6 +460,32 @@ async function requestSignature(transactionXdr) {
   return signedXdr;
 }`,
     walletReactInstall: `pnpm add @carts1024/velo-wallets`,
+    walletViteApp: `import {
+  VeloWalletProvider,
+  WalletWidget,
+} from "@carts1024/velo-wallets/react";
+
+export default function App() {
+  return (
+    <main>
+      <VeloWalletProvider
+        projectKey="vw_pk_your_public_project_key"
+        apiBaseUrl="https://www.velo-build.dev"
+      >
+        <WalletWidget />
+      </VeloWalletProvider>
+    </main>
+  );
+}`,
+    walletViteMain: `import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import App from "./App";
+
+createRoot(document.getElementById("root")!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);`,
     walletReactProvider: `"use client";
 
 import {
@@ -354,14 +495,15 @@ import {
 
 export function WalletControls() {
   return (
-    <VeloWalletProvider projectKey="vw_pk_your_public_project_key">
+    <VeloWalletProvider
+      projectKey="vw_pk_your_public_project_key"
+      apiBaseUrl="https://www.velo-build.dev"
+    >
       <WalletWidget />
     </VeloWalletProvider>
   );
 }`,
-    walletReactHook: `"use client";
-
-import { useState } from "react";
+    walletReactHook: `import { useState } from "react";
 import { useVeloWallet } from "@carts1024/velo-wallets/react";
 
 export function ConnectedAccount() {
@@ -398,8 +540,8 @@ export function ConnectedAccount() {
   );
 }`,
     walletCsp: `Content-Security-Policy:
-  script-src 'self' https://wallets.velo.dev;
-  connect-src 'self' https://wallets.velo.dev;`,
+  script-src 'self' https://www.velo-build.dev;
+  connect-src 'self' https://www.velo-build.dev;`,
   };
 
   const categories = Array.from(new Set(SECTIONS.map((s) => s.category)));
@@ -541,14 +683,23 @@ export function ConnectedAccount() {
                 {renderCodeBlock(
                   `import { Velo } from "@carts1024/velo-sdk";
 
-const velo = new Velo({ apiKey: process.env.VELO_API_KEY! });
+const velo = new Velo({
+  apiKey: process.env.VELO_API_KEY!,
+  environment: "testnet",
+});
 const session = await velo.checkout.sessions.create({
   amount: "10.00",
   asset: "USDC",
   description: "Order #1001"
+}, {
+  idempotencyKey: "order-1001-attempt-1", // Stable key from this persisted checkout attempt
 });
 
-// redirect the user to session.checkoutUrl`,
+if (session.checkoutUrl) {
+  // Redirect the customer to session.checkoutUrl.
+} else {
+  // Persist session.id and session.status; do not redirect to a missing URL.
+}`,
                   "introDemo",
                 )}
 
@@ -578,6 +729,10 @@ const session = await velo.checkout.sessions.create({
                 <p>
                   Install the Velo SDK into your server environment using your favorite package
                   manager:
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Velo SDK 1.0.0 is published on npm&apos;s latest tag. It requires Node.js 22.6 or
+                  newer and runs on a server only.
                 </p>
 
                 <h4 className="mt-6 font-mono text-sm font-semibold text-muted-foreground uppercase">
@@ -649,8 +804,9 @@ const session = await velo.checkout.sessions.create({
                         </td>
                         <td className="px-4 py-3 text-muted-foreground">No</td>
                         <td className="px-4 py-3">
-                          Defaults to `"testnet"`. Routes requests to the corresponding backend
-                          network.
+                          Defaults to `"development"`. Selects the default API origin: localhost for
+                          development and `https://www.velo-build.dev` for production or Testnet.
+                          This setting does not verify Stellar network readiness.
                         </td>
                       </tr>
                       <tr>
@@ -658,8 +814,9 @@ const session = await velo.checkout.sessions.create({
                         <td className="px-4 py-3 font-mono text-muted-foreground">string</td>
                         <td className="px-4 py-3 text-muted-foreground">No</td>
                         <td className="px-4 py-3">
-                          Overrides the target API server URL. Mainly used for local development and
-                          sandbox setups.
+                          Overrides the API origin. SDK 1.0 requires an HTTPS origin with no
+                          embedded credentials, path, query, or fragment; HTTP is allowed only for a
+                          loopback development origin.
                         </td>
                       </tr>
                       <tr>
@@ -667,7 +824,8 @@ const session = await velo.checkout.sessions.create({
                         <td className="px-4 py-3 font-mono text-muted-foreground">number</td>
                         <td className="px-4 py-3 text-muted-foreground">No</td>
                         <td className="px-4 py-3">
-                          Specifies maximum connection wait time (defaults to `10000` / 10s).
+                          Total wall-clock budget across request attempts (defaults to `30000` /
+                          30s).
                         </td>
                       </tr>
                     </tbody>
@@ -867,16 +1025,15 @@ const session = await velo.checkout.sessions.create({
                   frameworks that support custom elements. It requires no package installation.
                 </p>
 
-                <div className="my-6 flex gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
-                  <AlertTriangleIcon className="mt-0.5 size-5 shrink-0 text-amber-600" />
+                <div className="my-6 flex gap-3 rounded-xl border border-border bg-muted/50 p-4">
+                  <InfoIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
                   <div className="text-sm">
-                    <strong className="mb-1 block">Hosted runtime release status</strong>
-                    The npm package 1.0.0 is published under the <code>latest</code> tag. The hosted{" "}
-                    <code>/v1/velo-wallet.js</code> runtime has not been updated from that build and
-                    needs a separate deployment. Follow the project-generated HTML snippet, and
-                    confirm that every configured wallet is supported by the hosted runtime. Do not
-                    publish a Noir configuration for this runtime until the matching CDN release is
-                    deployed.
+                    <strong className="mb-1 block text-foreground">Hosted runtime</strong>
+                    Velo&apos;s hosted wallet runtime is deployed at{" "}
+                    <code>www.velo-build.dev/wallets/v1/velo-wallet.js</code> and supports all
+                    wallet IDs offered in project configuration, including Noir. Copy the generated
+                    HTML snippet from your project&apos;s Wallets panel so its runtime URL and API
+                    base match your deployment.
                   </div>
                 </div>
 
@@ -941,10 +1098,10 @@ const session = await velo.checkout.sessions.create({
                 <p>
                   Use the React adapter when your interface needs wallet state in several
                   components. It exposes the same core wallet methods as the Web Component when both
-                  use compatible runtime releases. The hosted CDN may run an older release than npm;
-                  see the HTML section. <code>WalletWidget</code> renders the published connect,
-                  connected, copy, disconnect, status, and error design; <code>ConnectButton</code>{" "}
-                  remains available when only a trigger is needed.
+                  use compatible runtime releases. HTML uses Velo&apos;s hosted runtime; React uses
+                  the published npm package. <code>WalletWidget</code> renders the published
+                  connect, connected, copy, disconnect, status, and error design;{" "}
+                  <code>ConnectButton</code> remains available when only a trigger is needed.
                 </p>
 
                 <div className="my-6 flex gap-3 rounded-xl border border-border bg-muted/50 p-4">
@@ -953,8 +1110,10 @@ const session = await velo.checkout.sessions.create({
                     <strong className="mb-1 block text-foreground">Stable npm package</strong>
                     Install <code>@carts1024/velo-wallets</code> from npm; version 1.0.0 is
                     published under <code>latest</code>. In Next.js App Router, render wallet
-                    controls below a client boundary. The separate hosted CDN has not been updated
-                    to the 1.0.0 build; see the HTML section before choosing the hosted runtime.
+                    controls below a client boundary. Vite + React apps can mount the provider
+                    directly; they do not need a <code>&quot;use client&quot;</code> directive. This
+                    package and the hosted HTML runtime are released separately; use the Wallets
+                    panel&apos;s generated values for the project key and API base URL.
                   </div>
                 </div>
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
@@ -963,13 +1122,27 @@ const session = await velo.checkout.sessions.create({
                 {renderCodeBlock(codeSnippets.walletReactInstall, "walletReactInstall")}
 
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
-                  2. Add the provider at a client boundary
+                  2. Add the provider to a Vite + React app
                 </h3>
                 <p>
-                  In Next.js App Router, keep the <code>&quot;use client&quot;</code> line. Mount
-                  the provider around only the part of the interface that needs wallet access.
+                  Put this component in <code>src/App.tsx</code> and mount the provider around only
+                  the part of the interface that needs wallet access. Copy the exact{" "}
+                  <code>projectKey</code> and <code>apiBaseUrl</code> values from your
+                  project&apos;s generated React snippet.
                 </p>
-                {renderCodeBlock(codeSnippets.walletReactProvider, "walletReactProvider")}
+                {renderCodeBlock(codeSnippets.walletViteApp, "walletViteApp")}
+
+                <p>
+                  Render the app from Vite&apos;s React entry point, usually{" "}
+                  <code>src/main.tsx</code>:
+                </p>
+                {renderCodeBlock(codeSnippets.walletViteMain, "walletViteMain")}
+
+                <p>
+                  Add the exact local and deployed website origins to the Wallets configuration.
+                  Vite commonly serves locally from <code>http://localhost:5173</code>; if the port
+                  changes, allow the origin shown in your browser.
+                </p>
 
                 <h3 className="mt-8 mb-3 text-lg font-bold text-foreground">
                   3. Read state and call wallet methods
@@ -977,9 +1150,16 @@ const session = await velo.checkout.sessions.create({
                 <p>
                   A component inside <code>VeloWalletProvider</code> can call{" "}
                   <code>useVeloWallet()</code>. Always check the status before asking the user to
-                  sign.
+                  sign. In Next.js App Router, put the <code>&quot;use client&quot;</code> directive
+                  at the top of components that use wallet hooks.
                 </p>
                 {renderCodeBlock(codeSnippets.walletReactHook, "walletReactHook")}
+
+                <p>
+                  For a Next.js App Router provider, keep the client directive and use the generated
+                  project key and API base URL:
+                </p>
+                {renderCodeBlock(codeSnippets.walletReactProvider, "walletReactProvider")}
 
                 <div className="my-6 flex gap-3 rounded-xl border border-border bg-muted/50 p-4">
                   <InfoIcon className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
@@ -1330,7 +1510,7 @@ const session = await velo.checkout.sessions.create({
   amount: "10.00",
   asset: "USDC",
   description: "Order #1001",
-  checkoutUrl: "https://pay.velo.xyz/pay/pi_12345",
+  checkoutUrl: "https://www.velo-build.dev/pay/pi_12345",
   successUrl: "https://yourdomain.com/success",
   cancelUrl: "https://yourdomain.com/cancel",
   expiresAt: "2026-07-01T00:30:00.000Z",

@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 
 import { convexTest } from "convex-test";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { api, internal } from "../_generated/api";
 import schema from "../schema";
@@ -138,22 +138,36 @@ test("scheduled polling skips retired projects and result writes recheck retirem
   const retiredProjectId = await seedRegisteredProject(t, "polling-retired");
   const contractId = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM";
   await t.run(async (ctx) => {
-    for (const projectId of [activeProjectId, retiredProjectId]) {
+    for (let index = 0; index < 105; index += 1) {
       await ctx.db.insert("projectContracts", {
-        projectId,
+        projectId: retiredProjectId,
         ownerAddress: OWNER,
         registryProjectId: 47,
-        contractId: `${contractId.slice(0, -1)}${projectId === activeProjectId ? "1" : "2"}`,
+        contractId: `${contractId}-retired-${index}`,
         status: "active",
         createdAt: Date.now(),
         updatedAt: Date.now(),
       });
     }
+    await ctx.db.insert("projectContracts", {
+      projectId: activeProjectId,
+      ownerAddress: OWNER,
+      registryProjectId: 47,
+      contractId: `${contractId}-eligible`,
+      status: "active",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
     await ctx.db.patch(retiredProjectId, { retiredAt: Date.now() });
   });
 
-  const targets = await t.query(internal.contract_events.query.listScheduledTargets, {});
+  const targets = await t.mutation(internal.contract_events.mutation.selectScheduledTargets, {});
   expect(targets.map((target) => target.projectId)).toEqual([activeProjectId]);
+  expect(
+    await t.query(internal.poller_state.query.getByScope, {
+      scope: `project:${activeProjectId}`,
+    }),
+  ).toMatchObject({ status: "polling" });
   await expect(
     t.query(internal.contract_events.query.getPollTargetInternal, {
       projectId: retiredProjectId,
@@ -183,7 +197,42 @@ test("scheduled polling skips retired projects and result writes recheck retirem
     pollers: await ctx.db.query("pollerState").collect(),
   }));
   expect(persisted.events).toHaveLength(0);
-  expect(persisted.pollers).toHaveLength(0);
+  expect(persisted.pollers).toHaveLength(1);
+  expect(persisted.pollers[0]).toMatchObject({ projectId: activeProjectId, status: "polling" });
+});
+
+test("scheduled polling preserves project order and the twenty-project limit", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-11-10T00:00:00Z"));
+  try {
+    const t = convexTest(schema, modules);
+    const projectIds: Array<Awaited<ReturnType<typeof seedRegisteredProject>>> = [];
+    for (let index = 0; index < 25; index += 1) {
+      projectIds.push(
+        await seedRegisteredProject(t, `polling-limit-${String(index).padStart(2, "0")}`),
+      );
+      vi.setSystemTime(new Date(Date.now() + 1_000));
+    }
+    for (const [index, projectId] of projectIds.entries()) {
+      await t.run(async (ctx) => {
+        await ctx.db.insert("projectContracts", {
+          projectId,
+          ownerAddress: OWNER,
+          registryProjectId: 47,
+          contractId: `contract-${index}`,
+          status: "active",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+      });
+      vi.setSystemTime(new Date(Date.now() + 1_000));
+    }
+
+    const targets = await t.mutation(internal.contract_events.mutation.selectScheduledTargets, {});
+    expect(targets.map((target) => target.projectId)).toEqual(projectIds.slice(0, 20));
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test("existing webhook delivery retries after retirement", async () => {

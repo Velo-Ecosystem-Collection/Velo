@@ -1,3 +1,4 @@
+import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { ProjectId } from "../projects/types";
 import type { PollerState, PublicPollStatus } from "./types";
@@ -6,6 +7,34 @@ const STALE_AFTER_MS = 2 * 60 * 1_000;
 
 export function projectScope(projectId: ProjectId) {
   return `project:${projectId}`;
+}
+
+export async function setProjectPolling(
+  ctx: MutationCtx,
+  projectId: ProjectId,
+  knownPoller?: Doc<"pollerState"> | null,
+) {
+  const scope = projectScope(projectId);
+  const existing =
+    knownPoller === undefined
+      ? await ctx.db
+          .query("pollerState")
+          .withIndex("by_scope", (q) => q.eq("scope", scope))
+          .unique()
+      : knownPoller;
+  const value = {
+    scope,
+    projectId,
+    status: "polling" as const,
+    errorMessage: undefined,
+    updatedAt: Date.now(),
+  };
+
+  if (existing) {
+    await ctx.db.patch(existing._id, value);
+  } else {
+    await ctx.db.insert("pollerState", value);
+  }
 }
 
 export function publicPollStatus(poller: PollerState | null, eventCount: number): PublicPollStatus {

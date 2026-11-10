@@ -17,6 +17,21 @@ type PollResult = {
   contractCount: number;
 };
 
+export function classifyPollError(error: unknown) {
+  const name = error instanceof Error ? error.name : "";
+  const message = error instanceof Error ? error.message : String(error);
+  if (name === "AbortError" || /timeout|timed out|ETIMEDOUT/i.test(message)) {
+    return "timeout";
+  }
+  if (/\b429\b|rate.?limit/i.test(message)) return "rate_limited";
+  if (/\b5\d\d\b|server error/i.test(message)) return "rpc_server_error";
+  if (/\b4\d\d\b|invalid request/i.test(message)) return "rpc_request_error";
+  if (/fetch failed|network|ECONN|ENOTFOUND|EAI_AGAIN/i.test(message)) {
+    return "transport_error";
+  }
+  return "unknown";
+}
+
 function rpcUrl() {
   return (
     process.env.STELLAR_RPC_URL ??
@@ -25,7 +40,11 @@ function rpcUrl() {
   );
 }
 
-async function pollTarget(ctx: ActionCtx, target: PollTarget): Promise<PollResult> {
+async function pollTarget(
+  ctx: ActionCtx,
+  target: PollTarget,
+  options: { pollingStatusAlreadyMarked?: boolean } = {},
+): Promise<PollResult> {
   if (target.contractIds.length === 0) {
     await ctx.runMutation(internal.contract_events.mutation.storePollResult, {
       projectId: target.projectId,
@@ -36,9 +55,11 @@ async function pollTarget(ctx: ActionCtx, target: PollTarget): Promise<PollResul
     return { eventCount: 0, contractCount: 0 };
   }
 
-  await ctx.runMutation(internal.poller_state.mutation.markPolling, {
-    projectId: target.projectId,
-  });
+  if (!options.pollingStatusAlreadyMarked) {
+    await ctx.runMutation(internal.poller_state.mutation.markPolling, {
+      projectId: target.projectId,
+    });
+  }
 
   try {
     let currentCursor = target.cursor;
@@ -92,9 +113,14 @@ async function pollTarget(ctx: ActionCtx, target: PollTarget): Promise<PollResul
     return { eventCount: totalEvents, contractCount: target.contractIds.length };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Stellar event polling failed";
+    const errorCategory = classifyPollError(error);
+    console.warn("contract_event_poll_failed", {
+      projectId: target.projectId,
+      errorCategory,
+    });
     await ctx.runMutation(internal.poller_state.mutation.markError, {
       projectId: target.projectId,
-      message,
+      message: errorCategory,
     });
     throw new Error(message);
   }
@@ -123,12 +149,11 @@ export const pollScheduled = internalAction({
   handler: async (ctx): Promise<{ projectCount: number; eventCount: number }> => {
     let targets: PollTarget[];
     try {
-      targets = await ctx.runQuery(internal.contract_events.query.listScheduledTargets, {});
+      targets = await ctx.runMutation(internal.contract_events.mutation.selectScheduledTargets, {});
     } catch (error) {
-      console.warn(
-        "scheduled_contract_event_poll_failed",
-        error instanceof Error ? error.message : error,
-      );
+      console.warn("scheduled_contract_event_poll_failed", {
+        errorCategory: classifyPollError(error),
+      });
       return { projectCount: 0, eventCount: 0 };
     }
     let eventCount = 0;
@@ -136,7 +161,9 @@ export const pollScheduled = internalAction({
 
     for (let i = 0; i < targets.length; i += limit) {
       const chunk = targets.slice(i, i + limit);
-      const results = await Promise.allSettled(chunk.map((target) => pollTarget(ctx, target)));
+      const results = await Promise.allSettled(
+        chunk.map((target) => pollTarget(ctx, target, { pollingStatusAlreadyMarked: true })),
+      );
 
       for (const res of results) {
         if (res.status === "fulfilled") {

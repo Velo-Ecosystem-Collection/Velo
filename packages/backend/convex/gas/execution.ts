@@ -2301,9 +2301,11 @@ export const recoverAbandoned = internalMutation({
     const claimed = await ctx.db
       .query("gasExecutionAttempts")
       .withIndex("by_lifecycle_and_lease_expires_at", (q) =>
-        q.eq("lifecycle", GAS_LIFECYCLE_STATES.claimed).lte("leaseExpiresAt", now),
+        q
+          .eq("lifecycle", GAS_LIFECYCLE_STATES.claimed)
+          .gte("leaseExpiresAt", 0)
+          .lte("leaseExpiresAt", now),
       )
-      .filter((q) => q.neq(q.field("leaseExpiresAt"), undefined))
       .take(limit);
     const remaining = limit - claimed.length;
     const unresolved =
@@ -2312,9 +2314,11 @@ export const recoverAbandoned = internalMutation({
         : await ctx.db
             .query("gasExecutionAttempts")
             .withIndex("by_lifecycle_and_lease_expires_at", (q) =>
-              q.eq("lifecycle", GAS_LIFECYCLE_STATES.submissionUnknown).lte("leaseExpiresAt", now),
+              q
+                .eq("lifecycle", GAS_LIFECYCLE_STATES.submissionUnknown)
+                .gte("leaseExpiresAt", 0)
+                .lte("leaseExpiresAt", now),
             )
-            .filter((q) => q.neq(q.field("leaseExpiresAt"), undefined))
             .take(remaining);
     const expiredUnsent =
       limit - claimed.length - unresolved.length <= 0

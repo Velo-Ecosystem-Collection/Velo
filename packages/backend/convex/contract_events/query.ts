@@ -1,18 +1,11 @@
 import { v } from "convex/values";
 
-import type { ProjectId } from "../projects/types";
-
 import { internalQuery, query } from "../_generated/server";
 import { requireProjectRole } from "../playground_projects/helpers";
 import { publicPollStatus } from "../poller_state/helpers";
 import { pollerForProject } from "../poller_state/query";
 import { requireProjectOwnerByToken } from "../projects/helpers";
-import {
-  MAX_SCHEDULED_CONTRACTS,
-  MAX_SCHEDULED_PROJECTS,
-  METADATA_HASH_PATTERN,
-  normalizePageSize,
-} from "./helpers";
+import { METADATA_HASH_PATTERN, normalizePageSize } from "./helpers";
 
 export const listByProject = query({
   args: {
@@ -146,56 +139,6 @@ export const getPollTarget = internalQuery({
       lastLedger: poller?.lastLedger,
       cursor: poller?.cursor,
     };
-  },
-});
-
-export const listScheduledTargets = internalQuery({
-  args: {},
-  handler: async (ctx) => {
-    const activeContracts = await ctx.db
-      .query("projectContracts")
-      .withIndex("by_status", (q) => q.eq("status", "active"))
-      .collect();
-    const projectIds = [...new Set(activeContracts.map((contract) => contract.projectId))];
-    const activeProjectIds = new Set(
-      (await Promise.all(projectIds.map((projectId) => ctx.db.get(projectId)))).flatMap((project) =>
-        project && project.retiredAt === undefined && project.status === "registered"
-          ? [project._id]
-          : [],
-      ),
-    );
-    const contractIdsByProject = new Map<ProjectId, string[]>();
-
-    for (const contract of activeContracts
-      .filter((candidate) => activeProjectIds.has(candidate.projectId))
-      .slice(0, MAX_SCHEDULED_CONTRACTS)) {
-      const contractIds = contractIdsByProject.get(contract.projectId) ?? [];
-      if (contractIds.length < 20) {
-        contractIds.push(contract.contractId);
-        contractIdsByProject.set(contract.projectId, contractIds);
-      }
-    }
-
-    const targets = [];
-    for (const [projectId, contractIds] of Array.from(contractIdsByProject).slice(
-      0,
-      MAX_SCHEDULED_PROJECTS,
-    )) {
-      const project = await ctx.db.get(projectId);
-      if (!project || project.retiredAt !== undefined || project.status !== "registered") {
-        continue;
-      }
-
-      const poller = await pollerForProject(ctx, projectId);
-      targets.push({
-        projectId,
-        contractIds,
-        lastLedger: poller?.lastLedger,
-        cursor: poller?.cursor,
-      });
-    }
-
-    return targets;
   },
 });
 

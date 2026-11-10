@@ -1428,6 +1428,7 @@ test("recovers expired leases in batches of 25 and schedules only bounded metada
   await withFixedTime(async () => {
     const t = convexTest(schema, modules);
     const scope = await createScope(t, { suffix: "recovery-batch" });
+    let missingLeaseAttemptId: Id<"gasExecutionAttempts"> | undefined;
     await t.run(async (ctx) => {
       for (let index = 0; index < 26; index += 1) {
         await ctx.db.insert("gasExecutionAttempts", {
@@ -1458,10 +1459,40 @@ test("recovers expired leases in batches of 25 and schedules only bounded metada
           updatedAt: NOW,
         });
       }
+      missingLeaseAttemptId = await ctx.db.insert("gasExecutionAttempts", {
+        projectId: scope.projectId,
+        network: GAS_NETWORK,
+        requestId: "recovery-missing-lease-expiry",
+        idempotencyKeyHash: `hash-missing-lease-expiry`,
+        requestFingerprint: `fingerprint-missing-lease-expiry`,
+        innerTransactionHash: "b".repeat(64),
+        sourceWallet: OWNER,
+        targetContractIds: [],
+        innerMaxFeeStroops: 100n,
+        originalReservationStroops: 100n,
+        reservationCreatedAt: NOW - 60_000,
+        reservationExpiresAt: NOW + 15 * 60 * 1_000,
+        accountingDayKey: "2026-09-03",
+        lifecycle: "claimed",
+        approvedHoldStroops: 200n,
+        feeCeilingStroops: 200n,
+        relayerPublicKey: RELAYER_PUBLIC_KEY,
+        leaseGeneration: 1,
+        sendCount: 0,
+        nextCheckAt: NOW,
+        reconciliationRequired: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      });
     });
 
     const recovered = await t.mutation(internal.gas.execution.recoverAbandoned, { limit: 25 });
     expect(recovered).toBe(25);
+    const missingLeaseAttempt = await t.run(async (ctx) =>
+      missingLeaseAttemptId ? ctx.db.get(missingLeaseAttemptId) : null,
+    );
+    expect(missingLeaseAttempt?.leaseExpiresAt).toBeUndefined();
+    expect(missingLeaseAttempt?.lifecycle).toBe("claimed");
     const scheduled = await t.run(async (ctx) =>
       ctx.db.system.query("_scheduled_functions").collect(),
     );
@@ -1485,9 +1516,14 @@ test("recovers expired leases in batches of 25 and schedules only bounded metada
         .withIndex("by_project_id_and_request_id", (q) => q.eq("projectId", scope.projectId))
         .take(30),
     );
-    expect(attempts).toHaveLength(26);
-    expect(attempts.every((attempt) => attempt.leaseToken === undefined)).toBe(true);
-    expect(attempts.every((attempt) => attempt.leaseGeneration === 2)).toBe(true);
+    expect(attempts).toHaveLength(27);
+    const recoveredAttempts = attempts.filter((attempt) => attempt._id !== missingLeaseAttemptId);
+    expect(recoveredAttempts.every((attempt) => attempt.leaseToken === undefined)).toBe(true);
+    expect(recoveredAttempts.every((attempt) => attempt.leaseGeneration === 2)).toBe(true);
+    expect(attempts.find((attempt) => attempt._id === missingLeaseAttemptId)).toMatchObject({
+      lifecycle: "claimed",
+      leaseGeneration: 1,
+    });
   });
 });
 

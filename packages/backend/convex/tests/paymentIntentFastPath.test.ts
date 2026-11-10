@@ -3,9 +3,19 @@ import { convexTest } from "convex-test";
 import { expect, test, vi } from "vitest";
 
 import { api, internal } from "../_generated/api";
+import { classifyPollError } from "../contractEventPolling";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
+
+test("contract event poll errors are logged with sanitized categories", () => {
+  expect(classifyPollError(new Error("HTTP 429: secret token abc123"))).toBe("rate_limited");
+  expect(classifyPollError(new Error("HTTP 503: secret token abc123"))).toBe("rpc_server_error");
+  expect(classifyPollError(new Error("fetch failed: secret token abc123"))).toBe("transport_error");
+  expect(classifyPollError(new Error("unexpected RPC failure: secret token abc123"))).toBe(
+    "unknown",
+  );
+});
 
 // Mock the runtime subpath imported by Convex actions.
 vi.mock("@repo/stellar/transaction-debugger", () => {

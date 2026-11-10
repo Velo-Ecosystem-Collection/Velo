@@ -6,6 +6,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import { internalMutation } from "../_generated/server";
 import { recordMetric } from "../telemetry_outbox/helpers";
 import { createBillingException } from "./exceptions";
+import { findLedgerEntry } from "./helpers";
 
 export const run = internalMutation({
   args: { limit: v.optional(v.number()) },
@@ -22,15 +23,25 @@ export const run = internalMutation({
         .query("treasuryReceipts")
         .withIndex("by_topup_id", (q) => q.eq("topupId", topup._id))
         .unique();
-      const grants = await ctx.db
-        .query("billingLedgerEntries")
-        .withIndex("by_organization_id_and_book", (q) =>
-          q.eq("organizationId", topup.organizationId).eq("book", "commercial"),
-        )
-        .take(1_000);
-      const grant = grants.find(
-        (entry) => entry.entryType === "paid_grant" && entry.topupReference === topup._id,
+      const candidateGrant = await findLedgerEntry(
+        ctx,
+        topup.organizationId,
+        "commercial",
+        `topup:settle:${topup._id}`,
       );
+      const grant =
+        candidateGrant?.entryType === "paid_grant" && candidateGrant.topupReference === topup._id
+          ? candidateGrant
+          : (
+              await ctx.db
+                .query("billingLedgerEntries")
+                .withIndex("by_organization_id_and_book", (q) =>
+                  q.eq("organizationId", topup.organizationId).eq("book", "commercial"),
+                )
+                .take(1_000)
+            ).find(
+              (entry) => entry.entryType === "paid_grant" && entry.topupReference === topup._id,
+            );
       if (!receipt || !grant || topup.treasuryReceiptId !== receipt?._id) {
         discrepancies++;
         await createBillingException(ctx, {

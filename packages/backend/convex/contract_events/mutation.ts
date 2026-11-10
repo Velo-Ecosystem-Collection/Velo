@@ -1,8 +1,83 @@
 import { v } from "convex/values";
 
+import type { ProjectId } from "../projects/types";
+
 import { internal } from "../_generated/api";
 import { internalMutation } from "../_generated/server";
-import { storePollSuccess } from "../poller_state/helpers";
+import { projectScope, setProjectPolling, storePollSuccess } from "../poller_state/helpers";
+import { MAX_SCHEDULED_CONTRACTS, MAX_SCHEDULED_PROJECTS } from "./helpers";
+
+export const selectScheduledTargets = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const selectedContracts = [];
+    const projectEligibility = new Map<ProjectId, boolean>();
+    let cursor: string | null = null;
+    let isDone = false;
+
+    while (!isDone && selectedContracts.length < MAX_SCHEDULED_CONTRACTS) {
+      const page = await ctx.db
+        .query("projectContracts")
+        .withIndex("by_status", (q) => q.eq("status", "active"))
+        .paginate({ numItems: MAX_SCHEDULED_CONTRACTS, cursor });
+      const missingProjectIds = [
+        ...new Set(
+          page.page
+            .map((contract) => contract.projectId)
+            .filter((projectId) => !projectEligibility.has(projectId)),
+        ),
+      ];
+      const projects = await Promise.all(
+        missingProjectIds.map((projectId) => ctx.db.get(projectId)),
+      );
+      for (const [index, projectId] of missingProjectIds.entries()) {
+        const project = projects[index];
+        projectEligibility.set(
+          projectId,
+          project != null && project.retiredAt === undefined && project.status === "registered",
+        );
+      }
+
+      for (const contract of page.page) {
+        if (projectEligibility.get(contract.projectId)) {
+          selectedContracts.push(contract);
+          if (selectedContracts.length === MAX_SCHEDULED_CONTRACTS) break;
+        }
+      }
+      cursor = page.continueCursor;
+      isDone = page.isDone;
+    }
+
+    const contractIdsByProject = new Map<ProjectId, string[]>();
+    for (const contract of selectedContracts) {
+      const contractIds = contractIdsByProject.get(contract.projectId) ?? [];
+      if (contractIds.length < 20) {
+        contractIds.push(contract.contractId);
+        contractIdsByProject.set(contract.projectId, contractIds);
+      }
+    }
+
+    const targets = await Promise.all(
+      Array.from(contractIdsByProject)
+        .slice(0, MAX_SCHEDULED_PROJECTS)
+        .map(async ([projectId, contractIds]) => {
+          const poller = await ctx.db
+            .query("pollerState")
+            .withIndex("by_scope", (q) => q.eq("scope", projectScope(projectId)))
+            .unique();
+          await setProjectPolling(ctx, projectId, poller);
+          return {
+            projectId,
+            contractIds,
+            lastLedger: poller?.lastLedger,
+            cursor: poller?.cursor,
+          };
+        }),
+    );
+
+    return targets;
+  },
+});
 
 export const storePollResult = internalMutation({
   args: {

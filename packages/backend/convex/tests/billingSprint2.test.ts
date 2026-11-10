@@ -513,6 +513,75 @@ test("reconciliation detects a seeded receipt discrepancy without changing balan
   );
 });
 
+test("reconciliation finds a paid grant after more than 1000 organization ledger entries", async () => {
+  const t = convexTest(schema, modules);
+  const { operator } = await configureOperatorAndOffer(t);
+  const owner = asWallet(t, "GOWNER");
+  const projectId = await createProject(owner, "reconciliation-large-ledger");
+  const organization = await owner.query(api.organizations.queries.getCurrent, {});
+  if (!organization) throw new Error("Expected organization");
+
+  await operator.mutation(updatePolicy, {
+    billingLedgerWrite: true,
+    billingShadowMode: false,
+    mainnetCreditEnforcement: false,
+    billingTopupsEnabled: true,
+    promoGrantEnabled: true,
+    billingKillSwitch: false,
+    actor: "operator:test",
+  });
+  await t.run(async (ctx) => {
+    for (let index = 0; index < 1_001; index += 1) {
+      await ctx.db.insert("billingLedgerEntries", {
+        organizationId: organization._id,
+        book: "commercial",
+        creditClass: "paid",
+        entryType: "adjustment",
+        amount: 1n,
+        idempotencyKey: `reconciliation-large-ledger-${index}`,
+        projectId,
+        actor: "test",
+        reason: "Reconciliation index fixture",
+        environment: "development",
+        network: "testnet",
+        calculationVersion: 1,
+        occurredAt: index,
+      });
+    }
+  });
+
+  const created = await owner.mutation(createTopup, {});
+  await t.run(async (ctx) => {
+    await ctx.db.patch(created.paymentIntentId, { status: "pending" });
+  });
+  await t.mutation(internal.payment_intents.mutations.markVerifiedPaid, {
+    paymentIntentId: created.paymentIntentId,
+    txHash: "e".repeat(64),
+    verifiedNetwork: "testnet",
+    verifiedPayment: {
+      source: "GOWNER",
+      destination: "GTREASURY",
+      amount: "20",
+      asset: "USDC:GISSUER",
+    },
+  });
+
+  const hasGrantInOldScan = await t.run(async (ctx) => {
+    const entries = await ctx.db
+      .query("billingLedgerEntries")
+      .withIndex("by_organization_id_and_book", (q) =>
+        q.eq("organizationId", organization._id).eq("book", "commercial"),
+      )
+      .take(1_000);
+    return entries.some((entry) => entry.topupReference === created.topupId);
+  });
+  expect(hasGrantInOldScan).toBe(false);
+
+  expect(await t.mutation(runReconciliation, { limit: 25 })).toEqual({
+    discrepancies: 0,
+  });
+});
+
 test("sandbox enforcement rejects overspending and releases failed reservations", async () => {
   const t = convexTest(schema, modules);
   const { operator } = await configureOperatorAndOffer(t);

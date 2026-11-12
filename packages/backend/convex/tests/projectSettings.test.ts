@@ -108,6 +108,32 @@ test("a Registry project ID cannot be assigned to two Velo projects", async () =
   expect(secondProject?.createdLedger).toBeUndefined();
 });
 
+test("owner can recover a missing Registry ID after registration without resetting its state", async () => {
+  const t = convexTest(schema, modules);
+  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const owner = asWallet(t, ownerAddress);
+  const projectId = await createProject(owner, ownerAddress, "recover-registry-id");
+
+  await owner.mutation(api.projects.mutation.markRegistrationPending, {
+    id: projectId,
+    registrationTxHash: "c".repeat(64),
+  });
+  await owner.mutation(api.projects.mutation.markRegistrationSynced, {
+    id: projectId,
+    createdLedger: 123,
+  });
+  await owner.mutation(api.projects.mutation.markRegistrationSynced, {
+    id: projectId,
+    registryProjectId: 43,
+    createdLedger: 123,
+  });
+
+  const project = await owner.query(api.projects.query.getById, { id: projectId });
+  expect(project?.status).toBe("registered");
+  expect(project?.registryProjectId).toBe(43);
+  expect(project?.createdLedger).toBe(123);
+});
+
 test("another wallet cannot update settings or generate logo upload URL", async () => {
   const t = convexTest(schema, modules);
   const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";

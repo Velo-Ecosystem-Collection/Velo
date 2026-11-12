@@ -306,16 +306,72 @@ export function ProjectDashboard() {
   }
 
   async function handleActivate() {
-    if (!wallet.address || !project?.isOwner || project.registryProjectId === undefined) return;
+    if (!wallet.address) {
+      setActionError("Connect the project owner wallet before activating Velo Pay.");
+      return;
+    }
+    if (!project?.isOwner) {
+      setActionError("Only this project's owner can activate Velo Pay.");
+      return;
+    }
     setIsActivating(true);
     setActionError(null);
     setTxHash(null);
 
     try {
+      let registryProjectId = project.registryProjectId;
+      if (registryProjectId === undefined) {
+        if (!project.registrationTxHash || !stellarConfig.registryContractId) {
+          throw new Error(
+            "Velo has not synced this project's Registry ID. The registration transaction is unavailable, so payments cannot be activated yet.",
+          );
+        }
+
+        const registrationIntent = {
+          targetContractId: stellarConfig.registryContractId,
+          functionName: "register_project",
+          args: projectRegistrationArgs(wallet.address, project.name, project.metadataHash),
+          ...(wallet.identityType === "passkey_smart_account"
+            ? { smartAccountAddress: wallet.address }
+            : {}),
+        };
+        const registration = await confirmRegistration({
+          rpcUrl: stellarConfig.rpcUrl,
+          networkPassphrase: stellarConfig.networkPassphrase,
+          registryContractId: stellarConfig.registryContractId,
+          transactionHash: project.registrationTxHash,
+          expectedIntent: registrationIntent,
+        });
+
+        if (registration.status === "pending") {
+          throw new Error(
+            "The project registration is still syncing on Stellar. Wait a moment, then try activating Velo Pay again.",
+          );
+        }
+        if (registration.status === "error") {
+          throw new Error(registration.message || "Project registration could not be confirmed.");
+        }
+        if (
+          registration.registryProjectId === null ||
+          registration.registryProjectId === undefined
+        ) {
+          throw new Error(
+            "The project is registered, but Velo could not read its Registry ID from the transaction. Refresh the project and try again.",
+          );
+        }
+
+        registryProjectId = registration.registryProjectId;
+        await markRegistrationSynced({
+          id: project._id,
+          registryProjectId,
+          createdLedger: registration.createdLedger ?? undefined,
+        });
+      }
+
       const expectedIntent = {
         targetContractId: stellarConfig.payAccessContractId!,
         functionName: "activate_payments",
-        args: paymentActivationArgs(project.registryProjectId),
+        args: paymentActivationArgs(registryProjectId),
         ...(wallet.identityType === "passkey_smart_account"
           ? { smartAccountAddress: wallet.address }
           : {}),
@@ -334,7 +390,7 @@ export function ProjectDashboard() {
           networkPassphrase: stellarConfig.networkPassphrase,
           payAccessContractId: stellarConfig.payAccessContractId!,
           sourcePublicKey: wallet.address,
-          registryProjectId: project.registryProjectId,
+          registryProjectId,
         });
         const signedXdr = await wallet.signTransaction(transactionXdr);
         hash = await submitSignedTransaction({

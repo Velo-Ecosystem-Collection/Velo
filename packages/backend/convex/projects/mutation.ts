@@ -107,6 +107,7 @@ export const markRegistrationSynced = mutation({
   },
   handler: async (ctx, args) => {
     const project = await requireProjectOwner(ctx, args.id, { allowRetired: true });
+    const shouldNotifyRegistration = project.status !== "registered";
 
     if (!project.registrationTxHash) {
       throw new Error("Project has no registration transaction to sync");
@@ -133,15 +134,17 @@ export const markRegistrationSynced = mutation({
       updatedAt: now,
     });
 
-    await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
-      projectId: args.id,
-      eventType: "project.registered",
-    });
+    if (shouldNotifyRegistration) {
+      await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
+        projectId: args.id,
+        eventType: "project.registered",
+      });
 
-    await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
-      projectId: args.id,
-      eventType: "transaction.succeeded",
-    });
+      await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
+        projectId: args.id,
+        eventType: "transaction.succeeded",
+      });
+    }
   },
 });
 

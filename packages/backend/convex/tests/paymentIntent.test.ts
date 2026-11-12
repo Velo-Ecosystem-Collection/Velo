@@ -198,7 +198,7 @@ test("payment intent lifecycle", async () => {
     }),
   ).rejects.toThrow("Not authenticated");
 
-  const otherOwnerAddress = "GBCX...OTHER";
+  const otherOwnerAddress = "GCATS5YOVB6ROX2WUNKGNQ2MP3GMXDMKSG2O4N5CLX3A6W4PZGZZI55U";
   const otherOwner = asWallet(t, otherOwnerAddress);
   await otherOwner.mutation(api.projects.mutation.createDraft, {
     name: "Other Merchant",

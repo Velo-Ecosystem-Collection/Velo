@@ -95,7 +95,7 @@ test("membership updates require valid addresses, preserve rows, and grant proje
       walletAddress: "G" + "A".repeat(55),
       role: "viewer",
     }),
-  ).rejects.toThrow("Invalid Stellar public key");
+  ).rejects.toThrow("Invalid Stellar account address");
   await expect(
     owner.mutation(api.playground_projects.mutations.upsertMember, {
       projectId,

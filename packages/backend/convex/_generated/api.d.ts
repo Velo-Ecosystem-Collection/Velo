@@ -34,11 +34,11 @@ import type * as billing_reconciliation from "../billing/reconciliation.js";
 import type * as billing_scorecard from "../billing/scorecard.js";
 import type * as billing_shadow from "../billing/shadow.js";
 import type * as billing_topups from "../billing/topups.js";
+import type * as contractEventPolling from "../contractEventPolling.js";
 import type * as contract_events_helpers from "../contract_events/helpers.js";
 import type * as contract_events_mutation from "../contract_events/mutation.js";
 import type * as contract_events_query from "../contract_events/query.js";
 import type * as contract_events_types from "../contract_events/types.js";
-import type * as contractEventPolling from "../contractEventPolling.js";
 import type * as crons from "../crons.js";
 import type * as feedback_mutation from "../feedback/mutation.js";
 import type * as feedback_query from "../feedback/query.js";
@@ -118,6 +118,8 @@ import type * as seedBenchmarkKey from "../seedBenchmarkKey.js";
 import type * as settlement_actions from "../settlement/actions.js";
 import type * as settlement_quotes_query from "../settlement_quotes/query.js";
 import type * as settlement_transactions_query from "../settlement_transactions/query.js";
+import type * as smart_account_auth_fee_budget from "../smart_account_auth/fee_budget.js";
+import type * as smart_account_auth_fee_budget_schema from "../smart_account_auth/fee_budget_schema.js";
 import type * as sprint8_migrations from "../sprint8_migrations.js";
 import type * as telemetry_outbox_actions from "../telemetry_outbox/actions.js";
 import type * as telemetry_outbox_config from "../telemetry_outbox/config.js";
@@ -134,11 +136,14 @@ import type * as transactions_types from "../transactions/types.js";
 import type * as users_mutation from "../users/mutation.js";
 import type * as users_query from "../users/query.js";
 import type * as wallet_auth_challenges from "../wallet_auth/challenges.js";
+import type * as wallet_auth_contract_challenges from "../wallet_auth/contract_challenges.js";
+import type * as wallet_auth_contract_challenges_schema from "../wallet_auth/contract_challenges_schema.js";
 import type * as wallet_auth_references from "../wallet_auth/references.js";
 import type * as wallet_configs_helpers from "../wallet_configs/helpers.js";
 import type * as wallet_configs_mutation from "../wallet_configs/mutation.js";
 import type * as wallet_configs_query from "../wallet_configs/query.js";
 import type * as wallet_configs_validators from "../wallet_configs/validators.js";
+import type * as webhookDelivery from "../webhookDelivery.js";
 import type * as webhook_deliveries_constants from "../webhook_deliveries/constants.js";
 import type * as webhook_deliveries_helpers from "../webhook_deliveries/helpers.js";
 import type * as webhook_deliveries_mutation from "../webhook_deliveries/mutation.js";
@@ -148,8 +153,12 @@ import type * as webhook_endpoints_helpers from "../webhook_endpoints/helpers.js
 import type * as webhook_endpoints_mutation from "../webhook_endpoints/mutation.js";
 import type * as webhook_endpoints_query from "../webhook_endpoints/query.js";
 import type * as webhook_endpoints_types from "../webhook_endpoints/types.js";
-import type * as webhookDelivery from "../webhookDelivery.js";
-import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
+
+import type {
+  ApiFromModules,
+  FilterApi,
+  FunctionReference,
+} from "convex/server";
 
 declare const fullApi: ApiFromModules<{
   "api_keys/helpers": typeof api_keys_helpers;
@@ -262,6 +271,8 @@ declare const fullApi: ApiFromModules<{
   "settlement/actions": typeof settlement_actions;
   "settlement_quotes/query": typeof settlement_quotes_query;
   "settlement_transactions/query": typeof settlement_transactions_query;
+  "smart_account_auth/fee_budget": typeof smart_account_auth_fee_budget;
+  "smart_account_auth/fee_budget_schema": typeof smart_account_auth_fee_budget_schema;
   sprint8_migrations: typeof sprint8_migrations;
   "telemetry_outbox/actions": typeof telemetry_outbox_actions;
   "telemetry_outbox/config": typeof telemetry_outbox_config;
@@ -278,6 +289,8 @@ declare const fullApi: ApiFromModules<{
   "users/mutation": typeof users_mutation;
   "users/query": typeof users_query;
   "wallet_auth/challenges": typeof wallet_auth_challenges;
+  "wallet_auth/contract_challenges": typeof wallet_auth_contract_challenges;
+  "wallet_auth/contract_challenges_schema": typeof wallet_auth_contract_challenges_schema;
   "wallet_auth/references": typeof wallet_auth_references;
   "wallet_configs/helpers": typeof wallet_configs_helpers;
   "wallet_configs/mutation": typeof wallet_configs_mutation;
@@ -303,7 +316,10 @@ declare const fullApi: ApiFromModules<{
  * const myFunctionReference = api.myModule.myFunction;
  * ```
  */
-export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "public">>;
+export declare const api: FilterApi<
+  typeof fullApi,
+  FunctionReference<any, "public">
+>;
 
 /**
  * A utility for referencing Convex functions in your app's internal API.
@@ -313,7 +329,10 @@ export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "publ
  * const myFunctionReference = internal.myModule.myFunction;
  * ```
  */
-export declare const internal: FilterApi<typeof fullApi, FunctionReference<any, "internal">>;
+export declare const internal: FilterApi<
+  typeof fullApi,
+  FunctionReference<any, "internal">
+>;
 
 export declare const components: {
   migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;

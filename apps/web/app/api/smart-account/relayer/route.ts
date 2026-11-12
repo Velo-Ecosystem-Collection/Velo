@@ -89,6 +89,30 @@ function readSettings() {
   return { endpoint, authorization, maxFeeStroops, dailyLimitStroops };
 }
 
+export const GET = withRouteTelemetry("smart_account.relayer_status", async () => {
+  if (!env.NEXT_PUBLIC_ENABLE_PASSKEYS || stellarConfig.network !== "testnet") {
+    return json({ error: "Velo smart-account submission is unavailable." }, 503);
+  }
+
+  const endpointConfigured = Boolean(process.env.VELO_SMART_ACCOUNT_RELAYER_URL?.trim());
+  const authorizationConfigured = Boolean(
+    process.env.VELO_SMART_ACCOUNT_RELAYER_AUTHORIZATION?.trim(),
+  );
+  if (!endpointConfigured && !authorizationConfigured) {
+    return json({ configured: false });
+  }
+  if (!endpointConfigured || !authorizationConfigured) {
+    return json({ error: "Smart-account relayer configuration is incomplete." }, 503);
+  }
+
+  try {
+    readSettings();
+    return json({ configured: true });
+  } catch {
+    return json({ error: "Smart-account relayer configuration is invalid." }, 503);
+  }
+});
+
 function expectedWasmHash() {
   const value = (process.env.NEXT_PUBLIC_SMART_ACCOUNT_WASM_HASH ?? SMART_ACCOUNT_WASM_HASH)
     .trim()

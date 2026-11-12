@@ -118,7 +118,9 @@ export default function LoginPage() {
                 </Button>
                 <p className="text-center text-xs text-zinc-500">
                   Velo passkeys are separate from passkeys used by other apps. Smart accounts and
-                  supported owner actions run on Stellar Testnet.
+                  supported owner actions run on Stellar Testnet. If no Velo relayer is configured,
+                  submissions use the smart-account kit&apos;s funded Testnet fee account and are
+                  not gasless.
                 </p>
               </div>
             )}

@@ -30,6 +30,7 @@ import type {
 import {
   assertPasskeyBrowserConfiguration,
   getSmartAccountConfig,
+  getSmartAccountSubmissionMethod,
   type SmartAccountConfig,
 } from "./smart-account-config";
 
@@ -153,6 +154,19 @@ export function getSmartAccountKit() {
     storage: createStorage(config),
   });
   return kitInstance;
+}
+
+export async function assertSmartAccountFeePayerFunded(kit: TSmartAccountKit) {
+  const config = getSmartAccountConfig();
+  const feePayer = kit.deployerPublicKey;
+  const server = new rpc.Server(config.rpcUrl, { timeout: 30_000 });
+  try {
+    await server.getAccount(feePayer);
+  } catch {
+    throw new Error(
+      `No relayer is configured. Direct Testnet submissions use smart-account-kit fee payer ${feePayer}; fund it with Testnet XLM and verify the configured RPC, or configure a compatible Testnet relayer.`,
+    );
+  }
 }
 
 export async function disconnectSmartAccount() {
@@ -297,16 +311,20 @@ export async function reconnectPasskeyAccount(
 export async function createVeloPasskeyAccount(
   kit: TSmartAccountKit,
   verifySigner: typeof ensurePasskeySigner = ensurePasskeySigner,
+  verifyFeePayer: typeof assertSmartAccountFeePayerFunded = assertSmartAccountFeePayerFunded,
 ) {
+  const forceMethod = await getSmartAccountSubmissionMethod();
+  if (forceMethod === "rpc") await verifyFeePayer(kit);
   const userName = `velo-${Math.random().toString(36).slice(2, 10)}`;
   const result = await kit.createWallet("Velo", userName, {
     autoSubmit: true,
-    forceMethod: "relayer",
+    forceMethod,
     authenticatorSelection: { residentKey: "preferred", userVerification: "preferred" },
   });
   if (!result.submitResult?.success) {
     throw new Error(
-      result.submitResult?.error || "Velo's Testnet relayer did not deploy the smart account.",
+      result.submitResult?.error ||
+        `Velo's Testnet ${forceMethod === "relayer" ? "relayer" : "RPC fee payer"} could not deploy the smart account.`,
     );
   }
   await verifySigner({

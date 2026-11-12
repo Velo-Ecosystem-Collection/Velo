@@ -28,6 +28,8 @@ export type SmartAccountConfig = {
   relayerUrl: string;
 };
 
+export type SmartAccountSubmissionMethod = "rpc" | "relayer";
+
 export function isPasskeyFeatureEnabled() {
   return env.NEXT_PUBLIC_ENABLE_PASSKEYS;
 }
@@ -79,6 +81,42 @@ export function getSmartAccountConfig(): SmartAccountConfig {
     rpName: env.NEXT_PUBLIC_PASSKEY_RP_NAME ?? "Velo",
     relayerUrl: SMART_ACCOUNT_RELAYER_PROXY_PATH,
   };
+}
+
+export async function getSmartAccountSubmissionMethod(
+  fetcher: typeof fetch = fetch,
+): Promise<SmartAccountSubmissionMethod> {
+  let response: Response;
+  try {
+    response = await fetcher(SMART_ACCOUNT_RELAYER_PROXY_PATH, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: { accept: "application/json" },
+    });
+  } catch {
+    throw new PasskeyConfigurationError(
+      "Velo could not check smart-account fee configuration. Check your connection and try again.",
+    );
+  }
+
+  const body = (await response.json().catch(() => null)) as {
+    configured?: unknown;
+    error?: unknown;
+  } | null;
+  if (!response.ok) {
+    throw new PasskeyConfigurationError(
+      typeof body?.error === "string"
+        ? body.error
+        : "Velo could not verify smart-account fee configuration.",
+    );
+  }
+  if (typeof body?.configured !== "boolean") {
+    throw new PasskeyConfigurationError(
+      "Velo returned an invalid smart-account fee configuration.",
+    );
+  }
+  return body.configured ? "relayer" : "rpc";
 }
 
 export function assertPasskeyBrowserConfiguration(config = getSmartAccountConfig()) {

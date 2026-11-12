@@ -113,6 +113,42 @@ test("passkey RP configuration must match the active browser hostname", async ()
   }
 });
 
+test("smart-account submission uses RPC without a relayer and relayer when configured", async () => {
+  const { getSmartAccountSubmissionMethod } = await loadConfig("submission-method");
+  const rpcMethod = await getSmartAccountSubmissionMethod(
+    async () => new Response(JSON.stringify({ configured: false }), { status: 200 }),
+  );
+  const relayerMethod = await getSmartAccountSubmissionMethod(
+    async () => new Response(JSON.stringify({ configured: true }), { status: 200 }),
+  );
+
+  assert.equal(rpcMethod, "rpc");
+  assert.equal(relayerMethod, "relayer");
+});
+
+test("smart-account submission fails clearly when fee configuration cannot be verified", async () => {
+  const { getSmartAccountSubmissionMethod } = await loadConfig("submission-errors");
+
+  await assert.rejects(
+    getSmartAccountSubmissionMethod(
+      async () =>
+        new Response(
+          JSON.stringify({ error: "Smart-account relayer configuration is incomplete." }),
+          {
+            status: 503,
+          },
+        ),
+    ),
+    /configuration is incomplete/,
+  );
+  await assert.rejects(
+    getSmartAccountSubmissionMethod(async () => {
+      throw new TypeError("network unavailable");
+    }),
+    /could not check smart-account fee configuration/,
+  );
+});
+
 after(() => {
   hooks.deregister();
   Reflect.deleteProperty(globalThis, "__veloPasskeyConfigFixture");

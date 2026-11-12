@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import test from "node:test";
 
+const fixture = { submissionMethod: "relayer" as "rpc" | "relayer" };
+Object.assign(globalThis, { __veloSmartAccountKitFixture: fixture });
+
 const hooks = registerHooks({
   resolve(specifier, context, next) {
     if (specifier === "./smart-account-config") {
@@ -17,7 +20,7 @@ const hooks = registerHooks({
       return {
         format: "module",
         source:
-          "export function assertPasskeyBrowserConfiguration() {} export function getSmartAccountConfig() { return {}; }",
+          "const fixture = globalThis.__veloSmartAccountKitFixture; export function assertPasskeyBrowserConfiguration() {} export function getSmartAccountConfig() { return {}; } export async function getSmartAccountSubmissionMethod() { return fixture.submissionMethod; }",
         shortCircuit: true,
       };
     }
@@ -46,7 +49,8 @@ const {
 const FIRST_ACCOUNT = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM";
 const SECOND_ACCOUNT = "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA2ZMN";
 
-test("passkey creation uses the Velo relayer flow and verifies its new signer", async () => {
+test("passkey creation uses the configured relayer and verifies its new signer", async () => {
+  fixture.submissionMethod = "relayer";
   let createArgs: unknown[] = [];
   const kit = {
     createWallet: async (...args: unknown[]) => {
@@ -76,6 +80,7 @@ test("passkey creation uses the Velo relayer flow and verifies its new signer", 
 });
 
 test("passkey creation rejects deployment failures and preserves user cancellation", async () => {
+  fixture.submissionMethod = "relayer";
   const failedDeployment = {
     createWallet: async () => ({
       contractId: FIRST_ACCOUNT,
@@ -99,6 +104,37 @@ test("passkey creation rejects deployment failures and preserves user cancellati
       name: "NotAllowedError",
     },
   );
+});
+
+test("passkey creation falls back to direct Testnet RPC when no relayer is configured", async () => {
+  fixture.submissionMethod = "rpc";
+  let createArgs: unknown[] = [];
+  const kit = {
+    createWallet: async (...args: unknown[]) => {
+      createArgs = args;
+      return {
+        contractId: FIRST_ACCOUNT,
+        credentialId: "credential-id",
+        submitResult: { success: true },
+      };
+    },
+  } as unknown as Parameters<typeof createVeloPasskeyAccount>[0];
+
+  let feePayerVerified = false;
+  await createVeloPasskeyAccount(
+    kit,
+    async () => undefined,
+    async () => {
+      feePayerVerified = true;
+    },
+  );
+
+  assert.deepEqual(createArgs[2], {
+    autoSubmit: true,
+    forceMethod: "rpc",
+    authenticatorSelection: { residentKey: "preferred", userVerification: "preferred" },
+  });
+  assert.equal(feePayerVerified, true);
 });
 
 test("passkey reconnect verifies the restored account and reports missing or stale sessions", async () => {
@@ -129,6 +165,7 @@ test("passkey reconnect verifies the restored account and reports missing or sta
 });
 
 test.after(() => hooks.deregister());
+test.after(() => Reflect.deleteProperty(globalThis, "__veloSmartAccountKitFixture"));
 
 test("multiple discovered Velo accounts require explicit selection", () => {
   const accounts = normalizeDiscoveredAccounts([

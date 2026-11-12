@@ -6,8 +6,8 @@ import { assertValidContractId, assertValidTransactionHash } from "@repo/stellar
 import { Address, Contract, contract, nativeToScVal, xdr } from "@stellar/stellar-sdk";
 
 import { stellarConfig } from "../config/stellar";
-import { getSmartAccountConfig } from "./smart-account-config";
-import { getSmartAccountKit } from "./smart-account-kit";
+import { getSmartAccountConfig, getSmartAccountSubmissionMethod } from "./smart-account-config";
+import { assertSmartAccountFeePayerFunded, getSmartAccountKit } from "./smart-account-kit";
 
 export function projectRegistrationArgs(
   ownerAddress: string,
@@ -67,9 +67,11 @@ export async function submitSmartAccountCall(params: {
   const smartAccountAddress = assertValidContractId(params.smartAccountAddress);
   const config = getSmartAccountConfig();
   const kit = getSmartAccountKit();
+  const forceMethod = await getSmartAccountSubmissionMethod();
   if (!kit.wallet || kit.contractId !== smartAccountAddress) {
     throw new Error("Reconnect the selected Velo passkey account before submitting this action.");
   }
+  if (forceMethod === "rpc") await assertSmartAccountFeePayerFunded(kit);
 
   const operation = new Contract(smartAccountAddress).call(
     "execute",
@@ -87,13 +89,14 @@ export async function submitSmartAccountCall(params: {
     parseResultXdr: (value) => value,
     timeoutInSeconds: 60,
   });
-  const result = await kit.signAndSubmit(assembled, { forceMethod: "relayer" });
+  const result = await kit.signAndSubmit(assembled, { forceMethod });
   if (!result.success) {
     throw new Error(
-      result.error || "Velo's Testnet relayer could not submit this passkey transaction.",
+      result.error ||
+        `Velo's Testnet ${forceMethod === "relayer" ? "relayer" : "RPC fee payer"} could not submit this passkey transaction.`,
     );
   }
   if (!result.hash)
-    throw new Error("The relayer accepted the transaction without returning a hash.");
+    throw new Error("The smart-account submission completed without returning a transaction hash.");
   return assertValidTransactionHash(result.hash);
 }

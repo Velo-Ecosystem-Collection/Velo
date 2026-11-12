@@ -42,7 +42,10 @@ function asWallet(t: ReturnType<typeof convexTest>, address: string) {
 }
 
 async function setupOperator(t: ReturnType<typeof convexTest>) {
-  await t.mutation(bootstrapOperator, { walletAddress: "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB", actor: "test-bootstrap" });
+  await t.mutation(bootstrapOperator, {
+    walletAddress: "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB",
+    actor: "test-bootstrap",
+  });
   const operator = asWallet(t, "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB");
   await operator.mutation(initializePolicy, {});
   return operator;

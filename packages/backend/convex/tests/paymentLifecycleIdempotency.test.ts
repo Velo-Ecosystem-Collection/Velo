@@ -100,7 +100,10 @@ test("payment operation matching checks receiver, amount, asset, and reported pa
 
   for (const mismatch of [
     { ...matchingOperation, source: "GCI2FCQLOQ4BLE5E3FDJK6JARETK7SFNQLEIHG3WIQ2ZXHV2TJFTUNWJ" },
-    { ...matchingOperation, destination: "GCI2FCQLOQ4BLE5E3FDJK6JARETK7SFNQLEIHG3WIQ2ZXHV2TJFTUNWJ" },
+    {
+      ...matchingOperation,
+      destination: "GCI2FCQLOQ4BLE5E3FDJK6JARETK7SFNQLEIHG3WIQ2ZXHV2TJFTUNWJ",
+    },
     { ...matchingOperation, amount: "1.0000001" },
     { ...matchingOperation, asset: "USDC:GISSUER" },
   ]) {

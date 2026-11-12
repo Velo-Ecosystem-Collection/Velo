@@ -17,5 +17,8 @@ test("classic transaction source validation continues to reject contract account
   const contractAddress = StrKey.encodeContract(Keypair.random().rawPublicKey());
 
   assert.throws(() => assertValidPublicKey(contractAddress), /Invalid Stellar public key/);
-  assert.throws(() => assertValidAccountAddress(`${contractAddress.slice(0, -1)}A`));
+  const invalidContractAddress = `${contractAddress.slice(0, -1)}${
+    contractAddress.endsWith("A") ? "B" : "A"
+  }`;
+  assert.throws(() => assertValidAccountAddress(invalidContractAddress));
 });

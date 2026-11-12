@@ -25,7 +25,7 @@ async function insertProject(t: ReturnType<typeof convexTest>, checkoutCredits =
       description: "Sprint 9 lifecycle reliability fixture",
       metadataJson: "{}",
       metadataHash: "0".repeat(64),
-      ownerAddress: "GTEST",
+      ownerAddress: "GAFVCOWZWSJEAFOKBEBO2B4QITJ2YXN6YIYG6BUURQINVDVW4OPS3OL6",
       status: "draft",
       paymentAccessActive: true,
       checkoutCredits,
@@ -49,7 +49,7 @@ async function insertIntent(
       projectId: args.projectId,
       amount: "1.00",
       asset: "native",
-      receiverAddress: "GRECEIVER",
+      receiverAddress: "GDIEVMRSOQV3JKZ2CNUL2RQV4TTNAISKW4NAC25PQUQKGMWJO6DTOAE7",
       merchantName: "Lifecycle Reliability",
       status: args.status,
       ...(args.txHash ? { txHash: args.txHash } : {}),
@@ -70,8 +70,8 @@ function successfulLookup(hash: string) {
       {
         index: 0,
         type: "payment",
-        source: "GPAYER",
-        destination: "GRECEIVER",
+        source: "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57",
+        destination: "GDIEVMRSOQV3JKZ2CNUL2RQV4TTNAISKW4NAC25PQUQKGMWJO6DTOAE7",
         amount: "1.0000000",
         asset: "native",
       },
@@ -84,23 +84,23 @@ function successfulLookup(hash: string) {
 
 test("payment operation matching checks receiver, amount, asset, and reported payer", () => {
   const expectation = {
-    receiverAddress: "GRECEIVER",
-    payerAddress: "GPAYER",
+    receiverAddress: "GDIEVMRSOQV3JKZ2CNUL2RQV4TTNAISKW4NAC25PQUQKGMWJO6DTOAE7",
+    payerAddress: "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57",
     amount: "1.00",
     asset: "XLM",
   };
   const matchingOperation = successfulLookup("a".repeat(64)).operations[0]!;
 
   expect(findVerifiedPayment([matchingOperation], expectation)).toEqual({
-    source: "GPAYER",
-    destination: "GRECEIVER",
+    source: "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57",
+    destination: "GDIEVMRSOQV3JKZ2CNUL2RQV4TTNAISKW4NAC25PQUQKGMWJO6DTOAE7",
     amount: "1.0000000",
     asset: "native",
   });
 
   for (const mismatch of [
-    { ...matchingOperation, source: "GOTHER" },
-    { ...matchingOperation, destination: "GOTHER" },
+    { ...matchingOperation, source: "GCI2FCQLOQ4BLE5E3FDJK6JARETK7SFNQLEIHG3WIQ2ZXHV2TJFTUNWJ" },
+    { ...matchingOperation, destination: "GCI2FCQLOQ4BLE5E3FDJK6JARETK7SFNQLEIHG3WIQ2ZXHV2TJFTUNWJ" },
     { ...matchingOperation, amount: "1.0000001" },
     { ...matchingOperation, asset: "USDC:GISSUER" },
   ]) {
@@ -124,7 +124,7 @@ test("reportSubmitted same-hash pending replay preserves clocks and schedules on
     const report = {
       hash: txHash,
       paymentIntentId,
-      payerAddress: "GPAYER",
+      payerAddress: "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57",
       stageTimestamps: {
         startedSigning: firstReportedAt - 300,
         signed: firstReportedAt - 200,
@@ -175,8 +175,8 @@ test("verified paid same-hash replay is a no-op and concurrent watchers decremen
     paymentIntentId,
     txHash,
     verifiedPayment: {
-      source: "GPAYER",
-      destination: "GRECEIVER",
+      source: "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57",
+      destination: "GDIEVMRSOQV3JKZ2CNUL2RQV4TTNAISKW4NAC25PQUQKGMWJO6DTOAE7",
       amount: "1.0000000",
       asset: "native",
     },
@@ -186,8 +186,8 @@ test("verified paid same-hash replay is a no-op and concurrent watchers decremen
     paymentIntentId,
     txHash,
     verifiedPayment: {
-      source: "GPAYER",
-      destination: "GRECEIVER",
+      source: "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57",
+      destination: "GDIEVMRSOQV3JKZ2CNUL2RQV4TTNAISKW4NAC25PQUQKGMWJO6DTOAE7",
       amount: "1.0000000",
       asset: "native",
     },
@@ -240,8 +240,8 @@ test("ledger payment details must match and one transaction cannot settle two in
       {
         index: 0,
         type: "payment",
-        source: "GPAYER",
-        destination: "GATTACKER",
+        source: "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57",
+        destination: "GAQEAQHDMTAQ6K7MTQP6KAFBZVGCI7EJ2ZIKAHWX5AWKXKDHQ56CCLKH",
         amount: "1.0000000",
         asset: "native",
       },
@@ -268,8 +268,8 @@ test("ledger payment details must match and one transaction cannot settle two in
     txHash: sharedHash,
   });
   const verifiedPayment = {
-    source: "GPAYER",
-    destination: "GRECEIVER",
+    source: "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57",
+    destination: "GDIEVMRSOQV3JKZ2CNUL2RQV4TTNAISKW4NAC25PQUQKGMWJO6DTOAE7",
     amount: "1.0000000",
     asset: "native",
   };

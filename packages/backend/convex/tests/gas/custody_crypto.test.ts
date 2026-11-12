@@ -19,7 +19,7 @@ const context = {
   deploymentId: "dev:example",
   projectId: "projects:example",
   network: "testnet" as const,
-  publicKey: "GEXAMPLE",
+  publicKey: "GAF655NJ4Z46NI7BGT7CPA3374ZMPS27LVCOUCN4WDSUFOWWUTAMZUES",
 };
 
 test("AES-256-GCM round trips with distinct fresh nonces", async () => {
@@ -55,7 +55,7 @@ test("ciphertext, tag, deployment, project, network, and address tampering fail 
   for (const changed of [
     { ...context, deploymentId: "prod:example" },
     { ...context, projectId: "projects:other" },
-    { ...context, publicKey: "GOTHER" },
+    { ...context, publicKey: "GCI2FCQLOQ4BLE5E3FDJK6JARETK7SFNQLEIHG3WIQ2ZXHV2TJFTUNWJ" },
   ]) {
     await expect(decryptGasRelayerSecret(encrypted, keyring(), changed)).rejects.toBeInstanceOf(
       GasCustodyCryptoError,

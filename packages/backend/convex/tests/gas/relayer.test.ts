@@ -23,7 +23,7 @@ import { GAS_NETWORK, GAS_RELAYER_STATUSES } from "../../gas/types";
 import schema from "../../schema";
 
 const modules = import.meta.glob("../../**/*.ts");
-const OWNER = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+const OWNER = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
 const NOW = Date.parse("2026-09-05T04:00:00.000Z");
 const OTHER_RELAYER_KEYPAIR = keypairForLabel("gas-other-relayer");
 type TestContext = TestConvexForDataModelAndIdentity<DataModel>;

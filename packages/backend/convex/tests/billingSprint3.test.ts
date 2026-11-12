@@ -42,8 +42,8 @@ function asWallet(t: ReturnType<typeof convexTest>, address: string) {
 }
 
 async function setupOperator(t: ReturnType<typeof convexTest>) {
-  await t.mutation(bootstrapOperator, { walletAddress: "GOPERATOR", actor: "test-bootstrap" });
-  const operator = asWallet(t, "GOPERATOR");
+  await t.mutation(bootstrapOperator, { walletAddress: "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB", actor: "test-bootstrap" });
+  const operator = asWallet(t, "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB");
   await operator.mutation(initializePolicy, {});
   return operator;
 }
@@ -58,7 +58,7 @@ test("Mainnet launch remains disabled until every append-only approval and treas
 
   const treasuryId = (await operator.mutation(configureTreasury, {
     network: "public",
-    address: "GTREASURY",
+    address: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
     asset: "USDC:GISSUER",
     verificationEvidenceReference: "evidence://verification",
     signerPolicyReference: "policy://signer",
@@ -76,7 +76,7 @@ test("Mainnet launch remains disabled until every append-only approval and treas
       priceAmount: "20",
       asset: "USDC:GISSUER",
       network: "public",
-      treasuryAddress: "GTREASURY",
+      treasuryAddress: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
       activeFrom: Date.now() - 1,
       refundPolicy: "Approved refund policy",
       activate: false,
@@ -89,7 +89,7 @@ test("Mainnet launch remains disabled until every append-only approval and treas
     priceAmount: "20",
     asset: "USDC:GISSUER",
     network: "public",
-    treasuryAddress: "GTREASURY",
+    treasuryAddress: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
     treasuryId,
     activeFrom: Date.now() - 1,
     refundPolicy: "Approved refund policy",
@@ -134,14 +134,14 @@ test("Mainnet launch remains disabled until every append-only approval and treas
 test("cohort enforcement requires verification, notices, and an explicit grace deadline", async () => {
   const t = convexTest(schema, modules);
   const operator = await setupOperator(t);
-  const owner = asWallet(t, "GOWNER");
+  const owner = asWallet(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
   await owner.mutation(api.projects.mutation.createDraft, {
     name: "Cohort",
     slug: "cohort",
     description: "Cohort",
     metadataJson: "{}",
     metadataHash: "0".repeat(64),
-    ownerAddress: "GOWNER",
+    ownerAddress: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
   });
   const organization = await t.run(async (ctx) => ctx.db.query("organizations").unique());
   expect(organization).not.toBeNull();
@@ -202,27 +202,27 @@ test("legacy exceptions receive severity and SLA before assignment", async () =>
   await operator.mutation(backfillExceptions, { limit: 10 });
   await operator.mutation(assignException, {
     exceptionId,
-    assignee: "GOPERATOR",
+    assignee: "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB",
     note: "Finance owns investigation",
   });
   const exception = await t.run(async (ctx) => ctx.db.get(exceptionId));
   expect(exception?.severity).toBe("medium");
   expect(exception?.slaDueAt).toBe(createdAt + 24 * 60 * 60_000);
-  expect(exception?.assignee).toBe("GOPERATOR");
+  expect(exception?.assignee).toBe("GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB");
   expect(exception?.investigationStatus).toBe("investigating");
 });
 
 test("commercial balance changes coalesce into display-only PayAccess mirror state", async () => {
   const t = convexTest(schema, modules);
   await setupOperator(t);
-  const owner = asWallet(t, "GMIRROROWNER");
+  const owner = asWallet(t, "GBB2OLTRIQAXMLPWNNUME3P334TIFKXMT4SHJ3FEME7EESQPXL6TZAU6");
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
     name: "Mirror",
     slug: "mirror",
     description: "Mirror",
     metadataJson: "{}",
     metadataHash: "1".repeat(64),
-    ownerAddress: "GMIRROROWNER",
+    ownerAddress: "GBB2OLTRIQAXMLPWNNUME3P334TIFKXMT4SHJ3FEME7EESQPXL6TZAU6",
   });
   const organization = await t.run(async (ctx) => ctx.db.query("organizations").unique());
   await t.run(async (ctx) => {
@@ -276,7 +276,7 @@ test("commercial balance changes coalesce into display-only PayAccess mirror sta
       desiredVersion: 1,
       transactionHash: "a".repeat(64),
       status: "submitted",
-      submittedBy: "GOPERATOR",
+      submittedBy: "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB",
       submittedAt: Date.now(),
       verificationAttempts: 4,
     }),
@@ -305,7 +305,7 @@ test("daily replay detects a corrupted materialized balance without repairing it
   const organizationId = await t.run(async (ctx) =>
     ctx.db.insert("organizations", {
       ownerTokenIdentifier: "issuer|replay",
-      ownerAddress: "GREPLAY",
+      ownerAddress: "GBTL47RTFR5EKMZSXWOQU735WBK7LRPPDIDK3JTNTCZZ7NUBBRDTVSK2",
       displayName: "Replay",
       verificationStatus: "verified",
       trialState: "eligible",

@@ -46,13 +46,13 @@ async function createProject(
     description: slug,
     metadataJson: "{}",
     metadataHash: "0".repeat(64),
-    ownerAddress: "GOWNER",
+    ownerAddress: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
   });
 }
 
 test("projects from one authenticated owner share one provisional organization", async () => {
   const t = convexTest(schema, modules);
-  const owner = asOwner(t, "GOWNER");
+  const owner = asOwner(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
 
   const firstProjectId = await createProject(owner, "first-project");
   const secondProjectId = await createProject(owner, "second-project");
@@ -68,7 +68,7 @@ test("promotion requires verification and is exactly once", async () => {
   vi.setSystemTime(new Date("2026-07-26T00:00:00Z"));
   try {
     const t = convexTest(schema, modules);
-    const owner = asOwner(t, "GOWNER");
+    const owner = asOwner(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
     await createProject(owner, "trial-project");
     const organization = await owner.query(currentOrganization, {});
 
@@ -129,7 +129,7 @@ test("promotion requires verification and is exactly once", async () => {
 
 test("reservations are atomic, promo-first, and terminal transitions are idempotent", async () => {
   const t = convexTest(schema, modules);
-  const owner = asOwner(t, "GOWNER");
+  const owner = asOwner(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
   const projectId = await createProject(owner, "reservation-project");
   const organization = await owner.query(currentOrganization, {});
 
@@ -221,7 +221,7 @@ test("expired reservations recover once", async () => {
   vi.setSystemTime(new Date("2026-07-26T00:00:00Z"));
   try {
     const t = convexTest(schema, modules);
-    const owner = asOwner(t, "GOWNER");
+    const owner = asOwner(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
     const projectId = await createProject(owner, "expiry-project");
     const organization = await owner.query(currentOrganization, {});
     await t.mutation(verifyOrganization, {
@@ -270,7 +270,7 @@ test("existing Testnet payment creation records a fee-exempt shadow decision", a
   vi.setSystemTime(new Date("2026-07-26T00:00:00Z"));
   try {
     const t = convexTest(schema, modules);
-    const owner = asOwner(t, "GOWNER");
+    const owner = asOwner(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
     const projectId = await createProject(owner, "shadow-testnet-project");
     await owner.mutation(api.projects.mutation.markPaymentAccessActive, {
       id: projectId,
@@ -323,7 +323,7 @@ test("Mainnet shadow lifecycle reserves and consumes without enforcing legacy ac
   vi.setSystemTime(new Date("2026-07-26T00:00:00Z"));
   try {
     const t = convexTest(schema, modules);
-    const owner = asOwner(t, "GOWNER");
+    const owner = asOwner(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
     const projectId = await createProject(owner, "shadow-mainnet-project");
     const organization = await owner.query(currentOrganization, {});
     await t.mutation(verifyOrganization, {
@@ -391,8 +391,8 @@ test("Mainnet shadow lifecycle reserves and consumes without enforcing legacy ac
         txHash: "a".repeat(64),
         verifiedNetwork: "testnet",
         verifiedPayment: {
-          source: "GPAYER",
-          destination: "GOWNER",
+          source: "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57",
+          destination: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
           amount: "1.0000000",
           asset: "native",
         },
@@ -403,8 +403,8 @@ test("Mainnet shadow lifecycle reserves and consumes without enforcing legacy ac
       txHash: "a".repeat(64),
       verifiedNetwork: "public",
       verifiedPayment: {
-        source: "GPAYER",
-        destination: "GOWNER",
+        source: "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57",
+        destination: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
         amount: "1.0000000",
         asset: "native",
       },
@@ -441,7 +441,7 @@ test("Mainnet shadow lifecycle reserves and consumes without enforcing legacy ac
 
 test("legacy PDAX shadow billing is disabled and does not write new financial entries", async () => {
   const t = convexTest(schema, modules);
-  const owner = asOwner(t, "GPDAXLEGACY");
+  const owner = asOwner(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
   const projectId = await createProject(owner, "pdax-shadow-project");
   const paymentIntentId = await t.run(async (ctx) => {
     const now = Date.now();

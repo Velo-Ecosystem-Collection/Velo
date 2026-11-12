@@ -35,7 +35,7 @@ async function createProject(
 
 test("owner can update project settings without changing registry metadata", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const projectId = await createProject(owner, ownerAddress, "settings-project");
 
@@ -67,7 +67,7 @@ test("owner can update project settings without changing registry metadata", asy
 
 test("a Registry project ID cannot be assigned to two Velo projects", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const firstProjectId = await createProject(
     owner,
@@ -110,7 +110,7 @@ test("a Registry project ID cannot be assigned to two Velo projects", async () =
 
 test("owner can recover a missing Registry ID after registration without resetting its state", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const projectId = await createProject(owner, ownerAddress, "recover-registry-id");
 
@@ -136,8 +136,8 @@ test("owner can recover a missing Registry ID after registration without resetti
 
 test("another wallet cannot update settings or generate logo upload URL", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
-  const attackerAddress = "GDFWQCS3C72IWT5QV6CJYCMCQZ4WQ2QELSE6ABWI5Q3XRZ6BPGRS6LZV";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
+  const attackerAddress = "GCATS5YOVB6ROX2WUNKGNQ2MP3GMXDMKSG2O4N5CLX3A6W4PZGZZI55U";
   const owner = asWallet(t, ownerAddress);
   const attacker = asWallet(t, attackerAddress);
   const projectId = await createProject(owner, ownerAddress, "unauthorized-settings-project");
@@ -157,7 +157,7 @@ test("another wallet cannot update settings or generate logo upload URL", async 
 
 test("owner can set, replace, and remove logo storage id", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const projectId = await createProject(owner, ownerAddress, "logo-settings-project");
   const firstLogoId = await t.run(async (ctx) => {
@@ -191,8 +191,8 @@ test("owner can set, replace, and remove logo storage id", async () => {
 
 test("project retirement requires the exact current name, is owner-only, and is idempotent", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
-  const memberAddress = "GDFWQCS3C72IWT5QV6CJYCMCQZ4WQ2QELSE6ABWI5Q3XRZ6BPGRS6LZV";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
+  const memberAddress = "GCATS5YOVB6ROX2WUNKGNQ2MP3GMXDMKSG2O4N5CLX3A6W4PZGZZI55U";
   const owner = asWallet(t, ownerAddress);
   const member = asWallet(t, memberAddress);
   const projectId = await createProject(owner, ownerAddress, "retire-project");
@@ -260,8 +260,8 @@ test("project retirement requires the exact current name, is owner-only, and is 
 
 test("active project names are unique per owner after trimming and case folding", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
-  const otherAddress = "GDFWQCS3C72IWT5QV6CJYCMCQZ4WQ2QELSE6ABWI5Q3XRZ6BPGRS6LZV";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
+  const otherAddress = "GCATS5YOVB6ROX2WUNKGNQ2MP3GMXDMKSG2O4N5CLX3A6W4PZGZZI55U";
   const owner = asWallet(t, ownerAddress);
   const otherOwner = asWallet(t, otherAddress);
   const projectId = await createProject(owner, ownerAddress, "name-unique-a", "  Velo Shop  ");
@@ -297,7 +297,7 @@ test("active project names are unique per owner after trimming and case folding"
 
 test("concurrent same-owner creates and renames allow only one active normalized name", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const creates = await Promise.allSettled([
     createProject(owner, ownerAddress, "concurrent-name-a", "Concurrent Name"),
@@ -324,7 +324,7 @@ test("concurrent same-owner creates and renames allow only one active normalized
 
 test("legacy duplicate names stay editable and block new conflicting names", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const firstId = await createProject(owner, ownerAddress, "legacy-name-a", "Legacy Duplicate");
   const secondId = await createProject(owner, ownerAddress, "legacy-name-b", "Temporary Name");
@@ -359,8 +359,8 @@ test("legacy duplicate names stay editable and block new conflicting names", asy
 
 test("concurrent slug collisions allocate distinct slugs and hash the allocated value", async () => {
   const t = convexTest(schema, modules);
-  const firstAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
-  const secondAddress = "GDFWQCS3C72IWT5QV6CJYCMCQZ4WQ2QELSE6ABWI5Q3XRZ6BPGRS6LZV";
+  const firstAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
+  const secondAddress = "GCATS5YOVB6ROX2WUNKGNQ2MP3GMXDMKSG2O4N5CLX3A6W4PZGZZI55U";
   const firstOwner = asWallet(t, firstAddress);
   const secondOwner = asWallet(t, secondAddress);
   const ids = await Promise.all([
@@ -382,7 +382,7 @@ test("concurrent slug collisions allocate distinct slugs and hash the allocated 
 
 test("slug suffix allocation keeps a long slug valid when truncation reaches a hyphen", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const preferredSlug = `${"a".repeat(56)}-${"b".repeat(7)}`;
   await createProject(owner, ownerAddress, preferredSlug, "Long Slug First");
@@ -400,7 +400,7 @@ test("slug suffix allocation keeps a long slug valid when truncation reaches a h
 
 test("retirement and a concurrent rename cannot authorize deletion with a stale name", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const projectId = await createProject(owner, ownerAddress, "rename-retire", "Before Rename");
   const outcomes = await Promise.allSettled([
@@ -429,7 +429,7 @@ test("retirement and a concurrent rename cannot authorize deletion with a stale 
 
 test("owner project limits are applied after retired projects are excluded", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   for (let index = 0; index < 50; index += 1) {
     await createProject(owner, ownerAddress, "active-limit-" + index, "Active " + index);

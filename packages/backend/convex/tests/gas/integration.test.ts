@@ -27,7 +27,7 @@ const modules = import.meta.glob("../../**/*.ts");
 type TestContext = TestConvexForDataModelAndIdentity<DataModel>;
 type PublicSubmitScope = Parameters<typeof executeGasExecution>[2];
 
-const OWNER = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+const OWNER = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
 const NOW = Date.parse("2026-09-03T23:59:56.789Z");
 const API_KEY_HASH = "a".repeat(64);
 const SECOND_API_KEY_HASH = "b".repeat(64);

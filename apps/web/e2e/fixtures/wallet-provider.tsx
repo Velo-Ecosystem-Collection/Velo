@@ -38,6 +38,9 @@ export function useWallet() {
   return {
     ...snapshot,
     connect: store.connect,
+    connectPasskey: async () => undefined,
+    createPasskeyAccount: async () => undefined,
+    selectPasskeyAccount: async () => undefined,
     disconnect: store.disconnect,
     signTransaction: store.signTransaction,
     signMessage: store.signMessage,

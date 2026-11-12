@@ -21,7 +21,7 @@ function asWallet(t: ReturnType<typeof convexTest>, ownerAddress: string) {
 test("project API key lifecycle", async () => {
   const t = convexTest(schema, modules);
 
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
 
   // Create a draft project
@@ -200,8 +200,8 @@ test("project API key lifecycle", async () => {
 
 test("authenticated wallet cannot manage another wallet project", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
-  const attackerAddress = "GDFWQCS3C72IWT5QV6CJYCMCQZ4WQ2QELSE6ABWI5Q3XRZ6BPGRS6LZV";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
+  const attackerAddress = "GCATS5YOVB6ROX2WUNKGNQ2MP3GMXDMKSG2O4N5CLX3A6W4PZGZZI55U";
   const owner = asWallet(t, ownerAddress);
   const attacker = asWallet(t, attackerAddress);
 

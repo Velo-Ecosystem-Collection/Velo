@@ -50,7 +50,7 @@ test("reportSubmitted stores status submitted", async () => {
 
 test("getPendingPaymentIntents limits return count", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
 
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
@@ -105,7 +105,7 @@ test("getPendingPaymentIntents limits return count", async () => {
 
 test("storePollResult calculates lag metrics and checkpoints cursor", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
 
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
@@ -157,7 +157,7 @@ test("storePollResult calculates lag metrics and checkpoints cursor", async () =
 
 test("watchTransaction handles fast confirmation successfully", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
 
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {

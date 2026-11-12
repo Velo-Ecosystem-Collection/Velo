@@ -9,8 +9,15 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 
+import type { Buffer as StellarBuffer } from "node:buffer";
+
+import {
+  assertTransactionMatchesContractCall,
+  type ContractCallIntent,
+} from "./contract-invocation.ts";
 import {
   assertValidContractId,
+  assertValidAccountAddress,
   assertValidMetadataHash,
   assertValidPublicKey,
   assertValidTransactionHash,
@@ -24,7 +31,7 @@ export type StellarTestnetConfig = {
 
 export type RegisterProjectTransactionInput = StellarTestnetConfig & {
   sourcePublicKey: string;
-  ownerPublicKey: string;
+  ownerAddress: string;
   projectName: string;
   metadataHash: string;
 };
@@ -37,6 +44,7 @@ export type SubmitSignedTransactionInput = {
 
 export type ConfirmRegistrationInput = StellarTestnetConfig & {
   transactionHash: string;
+  expectedIntent?: ContractCallIntent;
 };
 
 export type ContractLinkTransactionInput = StellarTestnetConfig & {
@@ -48,6 +56,8 @@ export type ContractLinkTransactionInput = StellarTestnetConfig & {
 export type ConfirmContractTransactionInput = {
   rpcUrl: string;
   transactionHash: string;
+  networkPassphrase?: string;
+  expectedIntent?: ContractCallIntent;
 };
 
 export type RegistrationConfirmation =
@@ -138,7 +148,7 @@ async function latestLedgerTimebounds(server: rpc.Server) {
 
 function contractCallOperation(input: RegisterProjectTransactionInput) {
   const contract = new Contract(assertValidContractId(input.registryContractId));
-  const owner = Address.fromString(assertValidPublicKey(input.ownerPublicKey));
+  const owner = Address.fromString(assertValidAccountAddress(input.ownerAddress));
 
   return contract.call(
     "register_project",
@@ -173,7 +183,7 @@ function contractLinkOperation(input: ContractLinkTransactionInput, method: stri
 export async function buildRegisterProjectTransaction(input: RegisterProjectTransactionInput) {
   const sourcePublicKey = assertValidPublicKey(input.sourcePublicKey);
   assertValidContractId(input.registryContractId);
-  assertValidPublicKey(input.ownerPublicKey);
+  assertValidAccountAddress(input.ownerAddress);
   assertValidMetadataHash(input.metadataHash);
 
   if (!input.projectName.trim()) {
@@ -256,6 +266,17 @@ export async function confirmContractTransaction(
     };
   }
 
+  if (input.expectedIntent) {
+    if (!input.networkPassphrase) {
+      throw new Error("A network passphrase is required to verify the confirmed contract call.");
+    }
+    assertTransactionMatchesContractCall(
+      response.envelopeXdr,
+      input.networkPassphrase,
+      input.expectedIntent,
+    );
+  }
+
   return {
     status: "confirmed",
     transactionHash,
@@ -280,6 +301,39 @@ function projectIdFromReturnValue(returnValue: xdr.ScVal | undefined | null) {
   return null;
 }
 
+function projectIdFromRegistrationEvent(
+  events: xdr.ContractEvent[][] | undefined,
+  registryContractId: string,
+) {
+  for (const event of events?.flat() ?? []) {
+    const contractId = event.contractId();
+    if (
+      !contractId ||
+      Address.contract(contractId as unknown as StellarBuffer).toString() !== registryContractId
+    )
+      continue;
+    if (event.type().name !== "contract") continue;
+    const body = event.body().v0();
+    const topics = Array.from(body.topics());
+    if (
+      topics[0]?.switch().name !== "scvSymbol" ||
+      topics[0].sym().toString() !== "project" ||
+      topics[1]?.switch().name !== "scvSymbol" ||
+      topics[1].sym().toString() !== "reg"
+    )
+      continue;
+    const data = body.data();
+    if (data.switch().name !== "scvVec") continue;
+    const id = data.vec()?.[0];
+    if (!id || id.switch().name !== "scvU64") continue;
+    const native = scValToNative(id) as unknown;
+    if (typeof native === "bigint" && native <= BigInt(Number.MAX_SAFE_INTEGER))
+      return Number(native);
+    if (typeof native === "number" && Number.isSafeInteger(native)) return native;
+  }
+  return null;
+}
+
 export async function confirmRegistration(
   input: ConfirmRegistrationInput,
 ): Promise<RegistrationConfirmation> {
@@ -298,10 +352,20 @@ export async function confirmRegistration(
     };
   }
 
+  if (input.expectedIntent) {
+    assertTransactionMatchesContractCall(
+      response.envelopeXdr,
+      input.networkPassphrase,
+      input.expectedIntent,
+    );
+  }
+
   return {
     status: "registered",
     transactionHash,
-    registryProjectId: projectIdFromReturnValue(response.returnValue),
+    registryProjectId:
+      projectIdFromReturnValue(response.returnValue) ??
+      projectIdFromRegistrationEvent(response.events?.contractEventsXdr, input.registryContractId),
     createdLedger: response.ledger ?? null,
   };
 }

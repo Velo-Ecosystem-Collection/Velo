@@ -15,7 +15,7 @@
     "@convex-dev/migrations": "^0.3.5",
     "@repo/observability": "workspace:*",
     "@repo/stellar": "workspace:*",
-    "@stellar/stellar-sdk": "14.2.0",
+    "@stellar/stellar-sdk": "14.6.0",
     "@upstash/redis": "^1.38.0",
     "convex": "^1.49.0"
   },

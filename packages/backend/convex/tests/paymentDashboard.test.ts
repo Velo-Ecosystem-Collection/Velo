@@ -7,7 +7,7 @@ import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
 
-const OWNER = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+const OWNER = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
 const OTHER_OWNER = "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 
 function asWallet(t: ReturnType<typeof convexTest>, address: string) {

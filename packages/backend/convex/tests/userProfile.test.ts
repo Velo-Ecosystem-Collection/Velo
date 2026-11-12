@@ -8,7 +8,7 @@ import { api } from "../_generated/api";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
-const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
 
 function asWallet(t: ReturnType<typeof convexTest>, address = ownerAddress) {
   return t.withIdentity({
@@ -141,7 +141,7 @@ test("avatar mutations reject missing, non-image, and oversized storage objects"
 test("avatar endpoints require authentication and removal is identity scoped", async () => {
   const t = convexTest(schema, modules);
   const owner = asWallet(t);
-  const attacker = asWallet(t, "GCZ5BHUQO4ZWP6JQ3VWP2GIQIOLPSTWXX27J3LCOVY6NMMPBJ2OIYNQF");
+  const attacker = asWallet(t, "GDFJHLAXAUMHA4OWPOB4P7YO72AQR2HMIUYFOXLXE2DZGM633K7HZDQP");
   const avatarStorageId = await storeFile(t, ["avatar"], "image/png");
 
   await owner.mutation(api.users.mutation.upsertProfile, {

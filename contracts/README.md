@@ -89,3 +89,11 @@ Successful deployments write `deployments/<network>.json` by default. The manife
 
 Use `--output <path>` to select a different manifest location. The command also prints the web and
 backend environment variables that must be updated after deployment.
+
+## SEP-45 Web Auth
+
+The contract at [`web_auth/`](web_auth/README.md) is deployed separately from Registry and
+PayAccess. It implements Velo's stateless SEP-45 `web_auth_verify` authorization call. Build and
+deploy it on Testnet, then set the returned contract ID as
+`NEXT_PUBLIC_VELO_WEB_AUTH_CONTRACT_ID`; the web app's Stellar TOML route publishes the ID and
+authentication endpoint. The main deployment script does not deploy this authentication contract.

@@ -8,6 +8,10 @@ import {
 } from "@stellar/stellar-sdk";
 
 import {
+  assertTransactionMatchesContractCall,
+  type ContractCallIntent,
+} from "./contract-invocation.ts";
+import {
   assertValidContractId,
   assertValidPublicKey,
   assertValidTransactionHash,
@@ -24,6 +28,8 @@ export type ActivatePaymentsTransactionInput = {
 export type ConfirmActivatePaymentsInput = {
   rpcUrl: string;
   transactionHash: string;
+  networkPassphrase?: string;
+  expectedIntent?: ContractCallIntent;
 };
 
 export type SetDisplayBalanceTransactionInput = ActivatePaymentsTransactionInput & {
@@ -123,6 +129,19 @@ export async function confirmActivatePayments(
       transactionHash,
       message: `Activate payments transaction ${response.status.toLowerCase()}`,
     };
+  }
+
+  if (input.expectedIntent) {
+    if (!input.networkPassphrase) {
+      throw new Error(
+        "A network passphrase is required to verify the confirmed payment-access call.",
+      );
+    }
+    assertTransactionMatchesContractCall(
+      response.envelopeXdr,
+      input.networkPassphrase,
+      input.expectedIntent,
+    );
   }
 
   return {

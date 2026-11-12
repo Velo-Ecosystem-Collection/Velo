@@ -19,7 +19,7 @@ function asWallet(t: ReturnType<typeof convexTest>, ownerAddress: string) {
 
 test("historical provider, settlement, payment, and billing rows remain readable", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
     name: "Historical Settlement Store",

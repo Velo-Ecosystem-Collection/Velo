@@ -21,7 +21,7 @@ function asWallet(t: ReturnType<typeof convexTest>, ownerAddress: string) {
 test("payment intent lifecycle", async () => {
   const t = convexTest(schema, modules);
 
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
 
   // Create a draft project
@@ -198,7 +198,7 @@ test("payment intent lifecycle", async () => {
     }),
   ).rejects.toThrow("Not authenticated");
 
-  const otherOwnerAddress = "GBCX...OTHER";
+  const otherOwnerAddress = "GCATS5YOVB6ROX2WUNKGNQ2MP3GMXDMKSG2O4N5CLX3A6W4PZGZZI55U";
   const otherOwner = asWallet(t, otherOwnerAddress);
   await otherOwner.mutation(api.projects.mutation.createDraft, {
     name: "Other Merchant",
@@ -227,7 +227,7 @@ test("payment intent lifecycle", async () => {
 test("payment intent creation allows omitted redirect urls", async () => {
   const t = convexTest(schema, modules);
 
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
     name: "Merchant Store",
@@ -273,7 +273,7 @@ test("payment intent creation allows omitted redirect urls", async () => {
 test("payment intent stats aggregation and scanner execution", async () => {
   const t = convexTest(schema, modules);
 
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
     name: "Merchant Store Stats",
@@ -403,7 +403,7 @@ async function createPaymentReadyProject(
 test("public payment intent create is idempotent per project and request", async () => {
   const t = convexTest(schema, modules);
   const { apiKeyHash } = await createPaymentReadyProject(t, {
-    ownerAddress: "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP",
+    ownerAddress: "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR",
     name: "Idempotent Merchant",
     slug: "idempotent-merchant",
   });
@@ -444,7 +444,7 @@ test("public payment intent create is idempotent per project and request", async
 test("cancelled checkout is terminal and a fresh idempotency key creates a new intent", async () => {
   const t = convexTest(schema, modules);
   const { apiKeyHash } = await createPaymentReadyProject(t, {
-    ownerAddress: "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP",
+    ownerAddress: "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR",
     name: "Cancellation Retry Merchant",
     slug: "cancellation-retry-merchant",
   });
@@ -489,12 +489,12 @@ test("cancelled checkout is terminal and a fresh idempotency key creates a new i
 test("public retrieve and list are scoped to the API key project", async () => {
   const t = convexTest(schema, modules);
   const projectA = await createPaymentReadyProject(t, {
-    ownerAddress: "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP",
+    ownerAddress: "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR",
     name: "Scoped Merchant A",
     slug: "scoped-merchant-a",
   });
   const projectB = await createPaymentReadyProject(t, {
-    ownerAddress: "GBYV7ZZXECJON5RKIW3OUL5NIGKWE6B7VNOQVZ3ZQ7QIT6DXY7H3KGAB",
+    ownerAddress: "GDWUSKGGFDI4FRXK5EBTRECZSVQSSWJHHJOGH6JWG3AUMFFMQ435DIAG",
     name: "Scoped Merchant B",
     slug: "scoped-merchant-b",
   });
@@ -587,7 +587,7 @@ test("new payment creation rejects explicit and inherited legacy PDAX routing", 
     ...(anchor ? { anchor } : {}),
   });
   const projectDefault = await createPaymentReadyProject(t, {
-    ownerAddress: "GPDAXPROJECTDEFAULT",
+    ownerAddress: "GDM36IKIOSFILSE5UWVNR3QLB7BNCBP5HHKBUTDZMU3DKTYK4KIAYEFK",
     name: "Legacy Project Default",
     slug: "legacy-project-default",
   });
@@ -606,7 +606,7 @@ test("new payment creation rejects explicit and inherited legacy PDAX routing", 
   expect(inheritedProject.status).toBe("pdax_unavailable");
 
   const keyScope = await createPaymentReadyProject(t, {
-    ownerAddress: "GPDAXKEYSCOPE",
+    ownerAddress: "GBOJY3PSMHE4XBAEOV3WVLX43FCLIBJSR6VSR6NTVFPPIBEQ2PPIJIWH",
     name: "Legacy Key Scope",
     slug: "legacy-key-scope",
   });
@@ -666,7 +666,7 @@ test("new payment creation rejects explicit and inherited legacy PDAX routing", 
 
 test("payment.created webhook scheduling is demand-driven", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
     name: "Webhook Scheduling Store",
@@ -729,7 +729,7 @@ test("payment.created webhook scheduling is demand-driven", async () => {
 test("V2 in-house creation keeps idempotency without scheduling provider routing", async () => {
   const t = convexTest(schema, modules);
   const { projectId, apiKeyHash, owner } = await createPaymentReadyProject(t, {
-    ownerAddress: "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP",
+    ownerAddress: "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR",
     name: "In-house V2 Store",
     slug: "inhouse-v2-store",
   });
@@ -748,7 +748,7 @@ test("V2 in-house creation keeps idempotency without scheduling provider routing
   expect(initial.intent.status).toBe("created");
   expect(initial.intent.anchor).toBe("inhouse");
   expect(initial.intent.receiverAddress).toBe(
-    "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP",
+    "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR",
   );
   expect(results.filter((result) => result.status === "success")).toHaveLength(1);
   expect(results.filter((result) => result.status === "idempotency_replay")).toHaveLength(11);
@@ -772,7 +772,7 @@ test("V2 in-house creation keeps idempotency without scheduling provider routing
 test("legacy PDAX checkout cannot submit, but submitted transactions still require ledger verification", async () => {
   const t = convexTest(schema, modules);
   const { projectId, owner } = await createPaymentReadyProject(t, {
-    ownerAddress: "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP",
+    ownerAddress: "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR",
     name: "Legacy PDAX Store",
     slug: "legacy-pdax-store",
   });
@@ -855,7 +855,7 @@ test("legacy PDAX checkout cannot submit, but submitted transactions still requi
 test("queued legacy PDAX workers are safe no-ops and do not modify retained records", async () => {
   const t = convexTest(schema, modules);
   const { projectId } = await createPaymentReadyProject(t, {
-    ownerAddress: "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP",
+    ownerAddress: "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR",
     name: "Queued PDAX Jobs",
     slug: "queued-pdax-jobs",
   });

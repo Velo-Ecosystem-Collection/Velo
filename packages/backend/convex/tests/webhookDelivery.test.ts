@@ -18,7 +18,7 @@ function asWallet(t: ReturnType<typeof convexTest>, ownerAddress: string) {
 test("webhook endpoint secret rotation", async () => {
   const t = convexTest(schema, modules);
 
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
 
   // Create a draft project
@@ -60,7 +60,7 @@ test("webhook endpoint secret rotation", async () => {
 
 test("new webhook settings reject provider events while existing historical subscriptions remain editable", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
     name: "Historical Provider Webhooks",
@@ -122,7 +122,7 @@ test("new webhook settings reject provider events while existing historical subs
 test("webhook delivery retry and backoff lifecycle", async () => {
   const t = convexTest(schema, modules);
 
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
 
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
@@ -242,7 +242,7 @@ test("webhook delivery retry and backoff lifecycle", async () => {
 
 test("scheduled delivery contains invalid legacy endpoints in the retry lifecycle", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
     name: "Legacy Webhook Merchant",
@@ -296,7 +296,7 @@ test("scheduled delivery contains invalid legacy endpoints in the retry lifecycl
 test("webhook retry scheduling honors Retry-After for retryable endpoint failures", async () => {
   const t = convexTest(schema, modules);
 
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
 
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
@@ -346,7 +346,7 @@ test("webhook retry scheduling honors Retry-After for retryable endpoint failure
 
 test("webhook delivery preserves correlation ID in storage, payload, and headers", async () => {
   const t = convexTest(schema, modules);
-  const ownerAddress = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const ownerAddress = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, ownerAddress);
   const projectId = await owner.mutation(api.projects.mutation.createDraft, {
     name: "Correlation Merchant",

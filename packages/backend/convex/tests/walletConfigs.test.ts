@@ -33,7 +33,7 @@ async function createProject(
 
 test("owner creates and updates a Testnet wallet draft", async () => {
   const t = convexTest(schema, modules);
-  const address = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const address = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, address);
   const projectId = await createProject(owner, address, "wallet-draft");
 
@@ -61,9 +61,9 @@ test("owner creates and updates a Testnet wallet draft", async () => {
 
 test("another wallet cannot read or mutate a wallet draft", async () => {
   const t = convexTest(schema, modules);
-  const address = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const address = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, address);
-  const attacker = asWallet(t, "GDFWQCS3C72IWT5QV6CJYCMCQZ4WQ2QELSE6ABWI5Q3XRZ6BPGRS6LZV");
+  const attacker = asWallet(t, "GCATS5YOVB6ROX2WUNKGNQ2MP3GMXDMKSG2O4N5CLX3A6W4PZGZZI55U");
   const projectId = await createProject(owner, address, "wallet-private-draft");
 
   await owner.mutation(api.wallet_configs.mutation.saveDraft, {
@@ -88,7 +88,7 @@ test("another wallet cannot read or mutate a wallet draft", async () => {
 
 test("publishing creates immutable revisions and a browser-safe projection", async () => {
   const t = convexTest(schema, modules);
-  const address = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const address = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, address);
   const projectId = await createProject(owner, address, "wallet-publication");
 
@@ -162,7 +162,7 @@ test("publishing creates immutable revisions and a browser-safe projection", asy
 
 test("published selector can use the project logo uploaded in Project Settings", async () => {
   const t = convexTest(schema, modules);
-  const address = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const address = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, address);
   const projectId = await createProject(owner, address, "wallet-project-logo");
   const logoStorageId = await t.run(
@@ -220,7 +220,7 @@ test("published selector can use the project logo uploaded in Project Settings",
 
 test("public lookup enforces origins and disabled state", async () => {
   const t = convexTest(schema, modules);
-  const address = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const address = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, address);
   const projectId = await createProject(owner, address, "wallet-origin");
   const saved = await owner.mutation(api.wallet_configs.mutation.saveDraft, {
@@ -251,7 +251,7 @@ test("public lookup enforces origins and disabled state", async () => {
 
 test("saving a draft does not change the active publication origin policy", async () => {
   const t = convexTest(schema, modules);
-  const address = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const address = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, address);
   const projectId = await createProject(owner, address, "wallet-origin-revision");
   const input = {
@@ -290,7 +290,7 @@ test("saving a draft does not change the active publication origin policy", asyn
 
 test("Mainnet publication requires a non-local HTTPS origin", async () => {
   const t = convexTest(schema, modules);
-  const address = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+  const address = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
   const owner = asWallet(t, address);
   const projectId = await createProject(owner, address, "wallet-mainnet-validation");
 

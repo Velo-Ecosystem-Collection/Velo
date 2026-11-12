@@ -274,7 +274,7 @@ contract-specific READMEs together.
 
 ### Prerequisites
 
-- Node.js `>=18`.
+- Node.js `>=22` (`smart-account-kit` requires Node.js 22 or newer).
 - pnpm `10.25.0` or compatible.
 - A Convex project.
 - Rust and the Stellar CLI for smart-contract work.

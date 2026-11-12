@@ -515,6 +515,8 @@ export class GasFixtureStore {
         ? [{ id: "gas-e2e-wallet", name: "Simulated test wallet", isAvailable: true }]
         : [],
       staleAddress: null,
+      passkeyAccounts: [],
+      passkeyEnabled: false,
     };
   }
 

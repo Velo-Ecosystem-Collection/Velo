@@ -71,9 +71,11 @@ import providerResilience from "./provider_resilience/schema";
 import rateLimitBuckets from "./rate_limit_buckets/schema";
 import settlementQuotes from "./settlement_quotes/schema";
 import settlementTransactions from "./settlement_transactions/schema";
+import smartAccountRelayerFeeBudgets from "./smart_account_auth/fee_budget_schema";
 import telemetryOutbox from "./telemetry_outbox/schema";
 import transactions from "./transactions/schema";
 import users from "./users/schema";
+import contractAccountAuthChallenges from "./wallet_auth/contract_challenges_schema";
 import walletAuthChallenges from "./wallet_auth/schema";
 import { walletConfigPublications, walletConfigs } from "./wallet_configs/schema";
 import webhookDeliveries from "./webhook_deliveries/schema";
@@ -144,6 +146,7 @@ export default defineSchema({
   providerResilience,
   settlementQuotes,
   settlementTransactions,
+  smartAccountRelayerFeeBudgets,
   shadowBillingDecisions,
   treasuryReceipts,
   telemetryOutbox,
@@ -155,4 +158,5 @@ export default defineSchema({
   walletConfigs,
   walletConfigPublications,
   walletAuthChallenges,
+  contractAccountAuthChallenges,
 });

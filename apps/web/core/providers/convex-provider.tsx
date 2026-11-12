@@ -12,8 +12,10 @@ import {
   shouldReportWalletAuthenticated,
   shouldReuseWalletToken,
 } from "../auth/convex-auth";
+import { discoverSep45Config, validateSep45Challenge } from "../auth/sep45-client";
 import { WALLET_AUTH_KEY_ID } from "../auth/wallet-auth-constants";
 import { env } from "../config/env";
+import { stellarConfig } from "../config/stellar";
 import { WalletRequestScope } from "../wallet/wallet-connect-policy";
 
 const convex = new ConvexReactClient(env.NEXT_PUBLIC_CONVEX_URL!, {
@@ -30,6 +32,12 @@ type WalletToken = {
 type WalletChallengeResponse = {
   challengeId: string;
   challenge: string;
+};
+
+type Sep45ChallengeResponse = {
+  authorization_entries: string;
+  network_passphrase: string;
+  signature_expiration_ledger: number;
 };
 
 type WalletSessionResponse = {
@@ -54,12 +62,25 @@ function isWalletSessionResponse(value: unknown): value is WalletSessionResponse
   return typeof result.token === "string" && typeof result.address === "string";
 }
 
+function isSep45ChallengeResponse(value: unknown): value is Sep45ChallengeResponse {
+  if (!value || typeof value !== "object") return false;
+  const result = value as Record<string, unknown>;
+  return (
+    typeof result.authorization_entries === "string" &&
+    typeof result.network_passphrase === "string" &&
+    typeof result.signature_expiration_ledger === "number"
+  );
+}
+
 async function authFailureMessage(response: Response, fallback: string) {
   try {
     const value: unknown = await response.json();
     if (!value || typeof value !== "object") return fallback;
-    const code = (value as Record<string, unknown>).code;
-    return typeof code === "string" ? walletAuthFailureMessage(code) : fallback;
+    const record = value as Record<string, unknown>;
+    const code = record.code;
+    if (typeof code === "string") return walletAuthFailureMessage(code);
+    const message = record.error ?? record.message;
+    return typeof message === "string" && message.length <= 240 ? message : fallback;
   } catch {
     return fallback;
   }
@@ -123,11 +144,18 @@ function validTokenForWallet(
 }
 
 function useWalletConvexAuth() {
-  const { address: walletAddress, status: walletStatus, disconnect, signTransaction } = useWallet();
+  const {
+    address: walletAddress,
+    identityType,
+    status: walletStatus,
+    disconnect,
+    signTransaction,
+    signContractAuthorizationEntries,
+  } = useWallet();
   const tokenRef = useRef<WalletToken | null>(null);
   const pendingPromiseRef = useRef<Promise<string | null> | null>(null);
   const requestScope = useRef(new WalletRequestScope());
-  const identity = `${walletStatus}:${walletAddress ?? ""}`;
+  const identity = `${walletStatus}:${identityType ?? ""}:${walletAddress ?? ""}`;
   const previousIdentity = useRef(identity);
   if (previousIdentity.current !== identity) {
     previousIdentity.current = identity;
@@ -203,48 +231,102 @@ function useWalletConvexAuth() {
       const isCurrent = requestScope.current.capture();
       const fetchPromise = (async () => {
         try {
-          const challengeResponse = await fetch("/api/auth/wallet/challenge", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ address: walletAddress }),
-          });
-          if (!challengeResponse.ok) {
-            throw new WalletError(
-              "WALLET_AUTH_FAILED",
-              await authFailureMessage(
-                challengeResponse,
-                "Velo could not start wallet verification.",
-              ),
+          let authResult: unknown;
+          if (identityType === "passkey_smart_account") {
+            const config = await discoverSep45Config();
+            const homeDomain = window.location.host;
+            const url = new URL(config.endpoint);
+            url.searchParams.set("account", walletAddress);
+            url.searchParams.set("home_domain", homeDomain);
+            const challengeResponse = await fetch(url, { cache: "no-store" });
+            if (!challengeResponse.ok) {
+              throw new WalletError(
+                "WALLET_AUTH_FAILED",
+                await authFailureMessage(
+                  challengeResponse,
+                  "Velo could not start passkey smart-account verification.",
+                ),
+              );
+            }
+            const challengeValue: unknown = await challengeResponse.json();
+            if (!isSep45ChallengeResponse(challengeValue)) {
+              throw new WalletError(
+                "WALLET_AUTH_FAILED",
+                "Velo returned an invalid SEP-45 challenge.",
+              );
+            }
+            const { expirationLedger } = validateSep45Challenge({
+              account: walletAddress,
+              challenge: challengeValue,
+              config,
+              networkPassphrase: stellarConfig.networkPassphrase,
+              homeDomain,
+            });
+            if (!isCurrent()) return null;
+            const signedEntries = await signContractAuthorizationEntries(
+              challengeValue.authorization_entries,
+              expirationLedger,
             );
-          }
-          const challengeResult: unknown = await challengeResponse.json();
-          if (!isWalletChallengeResponse(challengeResult)) {
-            throw new WalletError(
-              "WALLET_AUTH_FAILED",
-              "Velo returned an invalid wallet challenge.",
-            );
-          }
-          if (!isCurrent()) return null;
+            if (!isCurrent()) return null;
+            const sessionResponse = await fetch(config.endpoint, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ authorization_entries: signedEntries }),
+            });
+            if (!sessionResponse.ok) {
+              throw new WalletError(
+                "WALLET_AUTH_FAILED",
+                await authFailureMessage(
+                  sessionResponse,
+                  "Velo could not verify the passkey account.",
+                ),
+              );
+            }
+            authResult = await sessionResponse.json();
+          } else {
+            const challengeResponse = await fetch("/api/auth/wallet/challenge", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ address: walletAddress }),
+            });
+            if (!challengeResponse.ok) {
+              throw new WalletError(
+                "WALLET_AUTH_FAILED",
+                await authFailureMessage(
+                  challengeResponse,
+                  "Velo could not start wallet verification.",
+                ),
+              );
+            }
+            const challengeResult: unknown = await challengeResponse.json();
+            if (!isWalletChallengeResponse(challengeResult)) {
+              throw new WalletError(
+                "WALLET_AUTH_FAILED",
+                "Velo returned an invalid wallet challenge.",
+              );
+            }
+            if (!isCurrent()) return null;
 
-          const signedChallenge = await signTransaction(challengeResult.challenge);
-          if (!isCurrent()) return null;
+            const signedChallenge = await signTransaction(challengeResult.challenge);
+            if (!isCurrent()) return null;
 
-          const sessionResponse = await fetch("/api/auth/wallet/session", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              address: walletAddress,
-              challengeId: challengeResult.challengeId,
-              signedChallenge,
-            }),
-          });
-          if (!sessionResponse.ok) {
-            throw new WalletError(
-              "WALLET_AUTH_FAILED",
-              "Velo could not verify the wallet signature.",
-            );
+            const sessionResponse = await fetch("/api/auth/wallet/session", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                address: walletAddress,
+                challengeId: challengeResult.challengeId,
+                signedChallenge,
+              }),
+            });
+            if (!sessionResponse.ok) {
+              throw new WalletError(
+                "WALLET_AUTH_FAILED",
+                "Velo could not verify the wallet signature.",
+              );
+            }
+            authResult = await sessionResponse.json();
           }
-          const authResult: unknown = await sessionResponse.json();
           if (!isWalletSessionResponse(authResult)) {
             throw new WalletError("WALLET_AUTH_FAILED", "Velo returned an invalid wallet session.");
           }
@@ -281,7 +363,14 @@ function useWalletConvexAuth() {
       pendingPromiseRef.current = fetchPromise;
       return fetchPromise;
     },
-    [disconnect, signTransaction, walletAddress, walletStatus],
+    [
+      disconnect,
+      identityType,
+      signContractAuthorizationEntries,
+      signTransaction,
+      walletAddress,
+      walletStatus,
+    ],
   );
 
   const hasValidToken = validTokenForWallet(tokenState, walletAddress);

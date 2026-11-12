@@ -8,6 +8,7 @@ import {
   draftProjectArgs,
   allocateProjectSlug,
   buildProjectMetadata,
+  identityOwnerAddress,
   normalizeAddress,
   normalizeProjectName,
   normalizeTransactionHash,
@@ -23,6 +24,9 @@ export const createDraft = mutation({
     const identity = await requireIdentity(ctx);
     const now = Date.now();
     const ownerAddress = normalizeAddress(args.ownerAddress);
+    if (ownerAddress !== identityOwnerAddress(identity)) {
+      throw new Error("A project owner address must match the authenticated wallet identity.");
+    }
     const name = args.name.trim();
     const description = args.description.trim();
     const slug = await allocateProjectSlug(ctx, args.slug);
@@ -193,6 +197,9 @@ export const updateDraft = mutation({
     }
 
     const ownerAddress = normalizeAddress(args.ownerAddress);
+    if (ownerAddress !== project.ownerAddress) {
+      throw new Error("A project owner address cannot change while updating a draft.");
+    }
     const name = args.name.trim();
     const description = args.description.trim();
     const normalizedName = normalizeProjectName(name);

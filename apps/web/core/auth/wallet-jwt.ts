@@ -4,7 +4,13 @@ import {
   WALLET_AUTH_APPLICATION_ID,
   WALLET_AUTH_SERVICE_SUBJECT,
 } from "@repo/backend/convex/auth.constants.ts";
-import { assertValidPublicKey, Keypair, Transaction, WebAuth } from "@repo/stellar";
+import {
+  assertValidAccountAddress,
+  assertValidPublicKey,
+  Keypair,
+  Transaction,
+  WebAuth,
+} from "@repo/stellar";
 
 import { stellarConfig } from "../config/stellar.ts";
 import { WALLET_AUTH_KEY_ID } from "./wallet-auth-constants.ts";
@@ -31,7 +37,7 @@ function hmacSecret() {
   return secret;
 }
 
-function issuer() {
+export function walletAuthIssuer() {
   return (
     process.env.VELO_AUTH_ISSUER ||
     process.env.NEXT_PUBLIC_APP_URL ||
@@ -47,7 +53,7 @@ function privateKeyPem() {
   return pem;
 }
 
-function serverKeypair() {
+export function walletAuthServerKeypair() {
   const secret = process.env.VELO_AUTH_SERVER_SECRET;
   if (secret) {
     return Keypair.fromSecret(secret);
@@ -85,8 +91,8 @@ function derToJose(signature: Buffer) {
 
 export function createWalletChallenge(address: string) {
   const normalizedAddress = assertValidPublicKey(address);
-  const serverKP = serverKeypair();
-  const homeDomain = new URL(issuer()).host;
+  const serverKP = walletAuthServerKeypair();
+  const homeDomain = new URL(walletAuthIssuer()).host;
 
   const challenge = WebAuth.buildChallengeTx(
     serverKP,
@@ -106,8 +112,8 @@ export function createWalletChallenge(address: string) {
 
 export function verifyWalletChallenge(input: { address: string; challenge: string }) {
   const normalizedAddress = assertValidPublicKey(input.address);
-  const serverKP = serverKeypair();
-  const homeDomain = new URL(issuer()).host;
+  const serverKP = walletAuthServerKeypair();
+  const homeDomain = new URL(walletAuthIssuer()).host;
 
   const { clientAccountID } = WebAuth.readChallengeTx(
     input.challenge,
@@ -142,7 +148,7 @@ function createJwt(subject: string, ttlSeconds: number) {
   const header = base64Url(JSON.stringify({ alg: "ES256", kid: WALLET_AUTH_KEY_ID, typ: "JWT" }));
   const payload = base64Url(
     JSON.stringify({
-      iss: issuer(),
+      iss: walletAuthIssuer(),
       sub: subject,
       aud: WALLET_AUTH_APPLICATION_ID,
       iat: now,
@@ -156,7 +162,7 @@ function createJwt(subject: string, ttlSeconds: number) {
 }
 
 export function createWalletJwt(address: string) {
-  return createJwt(assertValidPublicKey(address), TOKEN_TTL_SECONDS);
+  return createJwt(assertValidAccountAddress(address), TOKEN_TTL_SECONDS);
 }
 
 export function createWalletAuthServiceJwt() {
@@ -181,7 +187,7 @@ export function walletJwks() {
 export function walletAuthConfig() {
   return {
     applicationID: WALLET_AUTH_APPLICATION_ID,
-    issuer: issuer(),
-    jwks: `${issuer()}/api/auth/wallet/jwks`,
+    issuer: walletAuthIssuer(),
+    jwks: `${walletAuthIssuer()}/api/auth/wallet/jwks`,
   };
 }

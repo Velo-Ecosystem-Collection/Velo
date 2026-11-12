@@ -2,6 +2,11 @@
 
 import { useSelectedProject } from "@/core/app-shell";
 import { stellarConfig } from "@/core/config/stellar";
+import {
+  paymentActivationArgs,
+  projectRegistrationArgs,
+  submitSmartAccountCall,
+} from "@/core/stellar/smart-account-operations";
 import { shortenAddress } from "@/core/wallet/format";
 import { useWallet } from "@/core/wallet/wallet-provider";
 import { api } from "@repo/backend/convex/_generated/api";
@@ -131,16 +136,31 @@ export function ProjectDashboard() {
   const [txHash, setTxHash] = useState<string | null>(null);
 
   useEffect(() => {
+    const pendingProject = project;
+    const ownerAddress = wallet.address;
     if (
-      project &&
-      project.isOwner &&
-      project.status === "pending_registration" &&
-      project.registrationTxHash &&
+      ownerAddress &&
+      pendingProject &&
+      pendingProject.isOwner &&
+      pendingProject.status === "pending_registration" &&
+      pendingProject.registrationTxHash &&
       !isRegistering
     ) {
       let active = true;
-      const hash = project.registrationTxHash;
-      const projectId = project._id;
+      const hash = pendingProject.registrationTxHash;
+      const projectId = pendingProject._id;
+      const expectedIntent = {
+        targetContractId: stellarConfig.registryContractId!,
+        functionName: "register_project",
+        args: projectRegistrationArgs(
+          ownerAddress,
+          pendingProject.name,
+          pendingProject.metadataHash,
+        ),
+        ...(wallet.identityType === "passkey_smart_account"
+          ? { smartAccountAddress: ownerAddress }
+          : {}),
+      };
 
       async function poll() {
         try {
@@ -149,6 +169,7 @@ export function ProjectDashboard() {
             networkPassphrase: stellarConfig.networkPassphrase,
             registryContractId: stellarConfig.registryContractId!,
             transactionHash: hash,
+            expectedIntent,
           });
 
           while (active && confirmation.status === "pending") {
@@ -158,6 +179,7 @@ export function ProjectDashboard() {
               networkPassphrase: stellarConfig.networkPassphrase,
               registryContractId: stellarConfig.registryContractId!,
               transactionHash: hash,
+              expectedIntent,
             });
           }
 
@@ -181,7 +203,13 @@ export function ProjectDashboard() {
         active = false;
       };
     }
-  }, [project?.isOwner, project?.status, project?.registrationTxHash]);
+  }, [
+    project?.isOwner,
+    project?.status,
+    project?.registrationTxHash,
+    wallet.address,
+    wallet.identityType,
+  ]);
 
   const wait = (milliseconds: number) => {
     return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -194,22 +222,39 @@ export function ProjectDashboard() {
     setTxHash(null);
 
     try {
-      const transactionXdr = await buildRegisterProjectTransaction({
-        rpcUrl: stellarConfig.rpcUrl,
-        networkPassphrase: stellarConfig.networkPassphrase,
-        registryContractId: stellarConfig.registryContractId!,
-        sourcePublicKey: wallet.address,
-        ownerPublicKey: wallet.address,
-        projectName: project.name,
-        metadataHash: project.metadataHash,
-      });
-
-      const signedXdr = await wallet.signTransaction(transactionXdr);
-      const hash = await submitSignedTransaction({
-        rpcUrl: stellarConfig.rpcUrl,
-        networkPassphrase: stellarConfig.networkPassphrase,
-        signedXdr,
-      });
+      const expectedIntent = {
+        targetContractId: stellarConfig.registryContractId!,
+        functionName: "register_project",
+        args: projectRegistrationArgs(wallet.address, project.name, project.metadataHash),
+        ...(wallet.identityType === "passkey_smart_account"
+          ? { smartAccountAddress: wallet.address }
+          : {}),
+      };
+      let hash: string;
+      if (wallet.identityType === "passkey_smart_account") {
+        hash = await submitSmartAccountCall({
+          smartAccountAddress: wallet.address,
+          targetContractId: stellarConfig.registryContractId!,
+          functionName: "register_project",
+          args: expectedIntent.args,
+        });
+      } else {
+        const transactionXdr = await buildRegisterProjectTransaction({
+          rpcUrl: stellarConfig.rpcUrl,
+          networkPassphrase: stellarConfig.networkPassphrase,
+          registryContractId: stellarConfig.registryContractId!,
+          sourcePublicKey: wallet.address,
+          ownerAddress: wallet.address,
+          projectName: project.name,
+          metadataHash: project.metadataHash,
+        });
+        const signedXdr = await wallet.signTransaction(transactionXdr);
+        hash = await submitSignedTransaction({
+          rpcUrl: stellarConfig.rpcUrl,
+          networkPassphrase: stellarConfig.networkPassphrase,
+          signedXdr,
+        });
+      }
       setTxHash(hash);
 
       await markRegistrationPending({
@@ -222,6 +267,7 @@ export function ProjectDashboard() {
         networkPassphrase: stellarConfig.networkPassphrase,
         registryContractId: stellarConfig.registryContractId!,
         transactionHash: hash,
+        expectedIntent,
       });
 
       for (let attempt = 0; confirmation.status === "pending" && attempt < 8; attempt += 1) {
@@ -231,6 +277,7 @@ export function ProjectDashboard() {
           networkPassphrase: stellarConfig.networkPassphrase,
           registryContractId: stellarConfig.registryContractId!,
           transactionHash: hash,
+          expectedIntent,
         });
       }
 
@@ -265,25 +312,44 @@ export function ProjectDashboard() {
     setTxHash(null);
 
     try {
-      const transactionXdr = await buildActivatePaymentsTransaction({
-        rpcUrl: stellarConfig.rpcUrl,
-        networkPassphrase: stellarConfig.networkPassphrase,
-        payAccessContractId: stellarConfig.payAccessContractId!,
-        sourcePublicKey: wallet.address,
-        registryProjectId: project.registryProjectId,
-      });
-
-      const signedXdr = await wallet.signTransaction(transactionXdr);
-      const hash = await submitSignedTransaction({
-        rpcUrl: stellarConfig.rpcUrl,
-        networkPassphrase: stellarConfig.networkPassphrase,
-        signedXdr,
-      });
+      const expectedIntent = {
+        targetContractId: stellarConfig.payAccessContractId!,
+        functionName: "activate_payments",
+        args: paymentActivationArgs(project.registryProjectId),
+        ...(wallet.identityType === "passkey_smart_account"
+          ? { smartAccountAddress: wallet.address }
+          : {}),
+      };
+      let hash: string;
+      if (wallet.identityType === "passkey_smart_account") {
+        hash = await submitSmartAccountCall({
+          smartAccountAddress: wallet.address,
+          targetContractId: stellarConfig.payAccessContractId!,
+          functionName: "activate_payments",
+          args: expectedIntent.args,
+        });
+      } else {
+        const transactionXdr = await buildActivatePaymentsTransaction({
+          rpcUrl: stellarConfig.rpcUrl,
+          networkPassphrase: stellarConfig.networkPassphrase,
+          payAccessContractId: stellarConfig.payAccessContractId!,
+          sourcePublicKey: wallet.address,
+          registryProjectId: project.registryProjectId,
+        });
+        const signedXdr = await wallet.signTransaction(transactionXdr);
+        hash = await submitSignedTransaction({
+          rpcUrl: stellarConfig.rpcUrl,
+          networkPassphrase: stellarConfig.networkPassphrase,
+          signedXdr,
+        });
+      }
       setTxHash(hash);
 
       let confirmation = await confirmActivatePayments({
         rpcUrl: stellarConfig.rpcUrl,
         transactionHash: hash,
+        networkPassphrase: stellarConfig.networkPassphrase,
+        expectedIntent,
       });
 
       for (let attempt = 0; confirmation.status === "pending" && attempt < 8; attempt += 1) {
@@ -291,6 +357,8 @@ export function ProjectDashboard() {
         confirmation = await confirmActivatePayments({
           rpcUrl: stellarConfig.rpcUrl,
           transactionHash: hash,
+          networkPassphrase: stellarConfig.networkPassphrase,
+          expectedIntent,
         });
       }
 
@@ -509,6 +577,19 @@ export function ProjectDashboard() {
           </Badge>
         ) : null}
       </div>
+
+      {project.ownerAddress.startsWith("C") ? (
+        <Alert>
+          <WalletIcon />
+          <AlertTitle>Passkey smart-account owner</AlertTitle>
+          <AlertDescription>
+            Project registration, Registry links, and payment activation can use this smart account.
+            Operations that require a classic G address as the transaction source remain
+            unavailable. Connecting a separate classic wallet does not change the project owner or
+            give it owner authority.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       {isOwner && project.status !== "registered" && (
         <div className="flex flex-col gap-4 rounded-lg border border-amber-200/60 bg-amber-50/40 p-5 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/40 dark:bg-amber-950/20">

@@ -57,7 +57,7 @@ test("registration transaction uses Stellar ledger time instead of the local clo
       networkPassphrase: Networks.TESTNET,
       registryContractId: contract,
       sourcePublicKey: source,
-      ownerPublicKey: source,
+      ownerAddress: source,
       projectName: "Clock-safe registration",
       metadataHash: "ab".repeat(32),
     });

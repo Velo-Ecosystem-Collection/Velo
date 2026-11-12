@@ -1,6 +1,7 @@
 "use client";
 
 import { stellarConfig } from "@/core/config/stellar";
+import { contractLinkArgs, submitSmartAccountCall } from "@/core/stellar/smart-account-operations";
 import { shortenAddress } from "@/core/wallet/format";
 import { useWallet } from "@/core/wallet/wallet-provider";
 import { api } from "@repo/backend/convex/_generated/api";
@@ -170,6 +171,8 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
     linkId: Id<"projectContracts">,
     transactionHash: string,
     outcome: "add" | "remove",
+    registryProjectId: number,
+    contractAddress: string,
   ) {
     if (!wallet.address) {
       return;
@@ -178,6 +181,15 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
     let confirmation = await confirmContractTransaction({
       rpcUrl: stellarConfig.rpcUrl,
       transactionHash,
+      networkPassphrase: stellarConfig.networkPassphrase,
+      expectedIntent: {
+        targetContractId: stellarConfig.registryContractId!,
+        functionName: outcome === "add" ? "add_contract" : "remove_contract",
+        args: contractLinkArgs(registryProjectId, contractAddress),
+        ...(wallet.identityType === "passkey_smart_account"
+          ? { smartAccountAddress: wallet.address }
+          : {}),
+      },
     });
 
     for (let attempt = 0; confirmation.status === "pending" && attempt < 4; attempt += 1) {
@@ -185,6 +197,15 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
       confirmation = await confirmContractTransaction({
         rpcUrl: stellarConfig.rpcUrl,
         transactionHash,
+        networkPassphrase: stellarConfig.networkPassphrase,
+        expectedIntent: {
+          targetContractId: stellarConfig.registryContractId!,
+          functionName: outcome === "add" ? "add_contract" : "remove_contract",
+          args: contractLinkArgs(registryProjectId, contractAddress),
+          ...(wallet.identityType === "passkey_smart_account"
+            ? { smartAccountAddress: wallet.address }
+            : {}),
+        },
       });
     }
 
@@ -228,20 +249,31 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
     setLocalError(null);
 
     try {
-      const transactionXdr = await buildAddOfficialContractTransaction({
-        rpcUrl: stellarConfig.rpcUrl,
-        networkPassphrase: stellarConfig.networkPassphrase,
-        registryContractId: stellarConfig.registryContractId,
-        sourcePublicKey: wallet.address,
-        registryProjectId: currentProject.registryProjectId,
-        officialContractId: contractId,
-      });
-      const signedXdr = await wallet.signTransaction(transactionXdr);
-      const transactionHash = await submitSignedTransaction({
-        rpcUrl: stellarConfig.rpcUrl,
-        networkPassphrase: stellarConfig.networkPassphrase,
-        signedXdr,
-      });
+      const args = contractLinkArgs(currentProject.registryProjectId, contractId);
+      let transactionHash: string;
+      if (wallet.identityType === "passkey_smart_account") {
+        transactionHash = await submitSmartAccountCall({
+          smartAccountAddress: wallet.address,
+          targetContractId: stellarConfig.registryContractId,
+          functionName: "add_contract",
+          args,
+        });
+      } else {
+        const transactionXdr = await buildAddOfficialContractTransaction({
+          rpcUrl: stellarConfig.rpcUrl,
+          networkPassphrase: stellarConfig.networkPassphrase,
+          registryContractId: stellarConfig.registryContractId,
+          sourcePublicKey: wallet.address,
+          registryProjectId: currentProject.registryProjectId,
+          officialContractId: contractId,
+        });
+        const signedXdr = await wallet.signTransaction(transactionXdr);
+        transactionHash = await submitSignedTransaction({
+          rpcUrl: stellarConfig.rpcUrl,
+          networkPassphrase: stellarConfig.networkPassphrase,
+          signedXdr,
+        });
+      }
       const linkId = await markAddPending({
         projectId: currentProject._id,
         contractId,
@@ -249,7 +281,13 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
       });
 
       setContractId("");
-      await syncContract(linkId, transactionHash, "add");
+      await syncContract(
+        linkId,
+        transactionHash,
+        "add",
+        currentProject.registryProjectId,
+        contractId,
+      );
     } catch (error) {
       setLocalError(
         isRejectedSignature(error)
@@ -272,27 +310,44 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
     let pendingRecorded = false;
 
     try {
-      const transactionXdr = await buildRemoveOfficialContractTransaction({
-        rpcUrl: stellarConfig.rpcUrl,
-        networkPassphrase: stellarConfig.networkPassphrase,
-        registryContractId: stellarConfig.registryContractId,
-        sourcePublicKey: wallet.address,
-        registryProjectId: link.registryProjectId,
-        officialContractId: link.contractId,
-      });
-      const signedXdr = await wallet.signTransaction(transactionXdr);
-      const transactionHash = await submitSignedTransaction({
-        rpcUrl: stellarConfig.rpcUrl,
-        networkPassphrase: stellarConfig.networkPassphrase,
-        signedXdr,
-      });
+      const args = contractLinkArgs(link.registryProjectId, link.contractId);
+      let transactionHash: string;
+      if (wallet.identityType === "passkey_smart_account") {
+        transactionHash = await submitSmartAccountCall({
+          smartAccountAddress: wallet.address,
+          targetContractId: stellarConfig.registryContractId,
+          functionName: "remove_contract",
+          args,
+        });
+      } else {
+        const transactionXdr = await buildRemoveOfficialContractTransaction({
+          rpcUrl: stellarConfig.rpcUrl,
+          networkPassphrase: stellarConfig.networkPassphrase,
+          registryContractId: stellarConfig.registryContractId,
+          sourcePublicKey: wallet.address,
+          registryProjectId: link.registryProjectId,
+          officialContractId: link.contractId,
+        });
+        const signedXdr = await wallet.signTransaction(transactionXdr);
+        transactionHash = await submitSignedTransaction({
+          rpcUrl: stellarConfig.rpcUrl,
+          networkPassphrase: stellarConfig.networkPassphrase,
+          signedXdr,
+        });
+      }
 
       await markRemovePending({
         id: link._id,
         transactionHash,
       });
       pendingRecorded = true;
-      await syncContract(link._id, transactionHash, "remove");
+      await syncContract(
+        link._id,
+        transactionHash,
+        "remove",
+        link.registryProjectId,
+        link.contractId,
+      );
     } catch (error) {
       const message = isRejectedSignature(error)
         ? `Rejected signature: ${errorMessage(error)}`
@@ -319,6 +374,18 @@ export function ProjectContracts({ projectId }: ProjectContractsProps) {
           <Link href="/dashboard">Dashboard</Link>
         </Button>
       </div>
+
+      {currentProject.ownerAddress.startsWith("C") ? (
+        <Alert>
+          <WalletIcon />
+          <AlertTitle>Passkey smart-account owner</AlertTitle>
+          <AlertDescription>
+            Contract links are authorized by the project's smart account. Tools that require a
+            classic G address as the transaction source remain unavailable, and connecting a
+            separate classic wallet does not change the recorded project owner.
+          </AlertDescription>
+        </Alert>
+      ) : null}
 
       {!wallet.address ? (
         <Alert>

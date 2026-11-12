@@ -1,3 +1,4 @@
+import { assertValidAccountAddress } from "@repo/stellar/validation";
 import { v } from "convex/values";
 
 import type { MutationCtx, QueryCtx } from "../_generated/server";
@@ -24,14 +25,14 @@ export const draftProjectArgs = {
 };
 
 export function normalizeAddress(address: string) {
-  return address.trim().toUpperCase();
+  return assertValidAccountAddress(address);
 }
 
 export function normalizeProjectName(name: string) {
   return name.trim().toLowerCase();
 }
 
-function identityOwnerAddress(identity: UserIdentity) {
+export function identityOwnerAddress(identity: UserIdentity) {
   if (typeof identity.subject !== "string") {
     return null;
   }

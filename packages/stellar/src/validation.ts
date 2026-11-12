@@ -25,6 +25,17 @@ export function assertValidPublicKey(publicKey: string) {
   return normalized;
 }
 
+/** Validate an address used as a Stellar identity (classic account or contract account). */
+export function assertValidAccountAddress(address: string) {
+  const normalized = address.trim().toUpperCase();
+
+  if (!StrKey.isValidEd25519PublicKey(normalized) && !StrKey.isValidContract(normalized)) {
+    throw new Error("Invalid Stellar account address");
+  }
+
+  return normalized;
+}
+
 export function assertValidContractId(contractId: string) {
   const normalized = normalizeContractId(contractId);
 

@@ -27,7 +27,7 @@ import { gasMaxTimeEnvelopeFixtures } from "./fixtures";
 const modules = import.meta.glob("../../**/*.ts");
 type TestContext = TestConvexForDataModelAndIdentity<DataModel>;
 
-const OWNER = "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP";
+const OWNER = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
 const API_KEY_HASH = "a".repeat(64);
 const NOW = Date.parse("2026-09-03T12:34:56.789Z");
 const RELAYER_PUBLIC_KEY = GAS_TEST_RELAYER_KEYPAIR.publicKey();

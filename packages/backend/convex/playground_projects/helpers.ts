@@ -1,4 +1,4 @@
-import { assertValidPublicKey } from "@repo/stellar/validation";
+import { assertValidAccountAddress, assertValidPublicKey } from "@repo/stellar/validation";
 
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../_generated/server";
@@ -15,13 +15,11 @@ const SECRET_TEXT_PATTERN =
   /(?:bearer\s+[a-z0-9._~+/=-]{16,}|(?:api[_-]?key|private[_-]?key|seed|mnemonic)\s*[:=]\s*\S{12,})/i;
 
 export function normalizeWalletAddress(value: string) {
-  const normalized = value.trim().toUpperCase();
-  if (!/^G[A-Z2-7]{55}$/.test(normalized)) throw new Error("Invalid Stellar wallet address");
-  return normalized;
+  return assertValidPublicKey(value);
 }
 
 export function normalizeMembershipWalletAddress(value: string) {
-  return assertValidPublicKey(value);
+  return assertValidAccountAddress(value);
 }
 
 export function normalizeContractId(value: string) {
@@ -55,7 +53,7 @@ export async function requireProjectRole(
   const identity = await requireIdentity(ctx);
   const project = await ctx.db.get(projectId);
   if (!project) throw new Error("Project not found");
-  const address = normalizeWalletAddress(String(identity.subject));
+  const address = normalizeMembershipWalletAddress(String(identity.subject));
 
   let role: ProjectRole | null =
     project.ownerTokenIdentifier === identity.tokenIdentifier || project.ownerAddress === address
@@ -87,7 +85,7 @@ export async function requireProjectRoleByToken(
 ) {
   const project = await ctx.db.get(projectId);
   if (!project) throw new Error("Project not found");
-  const address = normalizeWalletAddress(subject);
+  const address = normalizeMembershipWalletAddress(subject);
   let role: ProjectRole | null =
     project.ownerTokenIdentifier === tokenIdentifier || project.ownerAddress === address
       ? "owner"

@@ -1,6 +1,7 @@
 export * from "./auth.ts";
 export * from "./checkout.ts";
 export * from "./contract-config.ts";
+export * from "./contract-invocation.ts";
 export * from "./contract-arguments.ts";
 export * from "./contract-spec.ts";
 export * from "./event-monitor.ts";

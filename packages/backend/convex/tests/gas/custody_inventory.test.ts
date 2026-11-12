@@ -21,7 +21,7 @@ async function createProject(t: TestContext, index: number): Promise<Id<"project
       description: "Internal custody summary test",
       metadataJson: "{}",
       metadataHash: "0".repeat(64),
-      ownerAddress: "GD7O2C226SF2677PFFUVD6O2ICFOBNCWPI5Z46N43ZSFQGLM65U3I2SP",
+      ownerAddress: "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR",
       status: "draft",
       createdAt: 1,
       updatedAt: 1,

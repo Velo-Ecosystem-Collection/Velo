@@ -8,6 +8,7 @@ import {
   draftProjectArgs,
   allocateProjectSlug,
   buildProjectMetadata,
+  identityOwnerAddress,
   normalizeAddress,
   normalizeProjectName,
   normalizeTransactionHash,
@@ -23,6 +24,9 @@ export const createDraft = mutation({
     const identity = await requireIdentity(ctx);
     const now = Date.now();
     const ownerAddress = normalizeAddress(args.ownerAddress);
+    if (ownerAddress !== identityOwnerAddress(identity)) {
+      throw new Error("A project owner address must match the authenticated wallet identity.");
+    }
     const name = args.name.trim();
     const description = args.description.trim();
     const slug = await allocateProjectSlug(ctx, args.slug);
@@ -103,6 +107,7 @@ export const markRegistrationSynced = mutation({
   },
   handler: async (ctx, args) => {
     const project = await requireProjectOwner(ctx, args.id, { allowRetired: true });
+    const shouldNotifyRegistration = project.status !== "registered";
 
     if (!project.registrationTxHash) {
       throw new Error("Project has no registration transaction to sync");
@@ -129,15 +134,17 @@ export const markRegistrationSynced = mutation({
       updatedAt: now,
     });
 
-    await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
-      projectId: args.id,
-      eventType: "project.registered",
-    });
+    if (shouldNotifyRegistration) {
+      await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
+        projectId: args.id,
+        eventType: "project.registered",
+      });
 
-    await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
-      projectId: args.id,
-      eventType: "transaction.succeeded",
-    });
+      await ctx.scheduler.runAfter(0, internal.webhookDelivery.trigger, {
+        projectId: args.id,
+        eventType: "transaction.succeeded",
+      });
+    }
   },
 });
 
@@ -193,6 +200,9 @@ export const updateDraft = mutation({
     }
 
     const ownerAddress = normalizeAddress(args.ownerAddress);
+    if (ownerAddress !== project.ownerAddress) {
+      throw new Error("A project owner address cannot change while updating a draft.");
+    }
     const name = args.name.trim();
     const description = args.description.trim();
     const normalizedName = normalizeProjectName(name);

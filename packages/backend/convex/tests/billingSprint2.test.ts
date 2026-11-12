@@ -43,14 +43,14 @@ async function createProject(
     description: slug,
     metadataJson: "{}",
     metadataHash: "0".repeat(64),
-    ownerAddress: "GOWNER",
+    ownerAddress: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
   });
 }
 
 async function configureOperatorAndOffer(t: ReturnType<typeof convexTest>, creditQuantity = 100n) {
-  const operator = asWallet(t, "GOPERATOR");
+  const operator = asWallet(t, "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB");
   await t.mutation(bootstrapOperator, {
-    walletAddress: "GOPERATOR",
+    walletAddress: "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB",
     actor: "test-bootstrap",
   });
   const offerId = (await operator.mutation(createOffer, {
@@ -59,7 +59,7 @@ async function configureOperatorAndOffer(t: ReturnType<typeof convexTest>, credi
     priceAmount: "20",
     asset: "USDC:GISSUER",
     network: "testnet",
-    treasuryAddress: "GTREASURY",
+    treasuryAddress: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
     activeFrom: Date.now() - 1,
     refundPolicy:
       "Top-ups are prepaid. Verified Velo billing errors receive auditable adjustments.",
@@ -71,7 +71,7 @@ async function configureOperatorAndOffer(t: ReturnType<typeof convexTest>, credi
 test("wallet allowlisted operators manage immutable offer versions", async () => {
   const t = convexTest(schema, modules);
   const { operator, offerId } = await configureOperatorAndOffer(t);
-  const owner = asWallet(t, "GOWNER");
+  const owner = asWallet(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
   await createProject(owner, "offer-project");
 
   const billing = await owner.query(getMerchantBilling, {});
@@ -82,7 +82,7 @@ test("wallet allowlisted operators manage immutable offer versions", async () =>
       creditQuantity: 100n,
       priceAmount: "20",
       asset: "USDC:GISSUER",
-      treasuryAddress: "GTREASURY",
+      treasuryAddress: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
     }),
   );
 
@@ -93,7 +93,7 @@ test("wallet allowlisted operators manage immutable offer versions", async () =>
       priceAmount: "1",
       asset: "USDC:GISSUER",
       network: "testnet",
-      treasuryAddress: "GTREASURY",
+      treasuryAddress: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
       activeFrom: Date.now(),
       refundPolicy: "No.",
       activate: false,
@@ -106,7 +106,7 @@ test("wallet allowlisted operators manage immutable offer versions", async () =>
     priceAmount: "20",
     asset: "USDC:GISSUER",
     network: "testnet",
-    treasuryAddress: "GTREASURY",
+    treasuryAddress: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
     activeFrom: Date.now(),
     refundPolicy: "Updated terms.",
     activate: true,
@@ -118,9 +118,9 @@ test("wallet allowlisted operators manage immutable offer versions", async () =>
 
 test("offer creation accepts a Testnet USDC issuer and stores a canonical asset", async () => {
   const t = convexTest(schema, modules);
-  const operator = asWallet(t, "GOPERATOR");
+  const operator = asWallet(t, "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB");
   await t.mutation(bootstrapOperator, {
-    walletAddress: "GOPERATOR",
+    walletAddress: "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB",
     actor: "test-bootstrap",
   });
 
@@ -130,7 +130,7 @@ test("offer creation accepts a Testnet USDC issuer and stores a canonical asset"
     priceAmount: "20",
     asset: "gissuer",
     network: "testnet",
-    treasuryAddress: "GTREASURY",
+    treasuryAddress: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
     activeFrom: Date.now(),
     refundPolicy: "Test policy.",
     activate: true,
@@ -142,9 +142,9 @@ test("offer creation accepts a Testnet USDC issuer and stores a canonical asset"
 
 test("offer creation accepts XLM and stores the canonical native asset", async () => {
   const t = convexTest(schema, modules);
-  const operator = asWallet(t, "GOPERATOR");
+  const operator = asWallet(t, "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB");
   await t.mutation(bootstrapOperator, {
-    walletAddress: "GOPERATOR",
+    walletAddress: "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB",
     actor: "test-bootstrap",
   });
 
@@ -154,7 +154,7 @@ test("offer creation accepts XLM and stores the canonical native asset", async (
     priceAmount: "10",
     asset: "XLM",
     network: "testnet",
-    treasuryAddress: "GTREASURY",
+    treasuryAddress: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
     activeFrom: Date.now(),
     refundPolicy: "Test policy.",
     activate: true,
@@ -167,7 +167,7 @@ test("offer creation accepts XLM and stores the canonical native asset", async (
 test("merchant billing reports whether platform safety controls allow top-ups", async () => {
   const t = convexTest(schema, modules);
   const { operator } = await configureOperatorAndOffer(t);
-  const owner = asWallet(t, "GOWNER");
+  const owner = asWallet(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
   await createProject(owner, "topup-availability");
 
   const disabled = await owner.query(getMerchantBilling, {});
@@ -192,7 +192,7 @@ test("merchant billing reports whether platform safety controls allow top-ups", 
 test("top-up settlement snapshots the offer and grants paid credits exactly once", async () => {
   const t = convexTest(schema, modules);
   const { operator } = await configureOperatorAndOffer(t);
-  const owner = asWallet(t, "GOWNER");
+  const owner = asWallet(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
   await createProject(owner, "topup-project");
   const organization = await owner.query(api.organizations.queries.getCurrent, {});
 
@@ -215,14 +215,14 @@ test("top-up settlement snapshots the offer and grants paid credits exactly once
       intentType: "billing_topup",
       amount: "20",
       asset: "USDC:GISSUER",
-      receiverAddress: "GTREASURY",
+      receiverAddress: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
     }),
   );
 
   await t.run(async (ctx) => {
     await ctx.db.patch(created.paymentIntentId, {
       status: "pending",
-      payerAddress: "GOWNER",
+      payerAddress: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
       txHash: "a".repeat(64),
     });
   });
@@ -231,8 +231,8 @@ test("top-up settlement snapshots the offer and grants paid credits exactly once
     txHash: "a".repeat(64),
     verifiedNetwork: "testnet",
     verifiedPayment: {
-      source: "GOWNER",
-      destination: "GTREASURY",
+      source: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
+      destination: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
       amount: "20.0000000",
       asset: "USDC:GISSUER",
     },
@@ -242,8 +242,8 @@ test("top-up settlement snapshots the offer and grants paid credits exactly once
     txHash: "a".repeat(64),
     verifiedNetwork: "testnet",
     verifiedPayment: {
-      source: "GOWNER",
-      destination: "GTREASURY",
+      source: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
+      destination: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
       amount: "20",
       asset: "USDC:GISSUER",
     },
@@ -267,7 +267,7 @@ test("cancelling a later top-up preserves credits from an earlier settled top-up
   try {
     const t = convexTest(schema, modules);
     const { operator } = await configureOperatorAndOffer(t, 5n);
-    const owner = asWallet(t, "GOWNER");
+    const owner = asWallet(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
     await createProject(owner, "cancelled-repeat-topup-project");
 
     await operator.mutation(updatePolicy, {
@@ -284,7 +284,7 @@ test("cancelling a later top-up preserves credits from an earlier settled top-up
     await t.run(async (ctx) => {
       await ctx.db.patch(settledTopup.paymentIntentId, {
         status: "pending",
-        payerAddress: "GOWNER",
+        payerAddress: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
         txHash: "e".repeat(64),
       });
     });
@@ -293,8 +293,8 @@ test("cancelling a later top-up preserves credits from an earlier settled top-up
       txHash: "e".repeat(64),
       verifiedNetwork: "testnet",
       verifiedPayment: {
-        source: "GOWNER",
-        destination: "GTREASURY",
+        source: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
+        destination: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
         amount: "20",
         asset: "USDC:GISSUER",
       },
@@ -335,7 +335,7 @@ test("cancelling a later top-up preserves credits from an earlier settled top-up
 test("sandbox enforcement reserves and consumes commercial trial credit", async () => {
   const t = convexTest(schema, modules);
   const { operator } = await configureOperatorAndOffer(t);
-  const owner = asWallet(t, "GOWNER");
+  const owner = asWallet(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
   const projectId = await createProject(owner, "sandbox-project");
   const organization = await owner.query(api.organizations.queries.getCurrent, {});
   if (!organization) throw new Error("Expected organization");
@@ -394,7 +394,7 @@ test("sandbox enforcement reserves and consumes commercial trial credit", async 
   await t.run(async (ctx) => {
     await ctx.db.patch(created.paymentIntentId, {
       status: "pending",
-      payerAddress: "GPAYER",
+      payerAddress: "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57",
       txHash: "b".repeat(64),
     });
   });
@@ -403,8 +403,8 @@ test("sandbox enforcement reserves and consumes commercial trial credit", async 
     txHash: "b".repeat(64),
     verifiedNetwork: "testnet",
     verifiedPayment: {
-      source: "GPAYER",
-      destination: "GOWNER",
+      source: "GDVEU3DD4KOFECV66VIHWEZOYX4ZKR3WV27L464SIIPOU2IUI3JCZA57",
+      destination: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
       amount: "1",
       asset: "native",
     },
@@ -420,7 +420,7 @@ test("the final active operator cannot remove their own wallet", async () => {
 
   await expect(
     operator.mutation(setOperator, {
-      walletAddress: "GOPERATOR",
+      walletAddress: "GCFIOX77D2ZYIUKXPLGVV7XEAVCWK2G5PSE6BEEGHICVPPD26SPRPPVB",
       active: false,
     }),
   ).rejects.toThrow("final active operator");
@@ -429,7 +429,7 @@ test("the final active operator cannot remove their own wallet", async () => {
 test("mismatched treasury payments create durable exceptions and grant nothing", async () => {
   const t = convexTest(schema, modules);
   const { operator } = await configureOperatorAndOffer(t);
-  const owner = asWallet(t, "GOWNER");
+  const owner = asWallet(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
   await createProject(owner, "mismatch-project");
   await operator.mutation(updatePolicy, {
     billingLedgerWrite: true,
@@ -449,8 +449,8 @@ test("mismatched treasury payments create durable exceptions and grant nothing",
     txHash: "c".repeat(64),
     verifiedNetwork: "testnet",
     verifiedPayment: {
-      source: "GOWNER",
-      destination: "GTREASURY",
+      source: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
+      destination: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
       amount: "19",
       asset: "USDC:GISSUER",
     },
@@ -469,7 +469,7 @@ test("mismatched treasury payments create durable exceptions and grant nothing",
 test("reconciliation detects a seeded receipt discrepancy without changing balance", async () => {
   const t = convexTest(schema, modules);
   const { operator } = await configureOperatorAndOffer(t);
-  const owner = asWallet(t, "GOWNER");
+  const owner = asWallet(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
   await createProject(owner, "reconciliation-project");
   await operator.mutation(updatePolicy, {
     billingLedgerWrite: true,
@@ -489,8 +489,8 @@ test("reconciliation detects a seeded receipt discrepancy without changing balan
     txHash: "d".repeat(64),
     verifiedNetwork: "testnet",
     verifiedPayment: {
-      source: "GOWNER",
-      destination: "GTREASURY",
+      source: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
+      destination: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
       amount: "20",
       asset: "USDC:GISSUER",
     },
@@ -516,7 +516,7 @@ test("reconciliation detects a seeded receipt discrepancy without changing balan
 test("reconciliation finds a paid grant after more than 1000 organization ledger entries", async () => {
   const t = convexTest(schema, modules);
   const { operator } = await configureOperatorAndOffer(t);
-  const owner = asWallet(t, "GOWNER");
+  const owner = asWallet(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
   const projectId = await createProject(owner, "reconciliation-large-ledger");
   const organization = await owner.query(api.organizations.queries.getCurrent, {});
   if (!organization) throw new Error("Expected organization");
@@ -559,8 +559,8 @@ test("reconciliation finds a paid grant after more than 1000 organization ledger
     txHash: "e".repeat(64),
     verifiedNetwork: "testnet",
     verifiedPayment: {
-      source: "GOWNER",
-      destination: "GTREASURY",
+      source: "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN",
+      destination: "GD6ROJBYLKQMOW3E7N4M2YBPUHMZD7PL65VRHRMO24BOVSBV5H3BQRSL",
       amount: "20",
       asset: "USDC:GISSUER",
     },
@@ -585,7 +585,7 @@ test("reconciliation finds a paid grant after more than 1000 organization ledger
 test("sandbox enforcement rejects overspending and releases failed reservations", async () => {
   const t = convexTest(schema, modules);
   const { operator } = await configureOperatorAndOffer(t);
-  const owner = asWallet(t, "GOWNER");
+  const owner = asWallet(t, "GBXHUHG5FGYLPD6RHL2MKWMP572O6KUXCZXDZJXS4T57ZTMAKBN7DWXN");
   const projectId = await createProject(owner, "balance-gate-project");
   const organization = await owner.query(api.organizations.queries.getCurrent, {});
   if (!organization) throw new Error("Expected organization");

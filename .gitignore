@@ -43,6 +43,7 @@ yarn-error.log*
 .DS_Store
 *.pem
 .kilo/
+/AGENTS.md
 .codex/
 .claude/
 .agents/

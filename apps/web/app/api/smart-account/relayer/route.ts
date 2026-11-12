@@ -2,6 +2,7 @@ import { reserveSmartAccountFeeBudget } from "@/core/auth/contract-wallet-auth-c
 import { env } from "@/core/config/env";
 import { stellarConfig } from "@/core/config/stellar";
 import { withRouteTelemetry } from "@/core/observability";
+import { isSignedSmartAccountAuthorization } from "@/core/stellar/smart-account-auth-payload";
 import {
   SMART_ACCOUNT_WASM_HASH,
   WEBAUTHN_VERIFIER_CONTRACT_ID,
@@ -281,8 +282,7 @@ function validateSmartAccountExecution(
     throw new Error("Smart-account authorization belongs to a different account.");
   }
   const signature = credentials.signature();
-  const signatureValues = signature.switch().name === "scvVec" ? signature.vec() : null;
-  if (!signatureValues || signatureValues.length === 0) {
+  if (!isSignedSmartAccountAuthorization(signature)) {
     throw new Error("Smart-account authorization is unsigned.");
   }
   return { smartAccount, auth, func };

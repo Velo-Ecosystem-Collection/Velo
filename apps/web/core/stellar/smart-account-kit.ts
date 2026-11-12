@@ -1,14 +1,18 @@
 "use client";
 
+import { Buffer } from "buffer";
+
 import {
   Account,
   Address,
   BASE_FEE,
   Contract,
+  hash,
   nativeToScVal,
   rpc,
   scValToNative,
   TransactionBuilder,
+  xdr,
 } from "@stellar/stellar-sdk";
 import {
   getCredentialIdFromSigner,
@@ -19,6 +23,7 @@ import {
 } from "smart-account-kit";
 
 import type {
+  ContextRule,
   ConnectWalletResult,
   ContractSigner,
   IndexedContractSummary,
@@ -36,7 +41,10 @@ import {
 
 type TSmartAccountKit = InstanceType<typeof SmartAccountKit>;
 const STORAGE_PREFIX = "velo-passkey-smart-accounts";
+const DEFAULT_CONTEXT_RULE_ID = 0;
 let kitInstance: TSmartAccountKit | null = null;
+const verifiedDefaultContextRules = new Map<string, ContextRule>();
+const contextAwareSigningKits = new WeakSet<TSmartAccountKit>();
 
 function normalizeCredentialId(value: string) {
   const clean = value.trim().replace(/^0x/i, "");
@@ -153,6 +161,7 @@ export function getSmartAccountKit() {
     relayerUrl: config.relayerUrl,
     storage: createStorage(config),
   });
+  installContextAwareSigning(kitInstance);
   return kitInstance;
 }
 
@@ -172,6 +181,7 @@ export async function assertSmartAccountFeePayerFunded(kit: TSmartAccountKit) {
 export async function disconnectSmartAccount() {
   if (kitInstance) await kitInstance.disconnect().catch(() => undefined);
   kitInstance = null;
+  verifiedDefaultContextRules.clear();
 }
 
 export async function discoverPasskeyAccounts(kit: TSmartAccountKit, credentialId: string) {
@@ -183,26 +193,439 @@ export async function discoverPasskeyAccounts(kit: TSmartAccountKit, credentialI
   }
 }
 
-function externalSignerMatches(signer: unknown, credentialId: string, verifierAddress: string) {
-  const normalizedSigner =
-    Array.isArray(signer) && signer[0] === "External"
+type PasskeySignatureOptions = {
+  credentialId?: string;
+  expiration?: number;
+};
+
+type WebAuthnAssertion = {
+  id: string;
+  response: {
+    authenticatorData: string;
+    clientDataJSON: string;
+    signature: string;
+  };
+};
+
+type SmartAccountSigningRuntime = {
+  webAuthn?: {
+    startAuthentication(options: {
+      optionsJSON: {
+        challenge: string;
+        rpId: string;
+        userVerification: "preferred";
+        timeout: number;
+        allowCredentials: Array<{ id: string; type: "public-key" }>;
+      };
+    }): Promise<WebAuthnAssertion>;
+  };
+  storage?: StorageAdapter;
+  rpId?: string;
+  calculateExpiration?: () => Promise<number>;
+};
+
+type AuthPayload = {
+  contextRuleIds: number[];
+  signers: Map<string, { signer: ContractSigner; signature: Buffer }>;
+};
+
+function decodeBase64Url(value: string) {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
+  return Buffer.from(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="), "base64");
+}
+
+function encodeBase64Url(value: Uint8Array) {
+  return Buffer.from(value)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+}
+
+function compactEcdsaSignature(derSignature: Buffer) {
+  if (
+    derSignature.length < 8 ||
+    derSignature[0] !== 0x30 ||
+    derSignature[1] !== derSignature.length - 2
+  ) {
+    throw new Error("The authenticator returned an invalid WebAuthn signature.");
+  }
+
+  const readInteger = (offset: number) => {
+    if (derSignature[offset] !== 0x02) {
+      throw new Error("The authenticator returned an invalid WebAuthn signature.");
+    }
+    const length = derSignature[offset + 1];
+    const start = offset + 2;
+    const end = start + (length ?? 0);
+    if (!length || end > derSignature.length || length > 33) {
+      throw new Error("The authenticator returned an invalid WebAuthn signature.");
+    }
+    let bytes = derSignature.subarray(start, end);
+    while (bytes.length > 32 && bytes[0] === 0) bytes = bytes.subarray(1);
+    if (bytes.length > 32) {
+      throw new Error("The authenticator returned an invalid WebAuthn signature.");
+    }
+    return { bytes, next: end };
+  };
+
+  const r = readInteger(2);
+  const s = readInteger(r.next);
+  if (s.next !== derSignature.length) {
+    throw new Error("The authenticator returned an invalid WebAuthn signature.");
+  }
+
+  const curveOrder = BigInt("0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551");
+  const rValue = BigInt(`0x${r.bytes.toString("hex")}`);
+  let sValue = BigInt(`0x${s.bytes.toString("hex")}`);
+  if (rValue <= 0n || rValue >= curveOrder || sValue <= 0n || sValue >= curveOrder) {
+    throw new Error("The authenticator returned an invalid WebAuthn signature.");
+  }
+  if (sValue > curveOrder / 2n) sValue = curveOrder - sValue;
+
+  return Buffer.concat([
+    Buffer.alloc(32 - r.bytes.length),
+    r.bytes,
+    Buffer.from(sValue.toString(16).padStart(64, "0"), "hex"),
+  ]);
+}
+
+function signerScVal(signer: ContractSigner) {
+  if (signer.tag === "Delegated") {
+    return xdr.ScVal.scvVec([
+      xdr.ScVal.scvSymbol("Delegated"),
+      xdr.ScVal.scvAddress(Address.fromString(signer.values[0]).toScAddress()),
+    ]);
+  }
+  return xdr.ScVal.scvVec([
+    xdr.ScVal.scvSymbol("External"),
+    xdr.ScVal.scvAddress(Address.fromString(signer.values[0]).toScAddress()),
+    xdr.ScVal.scvBytes(Buffer.from(signer.values[1])),
+  ]);
+}
+
+function parseSignerScVal(value: xdr.ScVal): ContractSigner {
+  if (value.switch().name !== "scvVec")
+    throw new Error("AuthPayload contains an invalid signer key.");
+  const [variant, address, keyData] = value.vec() ?? [];
+  if (
+    !variant ||
+    !address ||
+    variant.switch().name !== "scvSymbol" ||
+    address.switch().name !== "scvAddress"
+  ) {
+    throw new Error("AuthPayload contains an invalid signer key.");
+  }
+  if (variant.sym().toString() === "Delegated") {
+    return { tag: "Delegated", values: [Address.fromScAddress(address.address()).toString()] };
+  }
+  if (variant.sym().toString() === "External" && keyData?.switch().name === "scvBytes") {
+    return {
+      tag: "External",
+      values: [Address.fromScAddress(address.address()).toString(), Buffer.from(keyData.bytes())],
+    };
+  }
+  throw new Error("AuthPayload contains an unsupported signer key.");
+}
+
+function signerKey(signer: ContractSigner) {
+  return signerScVal(signer).toXDR("hex");
+}
+
+function readAuthPayload(signature: xdr.ScVal): AuthPayload {
+  const payload: AuthPayload = { contextRuleIds: [], signers: new Map() };
+  if (signature.switch().name === "scvVoid") return payload;
+  if (signature.switch().name !== "scvMap") {
+    throw new Error("This smart account uses an unsupported authorization payload format.");
+  }
+
+  for (const field of signature.map() ?? []) {
+    if (field.key().switch().name !== "scvSymbol") continue;
+    const name = field.key().sym().toString();
+    if (name === "context_rule_ids") {
+      if (field.val().switch().name !== "scvVec") {
+        throw new Error("AuthPayload context rule IDs are malformed.");
+      }
+      payload.contextRuleIds = (field.val().vec() ?? []).map((id) => {
+        if (id.switch().name !== "scvU32")
+          throw new Error("AuthPayload context rule IDs are malformed.");
+        return id.u32();
+      });
+    } else if (name === "signers") {
+      if (field.val().switch().name !== "scvMap") {
+        throw new Error("AuthPayload signers are malformed.");
+      }
+      for (const entry of field.val().map() ?? []) {
+        if (entry.val().switch().name !== "scvBytes") {
+          throw new Error("AuthPayload signer signatures are malformed.");
+        }
+        const signer = parseSignerScVal(entry.key());
+        payload.signers.set(signerKey(signer), {
+          signer,
+          signature: Buffer.from(entry.val().bytes()),
+        });
+      }
+    }
+  }
+  return payload;
+}
+
+function webAuthnSignatureScVal(assertion: WebAuthnAssertion) {
+  return xdr.ScVal.scvMap([
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol("authenticator_data"),
+      val: xdr.ScVal.scvBytes(decodeBase64Url(assertion.response.authenticatorData)),
+    }),
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol("client_data"),
+      val: xdr.ScVal.scvBytes(decodeBase64Url(assertion.response.clientDataJSON)),
+    }),
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol("signature"),
+      val: xdr.ScVal.scvBytes(compactEcdsaSignature(decodeBase64Url(assertion.response.signature))),
+    }),
+  ]);
+}
+
+export function buildContextAwareAuthPayload(
+  contextRuleIds: readonly number[],
+  signers: readonly { signer: ContractSigner; signature: Uint8Array }[],
+) {
+  const signerEntries = signers
+    .map(
+      (value) =>
+        new xdr.ScMapEntry({
+          key: signerScVal(value.signer),
+          val: xdr.ScVal.scvBytes(Buffer.from(value.signature)),
+        }),
+    )
+    .sort((left, right) => left.key().toXDR("hex").localeCompare(right.key().toXDR("hex")));
+  return xdr.ScVal.scvMap([
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol("context_rule_ids"),
+      val: xdr.ScVal.scvVec(contextRuleIds.map((id) => xdr.ScVal.scvU32(id))),
+    }),
+    new xdr.ScMapEntry({
+      key: xdr.ScVal.scvSymbol("signers"),
+      val: xdr.ScVal.scvMap(signerEntries),
+    }),
+  ]);
+}
+
+function invocationContextKeys(entry: xdr.SorobanAuthorizationEntry) {
+  const keys = new Set<string>();
+  const walk = (invocation: xdr.SorobanAuthorizedInvocation) => {
+    const fn = invocation.function();
+    if (fn.switch().name === "sorobanAuthorizedFunctionTypeContractFn") {
+      const call = fn.contractFn();
+      const args = call.args();
+      const target =
+        call.functionName().toString() === "execute" &&
+        args.length >= 3 &&
+        args[0]?.switch().name === "scvAddress" &&
+        (args[1]?.switch().name === "scvSymbol" || args[1]?.switch().name === "scvString") &&
+        args[2]?.switch().name === "scvVec"
+          ? Address.fromScAddress(args[0]!.address()).toString()
+          : Address.fromScAddress(call.contractAddress()).toString();
+      keys.add(`CallContract:${target}`);
+    }
+    for (const subInvocation of invocation.subInvocations()) walk(subInvocation);
+  };
+  walk(entry.rootInvocation());
+  return [...keys];
+}
+
+export function buildContextAwareAuthDigest(
+  networkPassphrase: string,
+  entry: xdr.SorobanAuthorizationEntry,
+  expiration: number,
+  contextRuleIds: readonly number[],
+) {
+  const credentials = entry.credentials().address();
+  const preimage = xdr.HashIdPreimage.envelopeTypeSorobanAuthorization(
+    new xdr.HashIdPreimageSorobanAuthorization({
+      networkId: hash(Buffer.from(networkPassphrase)),
+      nonce: credentials.nonce(),
+      signatureExpirationLedger: expiration,
+      invocation: entry.rootInvocation(),
+    }),
+  );
+  const authorizationPayload = hash(preimage.toXDR());
+  const contextPayload = xdr.ScVal.scvVec(contextRuleIds.map((id) => xdr.ScVal.scvU32(id))).toXDR();
+  return hash(Buffer.concat([authorizationPayload, contextPayload]));
+}
+
+async function signWithContextAwarePayload(
+  kit: TSmartAccountKit,
+  entry: Parameters<TSmartAccountKit["signAuthEntry"]>[0],
+  options?: PasskeySignatureOptions,
+) {
+  const contractId = kit.contractId;
+  const credentialId = options?.credentialId ?? kit.credentialId;
+  if (!contractId || !credentialId || !kit.wallet) {
+    throw new Error("Connect a Velo smart account before signing.");
+  }
+  const verifiedDefaultRule = verifiedDefaultContextRules.get(contractId);
+  if (!verifiedDefaultRule || verifiedDefaultRule.context_type.tag !== "Default") {
+    throw new Error("The selected smart account's default passkey rule has not been verified.");
+  }
+  const signer = verifiedDefaultRule.signers.find((value) =>
+    externalSignerMatches(value, credentialId, getSmartAccountConfig().webauthnVerifierAddress),
+  );
+  if (!signer || signer.tag !== "External") {
+    throw new Error("This passkey is not an active signer on the selected Velo smart account.");
+  }
+  if (verifiedDefaultRule.id !== DEFAULT_CONTEXT_RULE_ID) {
+    throw new Error("Velo could not resolve the verified default smart-account context rule.");
+  }
+
+  const runtime = kit as unknown as SmartAccountSigningRuntime;
+  if (!runtime.webAuthn || !runtime.rpId || !runtime.storage || !runtime.calculateExpiration) {
+    throw new Error("The installed smart-account kit does not support Velo's auth payload format.");
+  }
+  const normalizedEntry = xdr.SorobanAuthorizationEntry.fromXDR(entry.toXDR());
+  if (normalizedEntry.credentials().switch().name !== "sorobanCredentialsAddress") {
+    throw new Error("Passkey signing requires address authorization credentials.");
+  }
+  const credentials = normalizedEntry.credentials().address();
+  const expiration = options?.expiration ?? (await runtime.calculateExpiration.call(kit));
+  credentials.signatureExpirationLedger(expiration);
+
+  const contextKeys = invocationContextKeys(normalizedEntry);
+  const contextRuleIds = (contextKeys.length > 0 ? contextKeys : ["Default"]).map(
+    () => DEFAULT_CONTEXT_RULE_ID,
+  );
+  const challenge = buildContextAwareAuthDigest(
+    kit.networkPassphrase,
+    normalizedEntry,
+    expiration,
+    contextRuleIds,
+  );
+  const assertion = await runtime.webAuthn.startAuthentication({
+    optionsJSON: {
+      challenge: encodeBase64Url(challenge),
+      rpId: runtime.rpId,
+      userVerification: "preferred",
+      timeout: 60_000,
+      allowCredentials: [{ id: credentialId, type: "public-key" }],
+    },
+  });
+  if (normalizeCredentialId(assertion.id) !== normalizeCredentialId(credentialId)) {
+    throw new Error("The authenticator returned a different credential than the selected account.");
+  }
+
+  const signatureData = webAuthnSignatureScVal(assertion).toXDR();
+  const payload = readAuthPayload(credentials.signature());
+  if (
+    payload.contextRuleIds.length > 0 &&
+    payload.contextRuleIds.join(",") !== contextRuleIds.join(",")
+  ) {
+    throw new Error("The authorization entry uses different smart-account context rules.");
+  }
+  payload.contextRuleIds = contextRuleIds;
+  payload.signers.set(signerKey(signer), { signer, signature: Buffer.from(signatureData) });
+  credentials.signature(
+    buildContextAwareAuthPayload(contextRuleIds, Array.from(payload.signers.values())),
+  );
+  await runtime.storage.update(credentialId, { lastUsedAt: Date.now() }).catch(() => undefined);
+  return normalizedEntry;
+}
+
+function installContextAwareSigning(kit: TSmartAccountKit) {
+  if (contextAwareSigningKits.has(kit)) return;
+  kit.signAuthEntry = (entry, options) => signWithContextAwarePayload(kit, entry, options);
+  contextAwareSigningKits.add(kit);
+}
+
+export async function signPasskeyAuthorizationEntry(
+  kit: TSmartAccountKit,
+  entry: Parameters<TSmartAccountKit["signAuthEntry"]>[0],
+  expiration: number,
+) {
+  return signWithContextAwarePayload(kit, entry, { expiration });
+}
+
+function normalizeContractSigner(signer: unknown): ContractSigner | null {
+  const normalizedSigner = Array.isArray(signer)
+    ? signer[0] === "External"
       ? { tag: "External", values: [signer[1], signer[2]] }
-      : signer;
+      : signer[0] === "Delegated"
+        ? { tag: "Delegated", values: [signer[1]] }
+        : null
+    : signer;
   if (
     !normalizedSigner ||
     typeof normalizedSigner !== "object" ||
     !("tag" in normalizedSigner) ||
-    normalizedSigner.tag !== "External" ||
     !("values" in normalizedSigner) ||
-    !Array.isArray(normalizedSigner.values) ||
-    !(normalizedSigner.values[1] instanceof Uint8Array) ||
-    typeof normalizedSigner.values[0] !== "string" ||
-    normalizedSigner.values[0].toUpperCase() !== verifierAddress
+    !Array.isArray(normalizedSigner.values)
   ) {
-    return false;
+    return null;
   }
-  const id = getCredentialIdFromSigner(normalizedSigner as ContractSigner);
+
+  if (normalizedSigner.tag === "External") {
+    if (
+      typeof normalizedSigner.values[0] !== "string" ||
+      !(normalizedSigner.values[1] instanceof Uint8Array)
+    ) {
+      return null;
+    }
+    return {
+      tag: "External",
+      values: [normalizedSigner.values[0], Buffer.from(normalizedSigner.values[1])],
+    };
+  }
+  if (normalizedSigner.tag === "Delegated" && typeof normalizedSigner.values[0] === "string") {
+    return { tag: "Delegated", values: [normalizedSigner.values[0]] };
+  }
+  return null;
+}
+
+function externalSignerMatches(signer: unknown, credentialId: string, verifierAddress: string) {
+  const normalizedSigner = normalizeContractSigner(signer);
+  if (!normalizedSigner || normalizedSigner.tag !== "External") return false;
+  if (normalizedSigner.values[0].toUpperCase() !== verifierAddress) return false;
+  const id = getCredentialIdFromSigner(normalizedSigner);
   return id !== null && normalizeCredentialId(id) === normalizeCredentialId(credentialId);
+}
+
+function contextRuleTypeTag(value: unknown) {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value) && typeof value[0] === "string") return value[0];
+  if (value && typeof value === "object" && "tag" in value && typeof value.tag === "string") {
+    return value.tag;
+  }
+  return null;
+}
+
+type RawDefaultContextRule = Record<string, unknown> & {
+  context_type: unknown;
+  signers: unknown[];
+};
+
+function isDefaultContextRule(value: unknown): value is RawDefaultContextRule {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    "context_type" in value &&
+    contextRuleTypeTag(value.context_type) === "Default" &&
+    "signers" in value &&
+    Array.isArray(value.signers)
+  );
+}
+
+export function normalizeDefaultContextRuleForSignerLookup(value: unknown): ContextRule | null {
+  if (!isDefaultContextRule(value)) return null;
+
+  const signers = value.signers
+    .map(normalizeContractSigner)
+    .filter((signer): signer is ContractSigner => signer !== null);
+  return {
+    ...(value as unknown as ContextRule),
+    context_type: { tag: "Default", values: undefined },
+    id: typeof value.id === "number" ? value.id : DEFAULT_CONTEXT_RULE_ID,
+    signers,
+  };
 }
 
 export async function ensurePasskeySigner(params: {
@@ -210,6 +633,7 @@ export async function ensurePasskeySigner(params: {
   contractId: string;
   credentialId: string;
 }) {
+  verifiedDefaultContextRules.delete(params.contractId);
   const config = getSmartAccountConfig();
   const server = new rpc.Server(config.rpcUrl, { timeout: 30_000 });
   const [accountEntries, verifierEntries] = await Promise.all([
@@ -256,20 +680,17 @@ export async function ensurePasskeySigner(params: {
   }
 
   const value = scValToNative(simulation.result.retval) as unknown;
-  if (
-    !value ||
-    typeof value !== "object" ||
-    !("signers" in value) ||
-    !Array.isArray(value.signers)
-  ) {
+  const normalizedRule = normalizeDefaultContextRuleForSignerLookup(value);
+  if (!normalizedRule) {
     throw new Error("The smart account default signer rule could not be read.");
   }
-  const signer = value.signers.find((item) =>
+  const signer = normalizedRule.signers.find((item) =>
     externalSignerMatches(item, params.credentialId, config.webauthnVerifierAddress),
   );
   if (!signer) {
     throw new Error("This passkey is not an active signer on the selected Velo smart account.");
   }
+  verifiedDefaultContextRules.set(params.contractId, normalizedRule);
 }
 
 export async function connectPasskeyAccount(params: {

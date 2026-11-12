@@ -673,7 +673,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           "SEP-45 authorization is not addressed to this smart account.",
         );
       }
-      const { getSmartAccountKit } = await import("../stellar/smart-account-kit");
+      const { getSmartAccountKit, signPasskeyAuthorizationEntry } =
+        await import("../stellar/smart-account-kit");
       const kit = getSmartAccountKit();
       if (kit.contractId !== address) {
         throw new WalletError(
@@ -681,7 +682,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           "Reconnect the selected Velo passkey smart account.",
         );
       }
-      const signedEntry = await kit.signAuthEntry(matching[0]!, { expiration: expirationLedger });
+      const signedEntry = await signPasskeyAuthorizationEntry(kit, matching[0]!, expirationLedger);
       return encodeSep45Entries(
         entries.map((entry) => (entry === matching[0] ? signedEntry : entry)),
       );

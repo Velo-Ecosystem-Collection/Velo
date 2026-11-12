@@ -5,17 +5,26 @@ import { useWallet } from "@/core/wallet/wallet-provider";
 import { useUserProfile } from "@/features/onboarding/use-user-profile";
 import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/ui/alert";
 import { Button } from "@repo/ui/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@repo/ui/components/ui/dialog";
 import { useConvexAuth } from "convex/react";
 import { AlertCircleIcon, Loader2Icon, WalletIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 export default function LoginPage() {
   const wallet = useWallet();
   const { isNewUser, isLoading } = useUserProfile(wallet.address);
   const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexLoading } = useConvexAuth();
   const router = useRouter();
+  const [passkeyDialogOpen, setPasskeyDialogOpen] = useState(false);
 
   // Redirect to dashboard or signup once authenticated
   useEffect(() => {
@@ -100,27 +109,67 @@ export default function LoginPage() {
 
             {wallet.passkeyEnabled && (
               <div className="mt-3 grid gap-2">
-                <Button
-                  variant="outline"
-                  onClick={wallet.connectPasskey}
-                  disabled={isBusy || wallet.status === "connected"}
-                  className="w-full"
-                >
-                  {wallet.status === "connecting" ? "Waiting for passkey…" : "Connect with Passkey"}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={wallet.createPasskeyAccount}
-                  disabled={isBusy || wallet.status === "connected"}
-                  className="w-full"
-                >
-                  Create a Velo Passkey Account
-                </Button>
+                <Dialog open={passkeyDialogOpen} onOpenChange={setPasskeyDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button
+                      variant="outline"
+                      disabled={isBusy || wallet.status === "connected"}
+                      className="w-full"
+                    >
+                      {wallet.status === "connecting"
+                        ? "Waiting for passkey…"
+                        : "Continue with Passkey"}
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Continue with a Velo passkey</DialogTitle>
+                      <DialogDescription>
+                        Choose how you want to use your passkey. Velo passkeys are separate from
+                        passkeys used by other apps.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-3">
+                      <div className="grid gap-1">
+                        <Button
+                          className="w-full"
+                          disabled={isBusy}
+                          onClick={() => {
+                            setPasskeyDialogOpen(false);
+                            void wallet.connectPasskey();
+                          }}
+                        >
+                          Connect existing account
+                        </Button>
+                        <p className="px-1 text-xs text-zinc-500">
+                          Use a Velo smart account you already created. If you have several, you can
+                          choose which one to connect.
+                        </p>
+                      </div>
+                      <div className="grid gap-1">
+                        <Button
+                          variant="outline"
+                          className="w-full"
+                          disabled={isBusy}
+                          onClick={() => {
+                            setPasskeyDialogOpen(false);
+                            void wallet.createPasskeyAccount();
+                          }}
+                        >
+                          Create a new account
+                        </Button>
+                        <p className="px-1 text-xs text-zinc-500">
+                          Register a new passkey and deploy a smart account on Stellar Testnet.
+                          Network fees may apply.
+                        </p>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
                 <p className="text-center text-xs text-zinc-500">
-                  Velo passkeys are separate from passkeys used by other apps. Smart accounts and
-                  supported owner actions run on Stellar Testnet. If no Velo relayer is configured,
-                  submissions use the smart-account kit&apos;s funded Testnet fee account and are
-                  not gasless.
+                  Smart accounts and supported owner actions run on Stellar Testnet. If no Velo
+                  relayer is configured, submissions use the smart-account kit&apos;s funded Testnet
+                  fee account and are not gasless.
                 </p>
               </div>
             )}

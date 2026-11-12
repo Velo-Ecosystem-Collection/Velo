@@ -16,6 +16,7 @@ import {
 
 import { env } from "../config/env";
 import { stellarConfig } from "../config/stellar";
+import { isSignedSmartAccountAuthorization } from "../stellar/smart-account-auth-payload";
 import { walletAuthIssuer, walletAuthServerKeypair } from "./wallet-jwt";
 
 const SEP45_CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -25,6 +26,29 @@ const AUTH_ENTRY_LIMIT = 2;
 const SMART_ACCOUNT_KIT_SIMULATION_SOURCE = Keypair.fromRawEd25519Seed(
   hash(Buffer.from("openzeppelin-smart-account-kit")),
 ).publicKey();
+
+export class ContractAccountAuthorizationRejectedError extends Error {
+  readonly simulationError: string;
+  readonly latestLedger: number;
+  readonly diagnosticEventCount: number;
+
+  constructor(simulation: rpc.Api.SimulateTransactionErrorResponse) {
+    super("Soroban rejected the signed SEP-45 authorization.");
+    this.name = "ContractAccountAuthorizationRejectedError";
+    this.simulationError = simulation.error
+      .replace(/[\r\n\t]+/g, " ")
+      .replace(/\bauthorization[_\s]entries\b[\s\S]*/i, "authorization_entries=[redacted]")
+      .replace(/\bcredential(?:_?id|\s+id)\b[ \t:=]+[^\s,;]+/gi, "credential_id=[redacted]")
+      .replace(
+        /\b(signature|private[_ ]?key|secret|token|bearer)\b[ \t:=]+[^\s,;]+/gi,
+        "$1=[redacted]",
+      )
+      .replace(/\b[A-Za-z0-9_-]{64,}\b/g, "[long value redacted]")
+      .slice(0, 1500);
+    this.latestLedger = simulation.latestLedger;
+    this.diagnosticEventCount = simulation.events.length;
+  }
+}
 
 type Sep45Arguments = {
   account: string;
@@ -133,10 +157,8 @@ function assertSignaturePresent(entry: xdr.SorobanAuthorizationEntry) {
     throw new Error("SEP-45 authorization entry is missing address credentials.");
   }
   const signature = entry.credentials().address().signature();
-  const signatureValues = signature.switch().name === "scvVec" ? signature.vec() : null;
-  if (!signatureValues || signatureValues.length === 0) {
-    throw new Error("SEP-45 authorization entry has not been signed.");
-  }
+  if (isSignedSmartAccountAuthorization(signature)) return;
+  throw new Error("SEP-45 authorization entry has not been signed.");
 }
 
 function parseEntries(entriesXdr: string) {
@@ -288,7 +310,7 @@ export async function verifyContractAccountAuthorization(entriesXdr: string) {
     .build();
   const simulation = await server.simulateTransaction(transaction);
   if (rpc.Api.isSimulationError(simulation)) {
-    throw new Error("Stellar RPC could not verify the signed SEP-45 authorization.");
+    throw new ContractAccountAuthorizationRejectedError(simulation);
   }
 
   return {

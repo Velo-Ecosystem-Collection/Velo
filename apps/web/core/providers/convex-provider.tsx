@@ -1,6 +1,11 @@
 "use client";
 
-import { walletAuthFailureMessage } from "@/core/auth/wallet-auth-errors";
+import {
+  walletAuthFailureMessage,
+  walletClientAuthDiagnosticMessage,
+  walletClientAuthFailureMessage,
+  type WalletClientAuthStage,
+} from "@/core/auth/wallet-auth-errors";
 import { WalletError, useWallet } from "@/core/wallet/wallet-provider";
 import { ConvexProviderWithAuth, ConvexReactClient } from "convex/react";
 import { usePathname } from "next/navigation";
@@ -230,6 +235,8 @@ function useWalletConvexAuth() {
 
       const isCurrent = requestScope.current.capture();
       const fetchPromise = (async () => {
+        let authStage: WalletClientAuthStage | undefined =
+          identityType === "passkey_smart_account" ? "sep45_discovery" : undefined;
         try {
           let authResult: unknown;
           if (identityType === "passkey_smart_account") {
@@ -238,6 +245,7 @@ function useWalletConvexAuth() {
             const url = new URL(config.endpoint);
             url.searchParams.set("account", walletAddress);
             url.searchParams.set("home_domain", homeDomain);
+            authStage = "sep45_challenge_request";
             const challengeResponse = await fetch(url, { cache: "no-store" });
             if (!challengeResponse.ok) {
               throw new WalletError(
@@ -255,6 +263,7 @@ function useWalletConvexAuth() {
                 "Velo returned an invalid SEP-45 challenge.",
               );
             }
+            authStage = "sep45_challenge_validation";
             const { expirationLedger } = validateSep45Challenge({
               account: walletAddress,
               challenge: challengeValue,
@@ -263,11 +272,13 @@ function useWalletConvexAuth() {
               homeDomain,
             });
             if (!isCurrent()) return null;
+            authStage = "passkey_authorization_signing";
             const signedEntries = await signContractAuthorizationEntries(
               challengeValue.authorization_entries,
               expirationLedger,
             );
             if (!isCurrent()) return null;
+            authStage = "sep45_session_request";
             const sessionResponse = await fetch(config.endpoint, {
               method: "POST",
               headers: { "content-type": "application/json" },
@@ -327,6 +338,7 @@ function useWalletConvexAuth() {
             }
             authResult = await sessionResponse.json();
           }
+          authStage = "wallet_session_validation";
           if (!isWalletSessionResponse(authResult)) {
             throw new WalletError("WALLET_AUTH_FAILED", "Velo returned an invalid wallet session.");
           }
@@ -351,8 +363,19 @@ function useWalletConvexAuth() {
               ? error
               : new WalletError(
                   "WALLET_AUTH_FAILED",
-                  "Wallet verification failed. Reconnect and try again.",
+                  walletClientAuthFailureMessage(error, authStage),
                 );
+          console.error("[wallet.client-auth] Wallet authentication failed", {
+            stage: authStage ?? "classic_wallet_auth",
+            errorName:
+              error &&
+              typeof error === "object" &&
+              "name" in error &&
+              typeof error.name === "string"
+                ? error.name
+                : "UnknownError",
+            message: walletClientAuthDiagnosticMessage(error),
+          });
           void disconnect({ code: reason.code, message: reason.message }).catch(() => {});
           return null;
         } finally {

@@ -24,6 +24,12 @@ const hooks = registerHooks({
     if (specifier in sources) {
       return { url: `velo-contract-wallet-auth:${specifier}`, shortCircuit: true };
     }
+    if (specifier === "../stellar/smart-account-auth-payload") {
+      return {
+        url: new URL("../stellar/smart-account-auth-payload.ts", context.parentURL).href,
+        shortCircuit: true,
+      };
+    }
     return next(specifier, context);
   },
   load(url, context, next) {
@@ -36,7 +42,8 @@ const hooks = registerHooks({
   },
 });
 
-const { verifyContractAccountAuthorization } = await import("./contract-wallet-auth.ts");
+const { ContractAccountAuthorizationRejectedError, verifyContractAccountAuthorization } =
+  await import("./contract-wallet-auth.ts");
 const { encodeSep45Entries } = await import("./sep45-client.ts");
 
 function invocationArgs(overrides: Record<string, string> = {}) {
@@ -60,6 +67,7 @@ function authorizationEntry(
   signer: string,
   args: xdr.ScVal,
   expirationLedger = 160,
+  signature: xdr.ScVal = xdr.ScVal.scvVec([xdr.ScVal.scvVoid()]),
 ): xdr.SorobanAuthorizationEntry {
   const invocation = new xdr.SorobanAuthorizedInvocation({
     function: xdr.SorobanAuthorizedFunction.sorobanAuthorizedFunctionTypeContractFn(
@@ -77,7 +85,7 @@ function authorizationEntry(
         address: Address.fromString(signer).toScAddress(),
         nonce: xdr.Int64.fromString("1"),
         signatureExpirationLedger: expirationLedger,
-        signature: xdr.ScVal.scvVec([xdr.ScVal.scvVoid()]),
+        signature,
       }),
     ),
     rootInvocation: invocation,
@@ -95,7 +103,30 @@ function authorizationXdr(
 ) {
   const account = options.account ?? ACCOUNT;
   const entries = [
-    authorizationEntry(account, invocationArgs(options.accountArgs), options.accountExpiration),
+    authorizationEntry(
+      account,
+      invocationArgs(options.accountArgs),
+      options.accountExpiration,
+      xdr.ScVal.scvMap([
+        new xdr.ScMapEntry({
+          key: xdr.ScVal.scvSymbol("context_rule_ids"),
+          val: xdr.ScVal.scvVec([xdr.ScVal.scvU32(0)]),
+        }),
+        new xdr.ScMapEntry({
+          key: xdr.ScVal.scvSymbol("signers"),
+          val: xdr.ScVal.scvMap([
+            new xdr.ScMapEntry({
+              key: xdr.ScVal.scvVec([
+                xdr.ScVal.scvSymbol("External"),
+                Address.fromString(WEB_AUTH_CONTRACT).toScVal(),
+                xdr.ScVal.scvBytes(Buffer.from("credential-key-data")),
+              ]),
+              val: xdr.ScVal.scvBytes(Buffer.from("signature-payload")),
+            }),
+          ]),
+        }),
+      ]),
+    ),
     authorizationEntry(
       serverKeypair.publicKey(),
       invocationArgs(options.serverArgs),
@@ -169,7 +200,7 @@ test("SEP-45 rejects the wrong contract account and altered authorization values
   );
 });
 
-test("SEP-45 rejects expired credentials and fails closed when RPC cannot verify", async () => {
+test("SEP-45 rejects expired credentials and retains bounded Soroban diagnostics", async () => {
   await assert.rejects(
     withRpc(
       async () => ({ result: { retval: xdr.ScVal.scvVoid() } }),
@@ -183,10 +214,23 @@ test("SEP-45 rejects expired credentials and fails closed when RPC cannot verify
 
   await assert.rejects(
     withRpc(
-      async () => ({ error: "RPC unavailable" }),
+      async () => ({
+        error: `HostError: Error(Contract, #4) ${"a".repeat(90)} signature=sign-secret credential_id=credsecret authorization_entries=${"b".repeat(80)}`,
+        latestLedger: 120,
+        events: [],
+      }),
       () => verifyContractAccountAuthorization(authorizationXdr()),
     ),
-    /could not verify the signed SEP-45 authorization/,
+    (error: unknown) => {
+      assert.ok(error instanceof ContractAccountAuthorizationRejectedError);
+      assert.match(error.message, /rejected the signed SEP-45 authorization/);
+      assert.match(error.simulationError, /HostError: Error\(Contract, #4\)/);
+      assert.doesNotMatch(error.simulationError, /a{64}|b{64}|sign-secret|credsecret/);
+      assert.ok(error.simulationError.length <= 1500);
+      assert.equal(error.latestLedger, 120);
+      assert.equal(error.diagnosticEventCount, 0);
+      return true;
+    },
   );
 });
 

@@ -1,4 +1,5 @@
 import {
+  ContractAccountAuthorizationRejectedError,
   createContractAccountChallenge,
   verifyContractAccountAuthorization,
 } from "@/core/auth/contract-wallet-auth";
@@ -36,6 +37,7 @@ function errorMessage(error: unknown) {
 }
 
 function looksLikeRpcFailure(error: unknown) {
+  if (error instanceof ContractAccountAuthorizationRejectedError) return false;
   const message = errorMessage(error).toLowerCase();
   return (
     message.includes("rpc") ||
@@ -136,9 +138,19 @@ export const POST = withRouteTelemetry("wallet.contract.session", async (request
   try {
     verified = await verifyContractAccountAuthorization(authorizationEntries);
   } catch (error) {
-    console.error("[wallet.contract.session] Authorization verification failed", {
+    const diagnostic = {
       reason: errorMessage(error),
-    });
+      ...(error instanceof ContractAccountAuthorizationRejectedError
+        ? {
+            sorobanSimulationError: error.simulationError,
+            latestLedger: error.latestLedger,
+            diagnosticEventCount: error.diagnosticEventCount,
+          }
+        : {}),
+    };
+    console.error(
+      `[wallet.contract.session] Authorization verification failed ${JSON.stringify(diagnostic)}`,
+    );
     return json(
       {
         error: looksLikeRpcFailure(error)

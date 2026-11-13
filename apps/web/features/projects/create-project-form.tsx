@@ -24,12 +24,10 @@ export function CreateProjectForm() {
   const router = useRouter();
   const wallet = useWallet();
   const createDraft = useMutation(api.projects.mutation.createDraft);
-  const [name, setName] = useState("DemoPay");
-  const [slug, setSlug] = useState("demopay");
-  const [description, setDescription] = useState(
-    "DemoPay is a sample Stellar app used to verify official Soroban contracts.",
-  );
-  const [website, setWebsite] = useState("https://example.com");
+  const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [description, setDescription] = useState("");
+  const [website, setWebsite] = useState("");
   const [metadataHash, setMetadataHash] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -153,6 +151,7 @@ export function CreateProjectForm() {
                 id="project-name"
                 value={name}
                 onChange={(event) => updateName(event.target.value)}
+                placeholder="e.g. Acme Payments"
                 className="min-h-11"
                 required
               />
@@ -163,6 +162,7 @@ export function CreateProjectForm() {
                 id="project-slug"
                 value={slug}
                 onChange={(event) => setSlug(slugifyProjectName(event.target.value))}
+                placeholder="generated-from-project-name"
                 pattern="[a-z0-9-]+"
                 className="min-h-11"
                 required
@@ -173,13 +173,13 @@ export function CreateProjectForm() {
               </p>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="project-description">Description</Label>
+              <Label htmlFor="project-description">Description (optional)</Label>
               <Textarea
                 id="project-description"
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
+                placeholder="A short summary of what your project does"
                 className="min-h-28"
-                required
               />
             </div>
             <div className="grid gap-2">
@@ -189,6 +189,7 @@ export function CreateProjectForm() {
                 type="url"
                 value={website}
                 onChange={(event) => setWebsite(event.target.value)}
+                placeholder="https://example.com"
                 className="min-h-11"
               />
             </div>

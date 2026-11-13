@@ -290,15 +290,15 @@ function projectIdFromReturnValue(returnValue: xdr.ScVal | undefined | null) {
   }
 
   const nativeValue = scValToNative(returnValue) as unknown;
-  if (typeof nativeValue === "number") {
-    return nativeValue;
+  return safeProjectId(nativeValue);
+}
+
+function safeProjectId(value: unknown) {
+  if (typeof value === "bigint") {
+    return value > 0n && value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : null;
   }
 
-  if (typeof nativeValue === "bigint") {
-    return Number(nativeValue);
-  }
-
-  return null;
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
 function projectIdFromRegistrationEvent(
@@ -323,13 +323,24 @@ function projectIdFromRegistrationEvent(
     )
       continue;
     const data = body.data();
-    if (data.switch().name !== "scvVec") continue;
-    const id = data.vec()?.[0];
+    let id: xdr.ScVal | undefined;
+    if (data.switch().name === "scvMap") {
+      id = data
+        .map()
+        ?.find(
+          (entry) =>
+            entry.key().switch().name === "scvSymbol" &&
+            entry.key().sym().toString() === "project_id",
+        )
+        ?.val();
+    } else if (data.switch().name === "scvVec") {
+      // Keep compatibility with older event encodings that stored fields in order.
+      id = data.vec()?.[0];
+    }
+
     if (!id || id.switch().name !== "scvU64") continue;
-    const native = scValToNative(id) as unknown;
-    if (typeof native === "bigint" && native <= BigInt(Number.MAX_SAFE_INTEGER))
-      return Number(native);
-    if (typeof native === "number" && Number.isSafeInteger(native)) return native;
+    const projectId = safeProjectId(scValToNative(id) as unknown);
+    if (projectId !== null) return projectId;
   }
   return null;
 }

@@ -100,14 +100,15 @@ function displayJson(value: unknown) {
 
 function DeliveryDetail({ delivery }: { delivery: Doc<"webhookDeliveries"> }) {
   return (
-    <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+    <SheetContent className="w-full min-w-0 overflow-y-auto sm:max-w-xl">
       <SheetHeader>
-        <SheetTitle>{delivery.eventType}</SheetTitle>
-        <SheetDescription>
-          Attempted {formatTimestamp(delivery.lastAttemptAt)} to {delivery.destinationHost}
+        <SheetTitle className="pr-8 break-all">{delivery.eventType}</SheetTitle>
+        <SheetDescription className="min-w-0">
+          Attempted {formatTimestamp(delivery.lastAttemptAt)} to{" "}
+          <span className="break-all">{delivery.destinationHost}</span>
         </SheetDescription>
       </SheetHeader>
-      <div className="grid gap-5 px-4 pb-6">
+      <div className="grid min-w-0 gap-5 px-4 pb-6">
         <div className="grid gap-2 text-sm">
           <span className="text-xs font-medium text-zinc-500 uppercase">Status</span>
           <Badge variant={deliveryVariant[delivery.status]} className="w-fit">
@@ -120,13 +121,13 @@ function DeliveryDetail({ delivery }: { delivery: Doc<"webhookDeliveries"> }) {
           {delivery.payloadSummary?.paymentIntentId && (
             <>
               <span className="text-xs font-medium text-zinc-500 uppercase">Payment Intent ID</span>
-              <span className="w-fit bg-zinc-100 px-1 py-0.5 font-mono text-xs text-zinc-700">
+              <span className="max-w-full min-w-0 bg-zinc-100 px-1 py-0.5 font-mono text-xs break-all text-zinc-700">
                 {delivery.payloadSummary.paymentIntentId}
               </span>
             </>
           )}
           <span className="text-xs font-medium text-zinc-500 uppercase">Failure reason</span>
-          <span>{delivery.errorMessage ?? "None"}</span>
+          <span className="min-w-0 break-words">{delivery.errorMessage ?? "None"}</span>
         </div>
 
         <div className="grid gap-2 rounded border border-zinc-200 bg-zinc-50 p-3 text-xs text-zinc-600">
@@ -143,12 +144,35 @@ function DeliveryDetail({ delivery }: { delivery: Doc<"webhookDeliveries"> }) {
 
         <div className="grid gap-2">
           <h3 className="text-sm font-semibold">Payload summary</h3>
-          <pre className="max-h-96 overflow-auto bg-zinc-950 p-3 text-xs text-zinc-100">
+          <pre className="max-h-96 max-w-full min-w-0 overflow-auto bg-zinc-950 p-3 text-xs text-zinc-100">
             {displayJson(delivery.payloadSummary)}
           </pre>
         </div>
       </div>
     </SheetContent>
+  );
+}
+
+function DeliveryDetailAction({
+  delivery,
+  label,
+  className,
+  size = "sm",
+}: {
+  delivery: Doc<"webhookDeliveries">;
+  label: string;
+  className?: string;
+  size?: "default" | "sm";
+}) {
+  return (
+    <Sheet>
+      <SheetTrigger asChild>
+        <Button variant="outline" size={size} className={className}>
+          {label}
+        </Button>
+      </SheetTrigger>
+      <DeliveryDetail delivery={delivery} />
+    </Sheet>
   );
 }
 
@@ -261,7 +285,7 @@ export function ProjectWebhooks({
   if (!wallet.address) {
     return (
       <section className="grid gap-4">
-        <h1 className="text-3xl font-semibold">Webhooks</h1>
+        <h1 className="text-2xl font-semibold sm:text-3xl">Webhooks</h1>
         <Alert>
           <WalletIcon />
           <AlertTitle>Connect the owner wallet</AlertTitle>
@@ -458,7 +482,7 @@ export function ProjectWebhooks({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-3xl font-semibold">Webhooks</h1>
+            <h1 className="text-2xl font-semibold sm:text-3xl">Webhooks</h1>
             <Badge variant={settings?.enabled ? "success" : settings ? "warning" : "gray"}>
               {settings?.enabled ? "Enabled" : settings ? "Disabled" : "Not configured"}
             </Badge>
@@ -467,7 +491,7 @@ export function ProjectWebhooks({
             Deliver project activity to a private developer endpoint and inspect every attempt.
           </p>
         </div>
-        <Button variant="outline" asChild>
+        <Button variant="outline" className="w-full sm:w-auto" asChild>
           <Link href="/dashboard">Dashboard</Link>
         </Button>
       </div>
@@ -520,7 +544,7 @@ export function ProjectWebhooks({
       ) : null}
 
       {sourceExecutionId ? (
-        <div className="grid gap-4 border border-blue-200 bg-blue-50 p-5">
+        <div className="grid min-w-0 gap-4 border border-blue-200 bg-blue-50 p-4 sm:p-5">
           <div>
             <h2 className="font-semibold">Review event-derived filter</h2>
             <p className="mt-1 text-sm text-zinc-600">
@@ -538,7 +562,7 @@ export function ProjectWebhooks({
             </Alert>
           ) : (
             <>
-              <div className="grid gap-2 text-sm sm:grid-cols-2">
+              <div className="grid min-w-0 gap-2 text-sm sm:grid-cols-2">
                 <div>
                   <Label>Network</Label>
                   <Input value={sourceExecution.network} readOnly />
@@ -554,7 +578,7 @@ export function ProjectWebhooks({
                   aria-label="Webhook topic prefix JSON"
                   value={filterTopicsJson}
                   onChange={(event) => setFilterTopicsJson(event.target.value)}
-                  className="min-h-28 border bg-white p-3 font-mono text-xs"
+                  className="min-h-28 w-full max-w-full min-w-0 resize-y border bg-white p-3 font-mono text-xs"
                 />
               </Label>
               <Label className="grid gap-2">
@@ -564,11 +588,11 @@ export function ProjectWebhooks({
                   value={filterDataJson}
                   onChange={(event) => setFilterDataJson(event.target.value)}
                   placeholder="Leave empty to match any data"
-                  className="min-h-24 border bg-white p-3 font-mono text-xs"
+                  className="min-h-24 w-full max-w-full min-w-0 resize-y border bg-white p-3 font-mono text-xs"
                 />
               </Label>
               <Button
-                className="w-fit"
+                className="w-full sm:w-fit"
                 onClick={() => void saveEventFilter()}
                 disabled={!canManage || !settings || isSavingFilter}
               >
@@ -581,7 +605,7 @@ export function ProjectWebhooks({
       ) : null}
 
       {webhookFilters?.length ? (
-        <div className="grid gap-2 border border-zinc-200 bg-white p-5 text-sm">
+        <div className="grid min-w-0 gap-2 border border-zinc-200 bg-white p-4 text-sm sm:p-5">
           <h2 className="font-semibold">Contract event filters</h2>
           {webhookFilters.map((filter) => (
             <div key={filter._id} className="flex flex-wrap items-center gap-2 border p-2">
@@ -603,7 +627,7 @@ export function ProjectWebhooks({
         </div>
       ) : null}
 
-      <div className="grid gap-5 border border-zinc-200 bg-white p-5">
+      <div className="grid min-w-0 gap-5 border border-zinc-200 bg-white p-4 sm:p-5">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="grid flex-1 gap-2">
             <Label htmlFor="webhook-url">Webhook URL</Label>
@@ -615,7 +639,12 @@ export function ProjectWebhooks({
               disabled={!canManage}
             />
           </div>
-          <Button variant="outline" onClick={useTemporaryTester} disabled={!canManage}>
+          <Button
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={useTemporaryTester}
+            disabled={!canManage}
+          >
             <FlaskConicalIcon />
             Use temporary tester
           </Button>
@@ -704,7 +733,7 @@ export function ProjectWebhooks({
           </div>
         )}
 
-        <div className="flex items-center justify-between gap-4 border border-zinc-200 p-3">
+        <div className="flex items-start justify-between gap-4 border border-zinc-200 p-3 sm:items-center">
           <div>
             <Label htmlFor="webhook-enabled">Endpoint enabled</Label>
             <p className="mt-1 text-xs text-zinc-500">
@@ -716,6 +745,7 @@ export function ProjectWebhooks({
             checked={enabled}
             onCheckedChange={setEnabled}
             disabled={!canManage}
+            className="mt-1 shrink-0 sm:mt-0"
           />
         </div>
 
@@ -728,7 +758,7 @@ export function ProjectWebhooks({
                 (eventType) => !isActiveEventType(eventType as EventType),
               ) as EventType[]),
             ].map((eventType) => (
-              <Label key={eventType} className="border border-zinc-200 p-3">
+              <Label key={eventType} className="min-w-0 items-start border border-zinc-200 p-3">
                 <Checkbox
                   checked={
                     selectedTypes.includes(eventType) ||
@@ -736,8 +766,9 @@ export function ProjectWebhooks({
                   }
                   onCheckedChange={(checked) => toggleEventType(eventType, checked === true)}
                   disabled={!canManage || !isActiveEventType(eventType)}
+                  className="mt-0.5 shrink-0"
                 />
-                <span className="font-mono text-xs">
+                <span className="min-w-0 font-mono text-xs break-all">
                   {eventType}
                   {!isActiveEventType(eventType) ? " · historical" : ""}
                 </span>
@@ -754,6 +785,7 @@ export function ProjectWebhooks({
 
         <div className="flex flex-wrap gap-2">
           <Button
+            className="w-full sm:w-auto"
             onClick={() => void save()}
             disabled={!canManage || isSaving || selectedTypes.length === 0}
           >
@@ -798,6 +830,7 @@ export function ProjectWebhooks({
             Latest observed event
           </Label>
           <Button
+            className="w-full md:w-auto"
             onClick={() => void send()}
             disabled={
               !canManage || isSending || !settings || !selectedTypes.includes(testEventType)
@@ -829,17 +862,70 @@ export function ProjectWebhooks({
           <h2 className="font-semibold">Delivery logs</h2>
           <p className="text-xs text-zinc-500">Showing the latest 50 bounded attempts.</p>
         </div>
-        <div className="w-full overflow-x-auto">
+        <ul className="grid gap-3 p-3 sm:hidden" aria-label="Webhook delivery attempts">
+          {!deliveries?.length ? (
+            <li className="py-8 text-center text-sm text-zinc-600">
+              {wallet.address
+                ? "No webhook delivery attempts yet."
+                : "Connect the owner wallet to view private delivery logs."}
+            </li>
+          ) : (
+            deliveries.map((delivery) => (
+              <li key={delivery._id}>
+                <article className="grid min-w-0 gap-3 border border-zinc-200 bg-white p-3">
+                  <div className="flex min-w-0 items-start justify-between gap-3">
+                    <div className="grid min-w-0 gap-1">
+                      <span className="text-xs font-medium text-zinc-500 uppercase">
+                        Event type
+                      </span>
+                      <span className="min-w-0 font-mono text-xs break-all">
+                        {delivery.eventType}
+                      </span>
+                    </div>
+                    <Badge variant={deliveryVariant[delivery.status]} className="shrink-0">
+                      {delivery.status}
+                    </Badge>
+                  </div>
+                  <dl className="grid min-w-0 grid-cols-2 gap-x-4 gap-y-3 border-t border-zinc-100 pt-3 text-xs">
+                    <div className="min-w-0">
+                      <dt className="font-medium text-zinc-500">Last attempt</dt>
+                      <dd className="mt-1 text-sm break-words text-zinc-900">
+                        {formatTimestamp(delivery.lastAttemptAt)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="font-medium text-zinc-500">Attempts</dt>
+                      <dd className="mt-1 text-sm text-zinc-900">{delivery.attemptCount}</dd>
+                    </div>
+                    <div>
+                      <dt className="font-medium text-zinc-500">HTTP status</dt>
+                      <dd className="mt-1 text-sm text-zinc-900">
+                        {delivery.httpStatus ?? "No response"}
+                      </dd>
+                    </div>
+                  </dl>
+                  <DeliveryDetailAction
+                    delivery={delivery}
+                    label="View delivery"
+                    size="default"
+                    className="w-full"
+                  />
+                </article>
+              </li>
+            ))
+          )}
+        </ul>
+        <div className="hidden min-w-0 sm:block">
           <Table className="table-fixed sm:table-auto">
             <TableHeader>
               <TableRow>
-                <TableHead className="hidden sm:table-cell">Time</TableHead>
+                <TableHead className="hidden md:table-cell">Time</TableHead>
                 <TableHead>Event type</TableHead>
-                <TableHead className="hidden md:table-cell">Destination</TableHead>
+                <TableHead className="hidden xl:table-cell">Destination</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="hidden md:table-cell">HTTP</TableHead>
-                <TableHead className="hidden lg:table-cell">Latency</TableHead>
-                <TableHead className="hidden lg:table-cell">Attempts</TableHead>
+                <TableHead className="hidden lg:table-cell">HTTP</TableHead>
+                <TableHead className="hidden 2xl:table-cell">Latency</TableHead>
+                <TableHead className="hidden 2xl:table-cell">Attempts</TableHead>
                 <TableHead className="text-right">Payload</TableHead>
               </TableRow>
             </TableHeader>
@@ -855,36 +941,29 @@ export function ProjectWebhooks({
               ) : (
                 deliveries.map((delivery) => (
                   <TableRow key={delivery._id}>
-                    <TableCell className="hidden text-sm sm:table-cell">
+                    <TableCell className="hidden text-sm md:table-cell">
                       {formatTimestamp(delivery.lastAttemptAt)}
                     </TableCell>
-                    <TableCell className="max-w-36 font-mono text-xs break-words whitespace-normal">
+                    <TableCell className="max-w-36 font-mono text-xs break-all whitespace-normal">
                       {delivery.eventType}
                     </TableCell>
-                    <TableCell className="hidden max-w-64 truncate font-mono text-xs break-all md:table-cell">
+                    <TableCell className="hidden max-w-64 truncate font-mono text-xs break-all xl:table-cell">
                       <span title={delivery.destinationHost}>{delivery.destinationHost}</span>
                     </TableCell>
                     <TableCell>
                       <Badge variant={deliveryVariant[delivery.status]}>{delivery.status}</Badge>
                     </TableCell>
-                    <TableCell className="hidden font-mono text-xs md:table-cell">
+                    <TableCell className="hidden font-mono text-xs lg:table-cell">
                       {delivery.httpStatus ?? "-"}
                     </TableCell>
-                    <TableCell className="hidden font-mono text-xs lg:table-cell">
+                    <TableCell className="hidden font-mono text-xs 2xl:table-cell">
                       {delivery.responseTimeMs ? `${delivery.responseTimeMs} ms` : "-"}
                     </TableCell>
-                    <TableCell className="hidden font-mono text-xs lg:table-cell">
+                    <TableCell className="hidden font-mono text-xs 2xl:table-cell">
                       {delivery.attemptCount}
                     </TableCell>
                     <TableCell className="text-right">
-                      <Sheet>
-                        <SheetTrigger asChild>
-                          <Button variant="outline" size="sm">
-                            View
-                          </Button>
-                        </SheetTrigger>
-                        <DeliveryDetail delivery={delivery} />
-                      </Sheet>
+                      <DeliveryDetailAction delivery={delivery} label="View" />
                     </TableCell>
                   </TableRow>
                 ))

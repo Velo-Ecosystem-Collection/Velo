@@ -15,6 +15,12 @@ test("contract event poll errors are logged with sanitized categories", () => {
   expect(classifyPollError(new Error("unexpected RPC failure: secret token abc123"))).toBe(
     "unknown",
   );
+  // The Stellar SDK throws the JSON-RPC error object directly, not an Error.
+  expect(classifyPollError({ code: -32602, message: "Invalid params: secret token abc123" })).toBe(
+    "rpc_request_error",
+  );
+  expect(classifyPollError({ code: -32603, message: "Internal error" })).toBe("rpc_server_error");
+  expect(classifyPollError({ code: -32000, message: "unexpected failure" })).toBe("rpc_error");
 });
 
 // Mock the runtime subpath imported by Convex actions.

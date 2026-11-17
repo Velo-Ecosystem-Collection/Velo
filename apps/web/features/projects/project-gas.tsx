@@ -242,7 +242,7 @@ function RelayerSummary({ relayer }: { relayer: GasRelayerSnapshot }) {
           <span className="font-medium tabular-nums">
             {relayer.balanceStroops === null
               ? "Not verified"
-              : `${formatStroopsAsXlm(relayer.balanceStroops)} XLM`}
+              : formatStroopsAsXlm(relayer.balanceStroops)}
           </span>
           <span className="text-xs text-muted-foreground">
             Ledger snapshot, not spendable funds.
@@ -250,7 +250,7 @@ function RelayerSummary({ relayer }: { relayer: GasRelayerSnapshot }) {
         </div>
         <div className="grid gap-1">
           <span className="text-sm text-muted-foreground">Verification</span>
-          <span className="break-words text-sm font-medium">{verificationLabel}</span>
+          <span className="text-sm font-medium break-words">{verificationLabel}</span>
         </div>
       </CardContent>
     </Card>

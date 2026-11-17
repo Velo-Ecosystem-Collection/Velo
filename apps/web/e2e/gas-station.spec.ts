@@ -67,7 +67,9 @@ async function openGasTab(page: Page, name: "Overview" | "Activity" | "Settings"
 }
 
 async function openRelayerControls(page: Page) {
+  await expect(page.getByRole("button", { name: "Refresh balance" })).toBeHidden();
   await page.getByRole("button", { name: "Relayer funding and controls" }).click();
+  await expect(page.getByRole("button", { name: "Refresh balance" })).toBeVisible();
 }
 
 type FixtureCommand =
@@ -176,6 +178,28 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe("integrated Gas Station simulated browser regressions", () => {
+  test("shows only the selected section while retaining mounted tab content", async ({ page }) => {
+    await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
+    const tabPanels = page.locator('[data-slot="tabs-content"]');
+
+    await expect(tabPanels).toHaveCount(3);
+    await expect(page.getByRole("heading", { name: "Policy summary" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Fee telemetry" })).toBeHidden();
+    await expect(page.getByLabel("Daily cap (XLM)")).toBeHidden();
+
+    await openGasTab(page, "Activity");
+    await expect(tabPanels).toHaveCount(3);
+    await expect(page.getByRole("heading", { name: "Fee telemetry" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Policy summary" })).toBeHidden();
+    await expect(page.getByLabel("Daily cap (XLM)")).toBeHidden();
+
+    await openGasTab(page, "Settings");
+    await expect(tabPanels).toHaveCount(3);
+    await expect(page.getByLabel("Daily cap (XLM)")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Fee telemetry" })).toBeHidden();
+    await expect(page.getByRole("heading", { name: "Policy summary" })).toBeHidden();
+  });
+
   test("covers owner/editor/viewer access and sidebar navigation", async ({ page }, testInfo) => {
     await seedFixture(page, {
       session: "owner",
@@ -343,6 +367,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     expect(provisioningCalls.map((call) => call.status).sort()).toEqual(["fulfilled", "rejected"]);
 
     await fixture(page, "provisioning-commit");
+    await openRelayerControls(page);
     await expect(page.getByText(managedRelayerPublicKey, { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Prepare funding" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Review sponsorship settings" })).toBeVisible();
@@ -512,14 +537,17 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
 
   test("refreshes relayer balance, preserves failures, and enforces cooldown", async ({ page }) => {
     await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
-    await expect(page.getByText("4.2000000 XLM", { exact: true })).toBeVisible();
+    const relayerSummary = page
+      .locator('[data-slot="card"]')
+      .filter({ has: page.getByRole("heading", { name: "Relayer", exact: true }) });
+    await expect(relayerSummary.getByText("4.2000000 XLM", { exact: true })).toBeVisible();
     await openRelayerControls(page);
 
     const refresh = page.getByRole("button", { name: "Refresh balance" });
     await refresh.click();
     await expect(page.getByRole("button", { name: "Verifying balance…" })).toBeDisabled();
     await resolveNext(page, "gas/balance_action:refreshRelayerBalance");
-    await expect(page.getByText("4.3000000 XLM", { exact: true })).toBeVisible();
+    await expect(relayerSummary.getByText("4.3000000 XLM", { exact: true })).toBeVisible();
     await expect(page.getByText(/Balance verification completed/i)).toBeVisible();
 
     await gotoGas(page, {
@@ -531,7 +559,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await page.getByRole("button", { name: "Refresh balance" }).click();
     await resolveNext(page, "gas/balance_action:refreshRelayerBalance");
     await expect(page.getByText(/temporarily unavailable/i)).toBeVisible();
-    await expect(page.getByText("4.2000000 XLM", { exact: true })).toBeVisible();
+    await expect(relayerSummary.getByText("4.2000000 XLM", { exact: true })).toBeVisible();
     await expect(page.getByText("provider_failure", { exact: true })).toHaveCount(0);
 
     await gotoGas(page, {
@@ -723,6 +751,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await resolveNext(page, "gas/balance_action:refreshRelayerBalance");
     await page.goto(memberProjectUrl);
     await expect(page.getByText("viewer access", { exact: true })).toBeVisible();
+    await openRelayerControls(page);
     await expect(
       page
         .getByText("Native XLM balance", { exact: true })

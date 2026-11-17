@@ -18,18 +18,26 @@ type PollResult = {
 };
 
 export function classifyPollError(error: unknown) {
-  const name = error instanceof Error ? error.name : "";
-  const message = error instanceof Error ? error.message : String(error);
+  const details = error && typeof error === "object" ? (error as Record<string, unknown>) : null;
+  const name = typeof details?.name === "string" ? details.name : "";
+  const message = typeof details?.message === "string" ? details.message : String(error);
+  const code = typeof details?.code === "number" ? details.code : undefined;
   if (name === "AbortError" || /timeout|timed out|ETIMEDOUT/i.test(message)) {
     return "timeout";
   }
   if (/\b429\b|rate.?limit/i.test(message)) return "rate_limited";
-  if (/\b5\d\d\b|server error/i.test(message)) return "rpc_server_error";
-  if (/\b4\d\d\b|invalid request/i.test(message)) return "rpc_request_error";
+  if (code === -32603 || /\b5\d\d\b|server error/i.test(message)) return "rpc_server_error";
+  if (
+    code === -32600 ||
+    code === -32601 ||
+    code === -32602 ||
+    /\b4\d\d\b|invalid request/i.test(message)
+  )
+    return "rpc_request_error";
   if (/fetch failed|network|ECONN|ENOTFOUND|EAI_AGAIN/i.test(message)) {
     return "transport_error";
   }
-  return "unknown";
+  return code !== undefined && code <= -32000 && code >= -32768 ? "rpc_error" : "unknown";
 }
 
 function rpcUrl() {

@@ -178,6 +178,67 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe("integrated Gas Station simulated browser regressions", () => {
+  test("makes the selected tab distinguishable in dark mode", async ({ page }) => {
+    await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
+    await page.evaluate(() => document.documentElement.classList.add("dark"));
+
+    for (const name of ["Overview", "Activity", "Settings"] as const) {
+      await openGasTab(page, name);
+      const selected = page.getByRole("tab", { name, exact: true });
+      await expect(selected).toHaveAttribute("aria-selected", "true");
+
+      await expect
+        .poll(() =>
+          selected.evaluate((tab) => {
+            const list = tab.closest('[role="tablist"]');
+            const context = document.createElement("canvas").getContext("2d");
+            if (!list || !context) return 0;
+            const sample = (color: string) => {
+              context.fillStyle = color;
+              context.fillRect(0, 0, 1, 1);
+              return Array.from(context.getImageData(0, 0, 1, 1).data).slice(0, 3);
+            };
+            const luminance = (color: number[]) => {
+              const channels = color.map((value) => {
+                const normalized = value / 255;
+                return normalized <= 0.04045
+                  ? normalized / 12.92
+                  : ((normalized + 0.055) / 1.055) ** 2.4;
+              });
+              return 0.2126 * channels[0]! + 0.7152 * channels[1]! + 0.0722 * channels[2]!;
+            };
+            const bar = luminance(sample(getComputedStyle(list).backgroundColor));
+            const active = luminance(sample(getComputedStyle(tab).backgroundColor));
+            return (Math.max(bar, active) + 0.05) / (Math.min(bar, active) + 0.05);
+          }),
+        )
+        .toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  test("keeps all tab buttons inside the tab bar at mobile and desktop widths", async ({
+    page,
+  }) => {
+    await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
+
+    for (const width of [320, 768, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const list = page.getByRole("tablist", { name: "Gas Station sections" });
+      const listBounds = await list.boundingBox();
+      expect(listBounds).not.toBeNull();
+      for (const name of ["Overview", "Activity", "Settings"]) {
+        const tabBounds = await page.getByRole("tab", { name, exact: true }).boundingBox();
+        expect(tabBounds).not.toBeNull();
+        if (!listBounds || !tabBounds) throw new Error("Tab geometry is unavailable");
+        expect(tabBounds.height).toBeGreaterThanOrEqual(40);
+        expect(tabBounds.y).toBeGreaterThanOrEqual(listBounds.y);
+        expect(tabBounds.y + tabBounds.height).toBeLessThanOrEqual(
+          listBounds.y + listBounds.height,
+        );
+      }
+    }
+  });
+
   test("shows only the selected section while retaining mounted tab content", async ({ page }) => {
     await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
     const tabPanels = page.locator('[data-slot="tabs-content"]');

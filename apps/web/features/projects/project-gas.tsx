@@ -43,6 +43,9 @@ type ProjectGasProps = {
   projectId: string;
 };
 
+const gasTabTriggerClassName =
+  "min-h-10 px-2 dark:data-[state=active]:border-primary dark:data-[state=active]:bg-primary dark:data-[state=active]:text-primary-foreground";
+
 type GasQueryErrorBoundaryProps = {
   children: ReactNode;
   onRetry: () => void;
@@ -338,14 +341,17 @@ function ProjectGasContent({ projectId }: ProjectGasProps) {
       </header>
 
       <Tabs defaultValue="overview" className="min-w-0 gap-5">
-        <TabsList aria-label="Gas Station sections" className="grid h-auto w-full grid-cols-3">
-          <TabsTrigger value="overview" className="min-h-10 px-2">
+        <TabsList
+          aria-label="Gas Station sections"
+          className="grid w-full grid-cols-3 group-data-[orientation=horizontal]/tabs:h-auto"
+        >
+          <TabsTrigger value="overview" className={gasTabTriggerClassName}>
             Overview
           </TabsTrigger>
-          <TabsTrigger value="activity" className="min-h-10 px-2">
+          <TabsTrigger value="activity" className={gasTabTriggerClassName}>
             Activity
           </TabsTrigger>
-          <TabsTrigger value="settings" className="min-h-10 px-2">
+          <TabsTrigger value="settings" className={gasTabTriggerClassName}>
             Settings
           </TabsTrigger>
         </TabsList>

@@ -62,6 +62,14 @@ async function gotoGas(page: Page, config: GasFixtureConfig, url = ownerProjectU
   await expect.poll(() => page.evaluate(() => Boolean(window.__veloGasE2E))).toBe(true);
 }
 
+async function openGasTab(page: Page, name: "Overview" | "Activity" | "Settings") {
+  await page.getByRole("tab", { name, exact: true }).click();
+}
+
+async function openRelayerControls(page: Page) {
+  await page.getByRole("button", { name: "Relayer funding and controls" }).click();
+}
+
 type FixtureCommand =
   | "reactive-update"
   | "stored-policy-update"
@@ -194,6 +202,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
 
     await gotoGas(page, { session: "editor", projectId: "project-gas-owner" }, ownerProjectUrl);
     await expect(page.getByText("editor access", { exact: true })).toBeVisible();
+    await openGasTab(page, "Settings");
     await expect(page.getByRole("button", { name: "Save policy" })).toBeVisible();
     await expect(page.getByText("No projects", { exact: true })).toBeVisible();
     await page.getByLabel("Hourly wallet quota").fill("61");
@@ -204,6 +213,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await gotoGas(page, { session: "viewer", projectId: "project-gas-member" }, memberProjectUrl);
     await expect(page.getByText("viewer access", { exact: true })).toBeVisible();
     await expect(page.getByText("Member-only Gas Project", { exact: true })).toBeVisible();
+    await openGasTab(page, "Settings");
     await expect(page.getByText("Read only", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Save policy" })).toHaveCount(0);
     await expect(page.getByText("No projects", { exact: true })).toBeVisible();
@@ -239,6 +249,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     page,
   }) => {
     await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
+    await openRelayerControls(page);
 
     const publicKey = page.getByRole("textbox", { name: "Relayer public address" });
     await expect(publicKey).toBeVisible();
@@ -273,6 +284,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await expect(page.getByText("Metadata disabled", { exact: true }).first()).toBeVisible();
 
     await gotoGas(page, { session: "editor", projectId: "project-gas-owner" });
+    await openRelayerControls(page);
     await expect(page.getByRole("textbox", { name: "Relayer public address" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Save relayer configuration" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Refresh balance" })).toBeVisible();
@@ -385,6 +397,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
 
   test("saves normalized policy arguments once and applies stored readback", async ({ page }) => {
     await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
+    await openGasTab(page, "Settings");
 
     await page.getByLabel("Daily cap (XLM)").fill("12.3456789");
     await page.getByLabel("Hourly wallet quota").fill("4");
@@ -430,6 +443,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
       projectId: "project-gas-owner",
       scenario: "policy-denial",
     });
+    await openGasTab(page, "Settings");
 
     const dailyCap = page.getByLabel("Daily cap (XLM)");
     await dailyCap.fill("9");
@@ -456,12 +470,16 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     page,
   }) => {
     await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
+    await openGasTab(page, "Settings");
 
     await expect(page.getByLabel("Daily cap (XLM)")).toHaveValue("20");
     await fixture(page, "stored-policy-update");
     await expect(page.getByLabel("Daily cap (XLM)")).toHaveValue("21");
 
     await page.getByLabel("Daily cap (XLM)").fill("8");
+    await openGasTab(page, "Activity");
+    await openGasTab(page, "Settings");
+    await expect(page.getByLabel("Daily cap (XLM)")).toHaveValue("8");
     await fixture(page, "stored-policy-update");
     await expect(page.getByLabel("Daily cap (XLM)")).toHaveValue("8");
     await expect(
@@ -470,10 +488,12 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     await page.getByRole("button", { name: "Reset to stored values" }).click();
     await expect(page.getByLabel("Daily cap (XLM)")).toHaveValue("22");
 
+    await openGasTab(page, "Activity");
     await page.getByRole("button", { name: "View receipt details for gas-e2e-001" }).click();
     await expect(page.getByRole("heading", { name: "Gas receipt detail" })).toBeVisible();
     await page.keyboard.press("Escape");
 
+    await openGasTab(page, "Settings");
     await page.getByLabel("Daily cap (XLM)").fill("8");
     await page.getByRole("button", { name: "Save policy" }).click();
     await configureFixture(page, { session: "viewer", projectId: "project-gas-member" });
@@ -483,7 +503,9 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
 
     await page.goto(memberProjectUrl);
     await expect(page.getByText("viewer access", { exact: true })).toBeVisible();
+    await openGasTab(page, "Settings");
     await expect(page.getByLabel("Daily cap (XLM)")).toHaveValue("10");
+    await openGasTab(page, "Activity");
     await expect(page.getByRole("heading", { name: "Gas receipt detail" })).toHaveCount(0);
     await expect(activityRows(page)).toHaveCount(3);
   });
@@ -491,6 +513,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
   test("refreshes relayer balance, preserves failures, and enforces cooldown", async ({ page }) => {
     await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
     await expect(page.getByText("4.2000000 XLM", { exact: true })).toBeVisible();
+    await openRelayerControls(page);
 
     const refresh = page.getByRole("button", { name: "Refresh balance" });
     await refresh.click();
@@ -504,6 +527,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
       projectId: "project-gas-owner",
       scenario: "balance-failure",
     });
+    await openRelayerControls(page);
     await page.getByRole("button", { name: "Refresh balance" }).click();
     await resolveNext(page, "gas/balance_action:refreshRelayerBalance");
     await expect(page.getByText(/temporarily unavailable/i)).toBeVisible();
@@ -515,6 +539,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
       projectId: "project-gas-owner",
       scenario: "balance-cooldown",
     });
+    await openRelayerControls(page);
     const cooldownRefresh = page.getByRole("button", { name: "Refresh balance" });
     await cooldownRefresh.click();
     await resolveNext(page, "gas/balance_action:refreshRelayerBalance");
@@ -530,6 +555,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
       projectId: "project-gas-owner",
       scenario: "managed-relayer",
     });
+    await openRelayerControls(page);
 
     await expect(page.getByRole("heading", { name: "Review sponsorship settings" })).toBeVisible();
     await expect(page.getByText("10.0000000 XLM", { exact: true })).toBeVisible();
@@ -591,6 +617,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
       projectId: "project-gas-owner",
       scenario: "managed-relayer",
     });
+    await openRelayerControls(page);
     await expect(page.getByText("Owner funding controls", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Pause sponsorship" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Prepare withdrawal" })).toHaveCount(0);
@@ -600,6 +627,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
       projectId: "project-gas-owner",
       scenario: "managed-no-contracts",
     });
+    await openRelayerControls(page);
     await expect(page.getByText("No active contracts are linked", { exact: true })).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Enable sponsorship with these settings" }),
@@ -614,6 +642,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
       projectId: "project-gas-owner",
       scenario: "managed-allowlist-drift",
     });
+    await openRelayerControls(page);
 
     await expect(page.getByText(secondValidContractId, { exact: true })).toBeVisible();
     await expect(
@@ -645,6 +674,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
       projectId: "project-gas-owner",
       scenario: "managed-relayer-context-mismatch",
     });
+    await openRelayerControls(page);
 
     await expect(
       page.getByRole("alert").filter({ hasText: "Custody deployment context does not match" }),
@@ -658,8 +688,12 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
 
   test("protects pending completions when the wallet identity changes", async ({ page }) => {
     await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
+    await openGasTab(page, "Settings");
     await page.getByLabel("Daily cap (XLM)").fill("8");
     await page.getByRole("button", { name: "Save policy" }).click();
+    await expect(page.getByRole("button", { name: "Saving…" })).toBeDisabled();
+    await openGasTab(page, "Activity");
+    await openGasTab(page, "Settings");
     await expect(page.getByRole("button", { name: "Saving…" })).toBeDisabled();
 
     await configureFixture(page, { session: "viewer", projectId: "project-gas-member" });
@@ -669,13 +703,19 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
 
     await page.goto(memberProjectUrl);
     await expect(page.getByText("viewer access", { exact: true })).toBeVisible();
+    await openGasTab(page, "Settings");
     await expect(page.getByText("Policy saved.", { exact: false })).toHaveCount(0);
     await expect(page.getByLabel("Daily cap (XLM)")).toHaveValue("10");
 
     await configureFixture(page, { session: "owner", projectId: "project-gas-owner" });
     await page.goto(ownerProjectUrl);
     await expect(page.getByText("owner access", { exact: true })).toBeVisible();
+    await openGasTab(page, "Overview");
+    await openRelayerControls(page);
     await page.getByRole("button", { name: "Refresh balance" }).click();
+    await expect(page.getByRole("button", { name: "Verifying balance…" })).toBeDisabled();
+    await page.getByRole("button", { name: "Relayer funding and controls" }).click();
+    await page.getByRole("button", { name: "Relayer funding and controls" }).click();
     await expect(page.getByRole("button", { name: "Verifying balance…" })).toBeDisabled();
 
     await configureFixture(page, { session: "viewer", projectId: "project-gas-member" });
@@ -779,6 +819,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
     page,
   }, testInfo) => {
     await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
+    await openGasTab(page, "Activity");
 
     await expect(page.getByRole("heading", { name: "Fee telemetry" })).toBeVisible();
     await expect(page.getByText("1.2345678 XLM", { exact: true }).first()).toBeVisible();
@@ -860,6 +901,7 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
 
     await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
     await setScenario(page, "activity-read-error");
+    await openGasTab(page, "Activity");
     await expect(page.getByText("Gas activity unavailable", { exact: true })).toBeVisible();
     await expect(page.getByText("fixture activity provider failure", { exact: true })).toHaveCount(
       0,
@@ -877,8 +919,10 @@ test.describe("integrated Gas Station simulated browser regressions", () => {
   }, testInfo) => {
     await gotoGas(page, { session: "owner", projectId: "project-gas-owner" });
 
+    await openGasTab(page, "Settings");
     await page.getByLabel("Daily cap (XLM)").focus();
     await expect(page.locator(":focus")).toHaveAccessibleName("Daily cap (XLM)");
+    await openGasTab(page, "Activity");
     await page.getByRole("button", { name: "View receipt details for gas-e2e-001" }).focus();
     await page.keyboard.press("Enter");
     await expect(page.getByRole("heading", { name: "Gas receipt detail" })).toBeVisible();

@@ -3,10 +3,17 @@
 import { useWallet } from "@/core/wallet/wallet-provider";
 import { api } from "@repo/backend/convex/_generated/api";
 import { Badge } from "@repo/ui/components/ui-customs/badge";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@repo/ui/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@repo/ui/components/ui/alert";
 import { Button } from "@repo/ui/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@repo/ui/components/ui/card";
 import { Skeleton } from "@repo/ui/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@repo/ui/components/ui/tabs";
 import { useQuery } from "convex/react";
 import {
   AlertCircleIcon,
@@ -24,11 +31,20 @@ import { GasActivity } from "./gas-activity";
 import { GasPolicyForm } from "./gas-policy-form";
 import { GasRelayerPanel } from "./gas-relayer-panel";
 import { GasTelemetry } from "./gas-telemetry";
-import { formatStroopsAsXlm, getGasAccessState, type GasPolicySnapshot } from "./gas-ui";
+import {
+  formatStroopsAsXlm,
+  getGasAccessState,
+  isValidGasRelayerTimestamp,
+  type GasPolicySnapshot,
+  type GasRelayerSnapshot,
+} from "./gas-ui";
 
 type ProjectGasProps = {
   projectId: string;
 };
+
+const gasTabTriggerClassName =
+  "min-h-10 px-2 dark:data-[state=active]:border-primary dark:data-[state=active]:bg-primary dark:data-[state=active]:text-primary-foreground";
 
 type GasQueryErrorBoundaryProps = {
   children: ReactNode;
@@ -160,10 +176,7 @@ function PolicySummary({ policy }: { policy: GasPolicySnapshot | null | undefine
     <Card>
       <CardHeader>
         <h2 className="text-lg font-semibold">Policy summary</h2>
-        <CardDescription>
-          Stored sponsorship controls. Policy editing and usage telemetry are not part of this
-          overview.
-        </CardDescription>
+        <CardDescription>Request limits and allowed contracts for this project.</CardDescription>
       </CardHeader>
       <CardContent>
         {policy === undefined ? (
@@ -191,7 +204,7 @@ function PolicySummary({ policy }: { policy: GasPolicySnapshot | null | undefine
             <SummaryRow label="Daily cap">
               <span className="font-medium">{formatStroopsAsXlm(policy.dailyCapStroops)}</span>
             </SummaryRow>
-            <SummaryRow label="Configured requests per wallet">
+            <SummaryRow label="Requests per wallet">
               <span className="font-medium">{policy.walletHourlyLimit} request(s) per wallet</span>
             </SummaryRow>
             <SummaryRow label="Allowed contracts">
@@ -199,6 +212,49 @@ function PolicySummary({ policy }: { policy: GasPolicySnapshot | null | undefine
             </SummaryRow>
           </dl>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RelayerSummary({ relayer }: { relayer: GasRelayerSnapshot }) {
+  const verificationLabel =
+    relayer.balanceStroops === null || relayer.balanceUpdatedAt === null
+      ? "Not verified"
+      : isValidGasRelayerTimestamp(relayer.balanceUpdatedAt)
+        ? new Date(relayer.balanceUpdatedAt).toISOString().replace("T", " ").replace("Z", " UTC")
+        : "Verification time unavailable";
+
+  return (
+    <Card>
+      <CardHeader className="gap-2 pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">Relayer</h2>
+          <Badge variant={relayer.status === "active" ? "success" : "gray"}>
+            {relayer.status === "active" ? "Metadata active" : "Metadata disabled"}
+          </Badge>
+        </div>
+        <CardDescription>
+          Testnet account and its last observed native XLM balance. Metadata status does not confirm
+          sponsorship or signer readiness.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-1">
+          <span className="text-sm text-muted-foreground">Observed balance</span>
+          <span className="font-medium tabular-nums">
+            {relayer.balanceStroops === null
+              ? "Not verified"
+              : formatStroopsAsXlm(relayer.balanceStroops)}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            Ledger snapshot, not spendable funds.
+          </span>
+        </div>
+        <div className="grid gap-1">
+          <span className="text-sm text-muted-foreground">Verification</span>
+          <span className="text-sm font-medium break-words">{verificationLabel}</span>
+        </div>
       </CardContent>
     </Card>
   );
@@ -284,33 +340,81 @@ function ProjectGasContent({ projectId }: ProjectGasProps) {
         </div>
       </header>
 
-      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
-        <PolicySummary policy={policy} />
-        <GasRelayerPanel
-          projectId={typedProjectId}
-          walletAddress={wallet.address}
-          role={access.role}
-          relayer={relayer}
-          provisioning={provisioning}
-        />
-      </div>
+      <Tabs defaultValue="overview" className="min-w-0 gap-5">
+        <TabsList
+          aria-label="Gas Station sections"
+          className="grid w-full grid-cols-3 group-data-[orientation=horizontal]/tabs:h-auto"
+        >
+          <TabsTrigger value="overview" className={gasTabTriggerClassName}>
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="activity" className={gasTabTriggerClassName}>
+            Activity
+          </TabsTrigger>
+          <TabsTrigger value="settings" className={gasTabTriggerClassName}>
+            Settings
+          </TabsTrigger>
+        </TabsList>
 
-      <GasTelemetry projectId={typedProjectId} policy={policy} />
+        <TabsContent value="overview" forceMount className="grid gap-4">
+          <div className="grid min-w-0 gap-4 lg:grid-cols-2">
+            <PolicySummary policy={policy} />
+            {relayer ? (
+              <RelayerSummary relayer={relayer} />
+            ) : relayer === undefined ? (
+              <GasRelayerPanel
+                projectId={typedProjectId}
+                walletAddress={wallet.address}
+                role={access.role}
+                relayer={relayer}
+                provisioning={provisioning}
+              />
+            ) : null}
+          </div>
 
-      <GasActivity projectId={typedProjectId} />
+          {relayer ? (
+            <Accordion type="single" collapsible>
+              <AccordionItem value="relayer-details" className="rounded-lg border px-4">
+                <AccordionTrigger>Relayer funding and controls</AccordionTrigger>
+                <AccordionContent forceMount>
+                  <GasRelayerPanel
+                    projectId={typedProjectId}
+                    walletAddress={wallet.address}
+                    role={access.role}
+                    relayer={relayer}
+                    provisioning={provisioning}
+                  />
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          ) : relayer === null ? (
+            <GasRelayerPanel
+              projectId={typedProjectId}
+              walletAddress={wallet.address}
+              role={access.role}
+              relayer={relayer}
+              provisioning={provisioning}
+            />
+          ) : null}
+        </TabsContent>
 
-      <GasPolicyForm projectId={typedProjectId} policy={policy} role={access.role} />
+        <TabsContent value="activity" forceMount className="grid gap-6">
+          <GasTelemetry projectId={typedProjectId} policy={policy} />
+          <GasActivity projectId={typedProjectId} />
+        </TabsContent>
 
-      <Alert>
-        <CheckCircle2Icon />
-        <AlertTitle>Authoritative policy controls</AlertTitle>
-        <AlertDescription>
-          Policy changes are authorized by Convex and reflected from stored readback. Relayer
-          balance observations are refreshed manually. Owner funding uses a wallet-signed Testnet
-          transaction; Velo-managed signing keys are encrypted in Convex and can be decrypted by
-          Velo&apos;s trusted backend.
-        </AlertDescription>
-      </Alert>
+        <TabsContent value="settings" forceMount className="grid gap-4">
+          <GasPolicyForm projectId={typedProjectId} policy={policy} role={access.role} />
+          <Alert>
+            <CheckCircle2Icon />
+            <AlertTitle>Changes are saved to project policy</AlertTitle>
+            <AlertDescription>
+              Convex authorizes policy changes and returns the stored values. Daily limits include
+              confirmed fees and outstanding reservations.
+            </AlertDescription>
+          </Alert>
+        </TabsContent>
+      </Tabs>
     </section>
   );
 }

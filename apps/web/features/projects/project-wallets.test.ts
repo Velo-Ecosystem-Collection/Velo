@@ -85,8 +85,20 @@ test("Wallets dropdowns remain legible in light and dark modes", () => {
 });
 
 test("Wallets integration instructions contain long snippets on mobile", () => {
-  assert.match(tabs, /group\/tabs flex min-w-0 max-w-full/);
-  assert.match(tabs, /min-w-0 max-w-full flex-1 outline-none/);
+  const rootClasses = tabs.match(/<TabsPrimitive\.Root\b[^>]*className=\{cn\(\s*"([^"]+)"/)?.[1];
+  const contentClasses = tabs.match(
+    /<TabsPrimitive\.Content\b[^>]*className=\{cn\(\s*"([^"]+)"/,
+  )?.[1];
+  assert.ok(rootClasses, "Tabs root classes were not found");
+  assert.ok(contentClasses, "Tabs content classes were not found");
+
+  for (const className of ["group/tabs", "flex", "min-w-0", "max-w-full"]) {
+    assert.ok(rootClasses.split(/\s+/).includes(className), `Tabs root needs ${className}`);
+  }
+  for (const className of ["min-w-0", "max-w-full", "flex-1", "outline-none"]) {
+    assert.ok(contentClasses.split(/\s+/).includes(className), `Tabs content needs ${className}`);
+  }
+
   assert.match(panel, /<Tabs defaultValue="html" className="[^"]*max-w-full[^"]*min-w-0">/);
   assert.match(
     panel,

@@ -37,6 +37,14 @@ jobs:
       - name: Install Dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Check committed Convex generated formatting
+        shell: bash
+        run: |
+          if ! pnpm exec oxfmt --check packages/backend/convex/_generated; then
+            echo "::error::Run pnpm exec oxfmt --write packages/backend/convex/_generated and commit the changes."
+            exit 1
+          fi
+
       - name: Lint and Typecheck
         run: pnpm lint:fix
 
@@ -140,12 +148,11 @@ jobs:
         run: |
           set -euo pipefail
 
-          pnpm --filter @repo/backend exec convex codegen --typecheck disable
-          pnpm exec oxfmt --write packages/backend/convex/_generated
+          pnpm convex:codegen
 
           dirty_files="$(git status --porcelain --untracked-files=all)"
           if [[ -n "$dirty_files" ]]; then
-            echo "::error::Convex code generation does not match the checked-in source. Regenerate it, run pnpm lint:fix, and commit the result before deploying."
+            echo "::error::Convex code generation does not match the checked-in source. Run pnpm convex:codegen against your development deployment and commit the generated changes."
             printf '%s\n' "$dirty_files"
             git diff -- packages/backend/convex/_generated
             exit 1

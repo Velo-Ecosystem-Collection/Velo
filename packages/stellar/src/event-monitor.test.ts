@@ -1,7 +1,40 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { filterContractEvents, normalizeRpcEvent } from "./event-monitor.ts";
+import { rpc } from "@stellar/stellar-sdk";
+
+import {
+  fetchRecentContractEvents,
+  filterContractEvents,
+  normalizeRpcEvent,
+} from "./event-monitor.ts";
+
+test("one RPC page can include more than five project contracts", async (t) => {
+  const contractIds = Array.from({ length: 20 }, (_, index) => `contract-${index}`);
+  const getEvents = t.mock.method(
+    rpc.Server.prototype,
+    "getEvents",
+    async ({ filters }: Parameters<rpc.Server["getEvents"]>[0]) => {
+      if (filters.some((filter) => (filter.contractIds?.length ?? 0) > 5)) {
+        throw new Error("RPC rejected an oversized contract filter");
+      }
+      assert.deepEqual(
+        filters.flatMap((filter) => filter.contractIds ?? []),
+        contractIds,
+      );
+      return { events: [], cursor: "next-page", latestLedger: 100 };
+    },
+  );
+
+  const result = await fetchRecentContractEvents({
+    rpcUrl: "https://rpc.example",
+    contractIds,
+    cursor: "previous-page",
+  });
+
+  assert.equal(getEvents.mock.callCount(), 1);
+  assert.equal(result.cursor, "next-page");
+});
 
 test("normalizeRpcEvent creates a dashboard-safe event record", () => {
   const normalized = normalizeRpcEvent({

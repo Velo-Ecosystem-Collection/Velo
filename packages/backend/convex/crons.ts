@@ -49,10 +49,10 @@ crons.interval("recover abandoned Gas executions", { minutes: 1 }, recoverGasExe
 crons.interval("reconcile pending Gas FeeBumps", { minutes: 1 }, reconcileGasExecution, {
   limit: SCHEDULED_WORKER_PAGE_SIZE,
 });
-crons.interval("recover expired billing reservations", { minutes: 1 }, recoverBillingReservations, {
+crons.interval("recover expired billing reservations", { minutes: 5 }, recoverBillingReservations, {
   limit: SCHEDULED_WORKER_PAGE_SIZE,
 });
-crons.interval("expire billing credit lots", { minutes: 1 }, expireBillingCreditLots, {
+crons.interval("expire billing credit lots", { minutes: 5 }, expireBillingCreditLots, {
   limit: SCHEDULED_WORKER_PAGE_SIZE,
 });
 crons.interval("reconcile sandbox billing", { minutes: 5 }, reconcileBilling, {

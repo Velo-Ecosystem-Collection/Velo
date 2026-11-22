@@ -155,3 +155,32 @@ test("ambiguous PayAccess mappings leave the event poller cursor unchanged for r
     vi.mocked(fetchRecentContractEvents).mockReset();
   }
 });
+
+test("idle PayAccess polls defer checkpoint writes and keep reading from the saved ledger", async () => {
+  const t = convexTest(schema, modules);
+  const pollerId = await t.run((ctx) =>
+    ctx.db.insert("pollerState", {
+      scope: "global:pay_access",
+      lastLedger: 100,
+      lastRunAt: Date.now(),
+      status: "idle",
+      updatedAt: Date.now(),
+    }),
+  );
+  const fetchEvents = vi.mocked(fetchRecentContractEvents);
+  fetchEvents.mockResolvedValue({ events: [], latestLedger: 110 });
+  vi.stubEnv("VELO_PAY_ACCESS_CONTRACT_ID", BACKEND_PAY_ACCESS_CONTRACT_ID);
+
+  try {
+    await t.action(internal.payAccessSync.syncPayAccessEvents, {});
+    expect(await t.run((ctx) => ctx.db.get(pollerId))).toMatchObject({ lastLedger: 100 });
+
+    await t.run((ctx) => ctx.db.patch(pollerId, { lastRunAt: Date.now() - 5 * 60 * 1_000 }));
+    await t.action(internal.payAccessSync.syncPayAccessEvents, {});
+    expect(fetchEvents).toHaveBeenLastCalledWith(expect.objectContaining({ afterLedger: 100 }));
+    expect(await t.run((ctx) => ctx.db.get(pollerId))).toMatchObject({ lastLedger: 110 });
+  } finally {
+    vi.unstubAllEnvs();
+    fetchEvents.mockReset();
+  }
+});

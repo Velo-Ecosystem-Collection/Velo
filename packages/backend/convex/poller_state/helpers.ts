@@ -1,4 +1,3 @@
-import type { Doc } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { ProjectId } from "../projects/types";
 import type { PollerState, PublicPollStatus } from "./types";
@@ -9,19 +8,12 @@ export function projectScope(projectId: ProjectId) {
   return `project:${projectId}`;
 }
 
-export async function setProjectPolling(
-  ctx: MutationCtx,
-  projectId: ProjectId,
-  knownPoller?: Doc<"pollerState"> | null,
-) {
+export async function setProjectPolling(ctx: MutationCtx, projectId: ProjectId) {
   const scope = projectScope(projectId);
-  const existing =
-    knownPoller === undefined
-      ? await ctx.db
-          .query("pollerState")
-          .withIndex("by_scope", (q) => q.eq("scope", scope))
-          .unique()
-      : knownPoller;
+  const existing = await ctx.db
+    .query("pollerState")
+    .withIndex("by_scope", (q) => q.eq("scope", scope))
+    .unique();
   const value = {
     scope,
     projectId,

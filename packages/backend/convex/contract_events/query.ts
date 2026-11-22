@@ -5,7 +5,35 @@ import { requireProjectRole } from "../playground_projects/helpers";
 import { publicPollStatus } from "../poller_state/helpers";
 import { pollerForProject } from "../poller_state/query";
 import { requireProjectOwnerByToken } from "../projects/helpers";
-import { METADATA_HASH_PATTERN, normalizePageSize } from "./helpers";
+import { MAX_SCHEDULED_CONTRACTS, METADATA_HASH_PATTERN, normalizePageSize } from "./helpers";
+
+// Keep frequently updated poller state out of this query's cache dependencies.
+export const listScheduledContractPage = internalQuery({
+  args: { cursor: v.union(v.string(), v.null()) },
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db
+      .query("projectContracts")
+      .withIndex("by_status", (q) => q.eq("status", "active"))
+      .paginate({ numItems: MAX_SCHEDULED_CONTRACTS, cursor });
+    const projectIds = [...new Set(page.page.map((contract) => contract.projectId))];
+    const projects = await Promise.all(projectIds.map((projectId) => ctx.db.get(projectId)));
+    const eligibleProjectIds = new Set(
+      projects.flatMap((project) =>
+        project && project.retiredAt === undefined && project.status === "registered"
+          ? [project._id]
+          : [],
+      ),
+    );
+
+    return {
+      contracts: page.page
+        .filter((contract) => eligibleProjectIds.has(contract.projectId))
+        .map(({ projectId, contractId }) => ({ projectId, contractId })),
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
 
 export const listByProject = query({
   args: {

@@ -7,6 +7,8 @@ import { internalMutation } from "../_generated/server";
 import { projectScope, setProjectPolling, storePollSuccess } from "../poller_state/helpers";
 import { MAX_SCHEDULED_CONTRACTS, MAX_SCHEDULED_PROJECTS } from "./helpers";
 
+const POLL_ERROR_RETRY_DELAY_MS = 5 * 60 * 1_000;
+
 export const selectScheduledTargets = internalMutation({
   args: {},
   handler: async (ctx) => {
@@ -57,6 +59,7 @@ export const selectScheduledTargets = internalMutation({
       }
     }
 
+    const now = Date.now();
     const targets = await Promise.all(
       Array.from(contractIdsByProject)
         .slice(0, MAX_SCHEDULED_PROJECTS)
@@ -65,6 +68,15 @@ export const selectScheduledTargets = internalMutation({
             .query("pollerState")
             .withIndex("by_scope", (q) => q.eq("scope", projectScope(projectId)))
             .unique();
+
+          if (
+            poller?.status === "error" &&
+            poller.lastRunAt !== undefined &&
+            now - poller.lastRunAt < POLL_ERROR_RETRY_DELAY_MS
+          ) {
+            return null;
+          }
+
           await setProjectPolling(ctx, projectId, poller);
           return {
             projectId,
@@ -75,7 +87,7 @@ export const selectScheduledTargets = internalMutation({
         }),
     );
 
-    return targets;
+    return targets.filter((target) => target !== null);
   },
 });
 

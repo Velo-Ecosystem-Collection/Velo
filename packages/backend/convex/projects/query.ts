@@ -9,8 +9,8 @@ import { requireProjectRole } from "../playground_projects/helpers";
 import { activeContractsForProject } from "../project_contracts/helpers";
 import {
   METADATA_HASH_PATTERN,
+  getAuthenticatedIdentity,
   normalizeAddress,
-  requireIdentity,
   requireOwnerProject,
   safeWebsite,
 } from "./helpers";
@@ -30,7 +30,11 @@ const safeApiKeyValidator = v.object({
 });
 
 async function ownerProjects(ctx: QueryCtx, limit = 50) {
-  const identity = await requireIdentity(ctx);
+  const identity = await getAuthenticatedIdentity(ctx);
+  if (!identity) {
+    return [];
+  }
+
   const walletAddress = normalizeAddress(identity.subject);
   const tokenProjects = await ctx.db
     .query("projects")

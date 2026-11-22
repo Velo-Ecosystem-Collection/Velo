@@ -25,10 +25,15 @@ test("app shell constrains intrinsic width and respects installed-app safe areas
   assert.match(layout, /viewportFit: "cover"/);
 });
 
-test("dense operational tables progressively reveal secondary columns", () => {
+test("dense project pages provide mobile delivery cards and progressively reveal table details", () => {
   assert.match(contracts, /(?:whitespace-normal break-all|break-all whitespace-normal)/);
   assert.match(events, /hidden lg:table-cell">Transaction/);
-  assert.match(webhooks, /hidden lg:table-cell">Latency/);
+  assert.match(webhooks, /aria-label="Webhook delivery attempts"/);
+  assert.match(webhooks, /label="View delivery"/);
+  assert.match(webhooks, /hidden min-w-0 sm:block/);
+  assert.match(webhooks, /hidden xl:table-cell">Destination/);
+  assert.match(webhooks, /hidden 2xl:table-cell">Latency/);
+  assert.match(webhooks, /className="(?=[^"]*min-w-0)(?=[^"]*break-all)(?=[^"]*font-mono)[^"]*"/);
   assert.match(apiKeys, /hidden lg:table-cell">Created/);
   assert.match(settlement, /max-w-3xl/);
   assert.match(settlement, /Settlement integration unavailable/);

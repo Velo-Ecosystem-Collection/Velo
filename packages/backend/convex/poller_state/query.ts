@@ -13,6 +13,12 @@ export async function pollerForProject(ctx: QueryCtx, projectId: ProjectId) {
     .unique();
 }
 
+export const getScheduledCheckpoints = internalQuery({
+  args: { projectIds: v.array(v.id("projects")) },
+  handler: async (ctx, { projectIds }) =>
+    await Promise.all(projectIds.map((projectId) => pollerForProject(ctx, projectId))),
+});
+
 export const getByScope = internalQuery({
   args: { scope: v.string() },
   handler: async (ctx, args) => {

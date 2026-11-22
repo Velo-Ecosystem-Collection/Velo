@@ -1,15 +1,25 @@
 /// <reference types="vite/client" />
 import { createHash } from "node:crypto";
 
+import { fetchRecentContractEvents } from "@repo/stellar/event-monitor";
 import { convexTest } from "convex-test";
-import { expect, test, vi } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 
 import { api, internal } from "../_generated/api";
 import schema from "../schema";
 
+vi.mock("@repo/stellar/event-monitor", () => ({ fetchRecentContractEvents: vi.fn() }));
+
+const fetchEvents = vi.mocked(fetchRecentContractEvents);
 const modules = import.meta.glob("../**/*.ts");
 const OWNER = "GCFIRY65OQE7DFP5KLNS2PF2LVZMUZYJX4OZIEQ36N2IQANUB5XVYOJR";
 const TOKEN_IDENTIFIER = `http://localhost:3000|${OWNER}`;
+
+beforeEach(() => {
+  fetchEvents
+    .mockReset()
+    .mockResolvedValue({ events: [], latestLedger: 100, cursor: "checkpoint" });
+});
 
 function asOwner(t: ReturnType<typeof convexTest>) {
   return t.withIdentity({
@@ -161,13 +171,11 @@ test("scheduled polling skips retired projects and result writes recheck retirem
     await ctx.db.patch(retiredProjectId, { retiredAt: Date.now() });
   });
 
-  const targets = await t.mutation(internal.contract_events.mutation.selectScheduledTargets, {});
-  expect(targets.map((target) => target.projectId)).toEqual([activeProjectId]);
-  expect(
-    await t.query(internal.poller_state.query.getByScope, {
-      scope: `project:${activeProjectId}`,
-    }),
-  ).toMatchObject({ status: "polling" });
+  const resultCounts = await t.action(internal.contractEventPolling.pollScheduled, {});
+  expect(resultCounts.projectCount).toBe(1);
+  expect(fetchEvents).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ contractIds: [`${contractId}-eligible`] }),
+  );
   await expect(
     t.query(internal.contract_events.query.getPollTargetInternal, {
       projectId: retiredProjectId,
@@ -198,7 +206,12 @@ test("scheduled polling skips retired projects and result writes recheck retirem
   }));
   expect(persisted.events).toHaveLength(0);
   expect(persisted.pollers).toHaveLength(1);
-  expect(persisted.pollers[0]).toMatchObject({ projectId: activeProjectId, status: "polling" });
+  expect(persisted.pollers[0]).toMatchObject({
+    projectId: activeProjectId,
+    status: "idle",
+    lastLedger: 100,
+    cursor: "checkpoint",
+  });
 });
 
 test("scheduled polling preserves project order and the twenty-project limit", async () => {
@@ -228,8 +241,63 @@ test("scheduled polling preserves project order and the twenty-project limit", a
       vi.setSystemTime(new Date(Date.now() + 1_000));
     }
 
-    const targets = await t.mutation(internal.contract_events.mutation.selectScheduledTargets, {});
-    expect(targets.map((target) => target.projectId)).toEqual(projectIds.slice(0, 20));
+    const resultCounts = await t.action(internal.contractEventPolling.pollScheduled, {});
+    expect(resultCounts.projectCount).toBe(20);
+    expect(fetchEvents.mock.calls.map(([args]) => args.contractIds)).toEqual(
+      projectIds.slice(0, 20).map((_, index) => [`contract-${index}`]),
+    );
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("scheduled polling creates state only after the RPC and backs off after a first failure", async () => {
+  vi.useFakeTimers();
+  try {
+    const t = convexTest(schema, modules);
+    const projectId = await seedRegisteredProject(t, "scheduled-poll-backoff");
+    const scope = `project:${projectId}`;
+    const retryDelayMs = 5 * 60 * 1_000;
+    await t.run((ctx) =>
+      ctx.db.insert("projectContracts", {
+        projectId,
+        ownerAddress: OWNER,
+        registryProjectId: 47,
+        contractId: "scheduled-contract",
+        status: "active",
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+    let stateBeforeRpc;
+    fetchEvents.mockImplementationOnce(async () => {
+      stateBeforeRpc = await t.query(internal.poller_state.query.getByScope, { scope });
+      throw new Error("Stellar RPC timeout");
+    });
+
+    await t.action(internal.contractEventPolling.pollScheduled, {});
+    expect(stateBeforeRpc).toBeNull();
+    const failedAt = Date.now();
+    expect(await t.query(internal.poller_state.query.getByScope, { scope })).toMatchObject({
+      status: "error",
+      lastRunAt: failedAt,
+    });
+
+    vi.setSystemTime(failedAt + retryDelayMs - 1);
+    expect(await t.action(internal.contractEventPolling.pollScheduled, {})).toEqual({
+      projectCount: 0,
+      eventCount: 0,
+    });
+    expect(fetchEvents).toHaveBeenCalledTimes(1);
+
+    vi.setSystemTime(failedAt + retryDelayMs);
+    await t.action(internal.contractEventPolling.pollScheduled, {});
+    expect(fetchEvents).toHaveBeenCalledTimes(2);
+    expect(await t.query(internal.poller_state.query.getByScope, { scope })).toMatchObject({
+      status: "idle",
+      lastLedger: 100,
+      cursor: "checkpoint",
+    });
   } finally {
     vi.useRealTimers();
   }

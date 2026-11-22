@@ -1,14 +1,18 @@
 import { fetchRecentContractEvents } from "@repo/stellar/event-monitor";
 import { v } from "convex/values";
 
+import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import type { PollTarget } from "./contract_events/types";
 
 import { internal } from "./_generated/api";
 import { action, internalAction } from "./_generated/server";
+import { MAX_SCHEDULED_CONTRACTS, MAX_SCHEDULED_PROJECTS } from "./contract_events/helpers";
 import { requireIdentity } from "./projects/helpers";
 
 const DEFAULT_TESTNET_RPC_URL = "https://soroban-testnet.stellar.org";
+const POLL_ERROR_RETRY_DELAY_MS = 5 * 60 * 1_000;
+const MAX_SCHEDULED_CONTRACTS_PER_PROJECT = 20;
 
 type OwnerPollTarget = Omit<PollTarget, "projectId">;
 
@@ -51,7 +55,7 @@ function rpcUrl() {
 async function pollTarget(
   ctx: ActionCtx,
   target: PollTarget,
-  options: { pollingStatusAlreadyMarked?: boolean } = {},
+  options: { scheduled?: boolean } = {},
 ): Promise<PollResult> {
   if (target.contractIds.length === 0) {
     await ctx.runMutation(internal.contract_events.mutation.storePollResult, {
@@ -63,7 +67,7 @@ async function pollTarget(
     return { eventCount: 0, contractCount: 0 };
   }
 
-  if (!options.pollingStatusAlreadyMarked) {
+  if (!options.scheduled) {
     await ctx.runMutation(internal.poller_state.mutation.markPolling, {
       projectId: target.projectId,
     });
@@ -131,7 +135,7 @@ async function pollTarget(
       phase,
       contractCount: target.contractIds.length,
     });
-    if (!options.pollingStatusAlreadyMarked) {
+    if (!options.scheduled) {
       await ctx.runMutation(internal.poller_state.mutation.markError, {
         projectId: target.projectId,
         message: errorCategory,
@@ -159,12 +163,54 @@ export const pollProject = action({
   },
 });
 
+async function selectScheduledTargets(ctx: ActionCtx): Promise<PollTarget[]> {
+  const contractIdsByProject = new Map<Id<"projects">, string[]>();
+  let remaining = MAX_SCHEDULED_CONTRACTS;
+  let cursor: string | null = null;
+  do {
+    const page: {
+      contracts: { projectId: Id<"projects">; contractId: string }[];
+      cursor: string;
+      isDone: boolean;
+    } = await ctx.runQuery(internal.contract_events.query.listScheduledContractPage, { cursor });
+    const contracts = page.contracts.slice(0, remaining);
+    for (const { projectId, contractId } of contracts) {
+      const contractIds = contractIdsByProject.get(projectId) ?? [];
+      if (contractIds.length < MAX_SCHEDULED_CONTRACTS_PER_PROJECT) {
+        contractIds.push(contractId);
+        contractIdsByProject.set(projectId, contractIds);
+      }
+    }
+    remaining -= contracts.length;
+    cursor = page.isDone ? null : page.cursor;
+  } while (cursor !== null && remaining > 0);
+
+  const candidates = [...contractIdsByProject].slice(0, MAX_SCHEDULED_PROJECTS);
+  if (candidates.length === 0) return [];
+
+  const checkpoints = await ctx.runQuery(internal.poller_state.query.getScheduledCheckpoints, {
+    projectIds: candidates.map(([projectId]) => projectId),
+  });
+  const now = Date.now();
+  return candidates.flatMap(([projectId, contractIds], index) => {
+    const poller = checkpoints[index];
+    if (
+      poller?.status === "error" &&
+      poller.lastRunAt !== undefined &&
+      now - poller.lastRunAt < POLL_ERROR_RETRY_DELAY_MS
+    ) {
+      return [];
+    }
+    return [{ projectId, contractIds, lastLedger: poller?.lastLedger, cursor: poller?.cursor }];
+  });
+}
+
 export const pollScheduled = internalAction({
   args: {},
   handler: async (ctx): Promise<{ projectCount: number; eventCount: number }> => {
     let targets: PollTarget[];
     try {
-      targets = await ctx.runMutation(internal.contract_events.mutation.selectScheduledTargets, {});
+      targets = await selectScheduledTargets(ctx);
     } catch (error) {
       console.warn("scheduled_contract_event_poll_failed", {
         errorCategory: classifyPollError(error),
@@ -180,7 +226,7 @@ export const pollScheduled = internalAction({
       const results = await Promise.all(
         chunk.map(async (target) => {
           try {
-            return await pollTarget(ctx, target, { pollingStatusAlreadyMarked: true });
+            return await pollTarget(ctx, target, { scheduled: true });
           } catch {
             failures.push({ projectId: target.projectId, failedAt: Date.now() });
             return null;

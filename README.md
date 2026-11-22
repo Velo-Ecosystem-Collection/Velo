@@ -389,6 +389,11 @@ pnpm test
 pnpm build
 ```
 
+After changing the Convex schema or functions, run `pnpm convex:codegen` with
+your development deployment configured and commit the changes under
+`packages/backend/convex/_generated`. This command applies the same formatting
+used by CI.
+
 Run both Soroban contract suites:
 
 ```bash

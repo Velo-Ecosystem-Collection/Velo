@@ -23,6 +23,7 @@
     "build": "turbo run build",
     "contracts:deploy": "node scripts/deploy-contracts.mjs",
     "contracts:deploy:test": "node --test scripts/deploy-contracts.test.mjs",
+    "convex:codegen": "pnpm --filter @repo/backend exec convex codegen --typecheck disable && pnpm exec oxfmt --write packages/backend/convex/_generated",
     "dev": "turbo run dev",
     "lint:fix": "turbo run lint:fix",
     "prepare": "husky",

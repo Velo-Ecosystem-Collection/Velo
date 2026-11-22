@@ -2,6 +2,7 @@ import { v } from "convex/values";
 
 import { internalMutation } from "../_generated/server";
 import { projectScope, setProjectPolling } from "./helpers";
+import { pollerForProject } from "./query";
 
 function pollErrorState(failedAt: number) {
   return {
@@ -45,13 +46,17 @@ export const markScheduledErrors = internalMutation({
   },
   handler: async (ctx, { failures }) => {
     for (const { projectId, failedAt } of failures) {
-      const poller = await ctx.db
-        .query("pollerState")
-        .withIndex("by_scope", (q) => q.eq("scope", projectScope(projectId)))
-        .unique();
-      // Target selection creates the row. A newer poll or project retirement may have changed it.
-      if (poller && poller.updatedAt <= failedAt) {
-        await ctx.db.patch(poller._id, pollErrorState(failedAt));
+      const poller = await pollerForProject(ctx, projectId);
+      if (poller && poller.updatedAt > failedAt) continue;
+
+      const project = await ctx.db.get(projectId);
+      if (!project || project.retiredAt !== undefined || project.status !== "registered") continue;
+
+      const value = pollErrorState(failedAt);
+      if (poller) {
+        await ctx.db.patch(poller._id, value);
+      } else {
+        await ctx.db.insert("pollerState", { scope: projectScope(projectId), projectId, ...value });
       }
     }
   },

@@ -3,6 +3,7 @@ import { rpc, scValToNative } from "@stellar/stellar-sdk";
 const DEFAULT_LEDGER_WINDOW = 1_200;
 const DEFAULT_EVENT_LIMIT = 100;
 const MAX_CONTRACT_IDS = 20;
+const MAX_CONTRACT_IDS_PER_FILTER = 5;
 
 type RpcEventLike = {
   id: string;
@@ -190,6 +191,14 @@ export async function fetchRecentContractEvents(input: {
     return { events: [], latestLedger: undefined, cursor: undefined };
   }
 
+  const filters: rpc.Api.EventFilter[] = [];
+  for (let offset = 0; offset < contractIds.length; offset += MAX_CONTRACT_IDS_PER_FILTER) {
+    filters.push({
+      type: "contract",
+      contractIds: contractIds.slice(offset, offset + MAX_CONTRACT_IDS_PER_FILTER),
+    });
+  }
+
   const server = new rpc.Server(input.rpcUrl);
   const limit = Math.min(DEFAULT_EVENT_LIMIT, Math.max(1, input.limit ?? DEFAULT_EVENT_LIMIT));
 
@@ -203,7 +212,7 @@ export async function fetchRecentContractEvents(input: {
     | undefined;
   if (input.cursor) {
     response = await server.getEvents({
-      filters: [{ type: "contract", contractIds }],
+      filters,
       cursor: input.cursor,
       limit,
     });
@@ -239,7 +248,7 @@ export async function fetchRecentContractEvents(input: {
     }
     response = await server.getEvents({
       startLedger,
-      filters: [{ type: "contract", contractIds }],
+      filters,
       limit,
     });
   }

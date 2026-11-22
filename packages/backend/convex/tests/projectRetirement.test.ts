@@ -235,6 +235,43 @@ test("scheduled polling preserves project order and the twenty-project limit", a
   }
 });
 
+test("batched poll failures preserve checkpoints and skip projects that have since recovered", async () => {
+  const t = convexTest(schema, modules);
+  const failedProjectId = await seedRegisteredProject(t, "batch-poll-failed");
+  const recoveredProjectId = await seedRegisteredProject(t, "batch-poll-recovered");
+  const failedAt = Date.now() - 1_000;
+  await t.run(async (ctx) => {
+    for (const projectId of [failedProjectId, recoveredProjectId]) {
+      await ctx.db.insert("pollerState", {
+        scope: `project:${projectId}`,
+        projectId,
+        status: projectId === failedProjectId ? "polling" : "idle",
+        lastLedger: 100,
+        cursor: "saved-checkpoint",
+        updatedAt: projectId === failedProjectId ? failedAt - 1 : failedAt + 1,
+      });
+    }
+  });
+
+  await t.mutation(internal.poller_state.mutation.markScheduledErrors, {
+    failures: [failedProjectId, recoveredProjectId].map((projectId) => ({ projectId, failedAt })),
+  });
+
+  expect(
+    await t.query(internal.poller_state.query.getByScope, { scope: `project:${failedProjectId}` }),
+  ).toMatchObject({
+    status: "error",
+    lastRunAt: failedAt,
+    lastLedger: 100,
+    cursor: "saved-checkpoint",
+  });
+  expect(
+    await t.query(internal.poller_state.query.getByScope, {
+      scope: `project:${recoveredProjectId}`,
+    }),
+  ).toMatchObject({ status: "idle", updatedAt: failedAt + 1 });
+});
+
 test("existing webhook delivery retries after retirement", async () => {
   const t = convexTest(schema, modules);
   const owner = asOwner(t);

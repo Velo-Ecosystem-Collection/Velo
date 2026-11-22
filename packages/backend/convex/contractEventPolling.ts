@@ -69,6 +69,7 @@ async function pollTarget(
     });
   }
 
+  let phase: "fetch_events" | "store_events" = "fetch_events";
   try {
     let currentCursor = target.cursor;
     let currentLedger = target.lastLedger;
@@ -77,6 +78,7 @@ async function pollTarget(
 
     // Bounded continuous pagination up to 10 pages in one poll run
     for (let page = 0; page < 10; page++) {
+      phase = "fetch_events";
       const result = await fetchRecentContractEvents({
         rpcUrl: url,
         contractIds: target.contractIds,
@@ -90,6 +92,7 @@ async function pollTarget(
         });
       }
 
+      phase = "store_events";
       if (result.events.length === 0) {
         // Idempotent checkpointing of the latest cursor/ledger
         await ctx.runMutation(internal.contract_events.mutation.storePollResult, {
@@ -125,11 +128,15 @@ async function pollTarget(
     console.warn("contract_event_poll_failed", {
       projectId: target.projectId,
       errorCategory,
+      phase,
+      contractCount: target.contractIds.length,
     });
-    await ctx.runMutation(internal.poller_state.mutation.markError, {
-      projectId: target.projectId,
-      message: errorCategory,
-    });
+    if (!options.pollingStatusAlreadyMarked) {
+      await ctx.runMutation(internal.poller_state.mutation.markError, {
+        projectId: target.projectId,
+        message: errorCategory,
+      });
+    }
     throw new Error(message);
   }
 }
@@ -165,19 +172,29 @@ export const pollScheduled = internalAction({
       return { projectCount: 0, eventCount: 0 };
     }
     let eventCount = 0;
+    const failures: { projectId: PollTarget["projectId"]; failedAt: number }[] = [];
     const limit = 5; // Bounded worker concurrency
 
     for (let i = 0; i < targets.length; i += limit) {
       const chunk = targets.slice(i, i + limit);
-      const results = await Promise.allSettled(
-        chunk.map((target) => pollTarget(ctx, target, { pollingStatusAlreadyMarked: true })),
+      const results = await Promise.all(
+        chunk.map(async (target) => {
+          try {
+            return await pollTarget(ctx, target, { pollingStatusAlreadyMarked: true });
+          } catch {
+            failures.push({ projectId: target.projectId, failedAt: Date.now() });
+            return null;
+          }
+        }),
       );
 
       for (const res of results) {
-        if (res.status === "fulfilled") {
-          eventCount += res.value.eventCount;
-        }
+        if (res) eventCount += res.eventCount;
       }
+    }
+
+    if (failures.length > 0) {
+      await ctx.runMutation(internal.poller_state.mutation.markScheduledErrors, { failures });
     }
 
     return { projectCount: targets.length, eventCount };

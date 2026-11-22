@@ -6,6 +6,7 @@ import { internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 
 const DEFAULT_TESTNET_RPC_URL = "https://soroban-testnet.stellar.org";
+const IDLE_CHECKPOINT_INTERVAL_MS = 5 * 60 * 1_000;
 type PayAccessEventResult = Awaited<ReturnType<typeof fetchRecentContractEvents>>;
 
 function rpcUrl() {
@@ -51,7 +52,13 @@ export const syncPayAccessEvents = internalAction({
     }
 
     if (result.events.length === 0) {
-      if (result.latestLedger !== undefined) {
+      // Recheck the short idle range on the next poll instead of writing the checkpoint every minute.
+      if (
+        result.latestLedger !== undefined &&
+        (lastLedger === undefined || result.latestLedger > lastLedger) &&
+        (pollerState?.lastRunAt === undefined ||
+          Date.now() - pollerState.lastRunAt >= IDLE_CHECKPOINT_INTERVAL_MS)
+      ) {
         await ctx.runMutation(internal.payAccessSync.updatePollerState, {
           latestLedger: result.latestLedger,
         });

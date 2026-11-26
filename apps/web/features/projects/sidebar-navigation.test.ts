@@ -47,7 +47,10 @@ test("Velo Arc follows Project Playground and is limited to registered owners an
     "Open in Velo Arc should be the next Build item after Project Playground",
   );
   assert.match(sidebarSource, /activeProject\?\.status === "registered"/);
-  assert.match(sidebarSource, /activeProject\.role === "owner" \|\| activeProject\.role === "editor"/);
+  assert.match(
+    sidebarSource,
+    /activeProject\.role === "owner" \|\| activeProject\.role === "editor"/,
+  );
   assert.match(sidebarSource, /onAction: canOpenArc \? onOpenArc : undefined/);
 });
 

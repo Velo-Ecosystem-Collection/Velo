@@ -1,9 +1,9 @@
 "use client";
 
+import { env } from "@/core/config/env";
 import { stellarConfig } from "@/core/config/stellar";
 import { shortenAddress } from "@/core/wallet/format";
 import { useWallet } from "@/core/wallet/wallet-provider";
-import { env } from "@/core/config/env";
 import { useUserProfile } from "@/features/onboarding/use-user-profile";
 import { api } from "@repo/backend/convex/_generated/api";
 import { Badge } from "@repo/ui/components/ui-customs/badge";
@@ -14,7 +14,6 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from "@repo/ui/componen
 import { useQuery, useConvexAuth } from "convex/react";
 import { Loader2Icon, PlugZapIcon } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { toast } from "sonner";
 import {
   createContext,
   ReactNode,
@@ -24,6 +23,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { toast } from "sonner";
 
 const selectedProjectStoragePrefix = "velo:selected-project";
 
@@ -329,7 +329,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       const result: unknown = await response.json().catch(() => null);
       if (!response.ok || !result || typeof result !== "object" || !("launchUrl" in result)) {
         const message =
-          result && typeof result === "object" && "error" in result && typeof result.error === "string"
+          result &&
+          typeof result === "object" &&
+          "error" in result &&
+          typeof result.error === "string"
             ? result.error
             : "Velo could not open this project in Arc.";
         throw new Error(message);

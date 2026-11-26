@@ -81,11 +81,7 @@ export function NavMain({
             <span>{item.title}</span>
           </SidebarMenuButton>
         ) : item.onAction ? (
-          <SidebarMenuButton
-            tooltip={item.title}
-            onClick={item.onAction}
-            isActive={item.isActive}
-          >
+          <SidebarMenuButton tooltip={item.title} onClick={item.onAction} isActive={item.isActive}>
             {item.icon && <item.icon />}
             <span>{item.title}</span>
           </SidebarMenuButton>
@@ -165,16 +161,15 @@ export function NavMain({
                             <SidebarMenuSubButton
                               aria-disabled="true"
                               className="cursor-not-allowed opacity-50"
-                              title={item.disabledReason ?? `${item.title} requires a selected project`}
+                              title={
+                                item.disabledReason ?? `${item.title} requires a selected project`
+                              }
                             >
                               {item.icon && <item.icon />}
                               <span>{item.title}</span>
                             </SidebarMenuSubButton>
                           ) : item.onAction ? (
-                            <SidebarMenuSubButton
-                              asChild
-                              isActive={item.isActive}
-                            >
+                            <SidebarMenuSubButton asChild isActive={item.isActive}>
                               <button type="button" onClick={item.onAction}>
                                 {item.icon && <item.icon />}
                                 <span>{item.title}</span>

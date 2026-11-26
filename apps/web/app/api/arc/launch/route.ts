@@ -1,9 +1,9 @@
 import { createHmac, randomUUID } from "node:crypto";
 
 import { env } from "@/core/config/env";
-import { api } from "@repo/backend/convex/_generated/api";
 import { stellarConfig } from "@/core/config/stellar";
 import { verifyLiveTestnetProject } from "@/features/arc/server/registry-verification";
+import { api } from "@repo/backend/convex/_generated/api";
 import { ConvexHttpClient } from "convex/browser";
 
 import type { Id } from "@repo/backend/convex/_generated/dataModel";
@@ -49,7 +49,8 @@ function launchConfiguration() {
   if (
     arcUrl.protocol !== "https:" &&
     !(arcUrl.protocol === "http:" && arcUrl.hostname === "localhost")
-  ) return null;
+  )
+    return null;
   return { secret, arcUrl, eventClosesAt };
 }
 
@@ -61,7 +62,9 @@ function createLaunchTicket(payload: LaunchTicket, secret: string) {
 
 function walletAddressFromJwt(token: string) {
   try {
-    const payload = JSON.parse(Buffer.from(token.split(".")[1] || "", "base64url").toString("utf8")) as {
+    const payload = JSON.parse(
+      Buffer.from(token.split(".")[1] || "", "base64url").toString("utf8"),
+    ) as {
       sub?: unknown;
     };
     return typeof payload.sub === "string" && /^G[A-Z2-7]{55}$/.test(payload.sub)
@@ -119,7 +122,8 @@ export async function POST(request: Request) {
       name: project.name,
       metadataHash: project.metadataHash,
     });
-    if (!matchesRegistry) return jsonError("The project does not match the live Testnet registry.", 403);
+    if (!matchesRegistry)
+      return jsonError("The project does not match the live Testnet registry.", 403);
 
     const now = Math.floor(Date.now() / 1000);
     const eventClosesAt = Math.floor(configuration.eventClosesAt / 1000);

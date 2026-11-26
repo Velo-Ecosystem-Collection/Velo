@@ -8,14 +8,6 @@ import {
   xdr,
 } from "@stellar/stellar-sdk";
 
-type RegisteredProject = {
-  id: number;
-  owner: string;
-  name: string;
-  metadataHash: string;
-  active: boolean;
-};
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value instanceof Map) {
     return Object.fromEntries(value.entries());

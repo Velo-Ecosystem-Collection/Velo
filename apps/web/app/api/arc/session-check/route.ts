@@ -3,8 +3,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { createWalletJwt } from "@/core/auth/wallet-jwt";
 import { env } from "@/core/config/env";
 import { stellarConfig } from "@/core/config/stellar";
-import { api } from "@repo/backend/convex/_generated/api";
 import { verifyLiveTestnetProject } from "@/features/arc/server/registry-verification";
+import { api } from "@repo/backend/convex/_generated/api";
 import { ConvexHttpClient } from "convex/browser";
 
 import type { Id } from "@repo/backend/convex/_generated/dataModel";
@@ -34,7 +34,10 @@ export async function POST(request: Request) {
       request.headers.get("x-velo-arc-signature"),
     )
   ) {
-    return Response.json({ active: false }, { status: 401, headers: { "Cache-Control": "no-store" } });
+    return Response.json(
+      { active: false },
+      { status: 401, headers: { "Cache-Control": "no-store" } },
+    );
   }
 
   if (!env.NEXT_PUBLIC_VELO_ARC_ENABLED) {
@@ -45,7 +48,10 @@ export async function POST(request: Request) {
   try {
     body = JSON.parse(rawBody) as unknown;
   } catch {
-    return Response.json({ active: false }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    return Response.json(
+      { active: false },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
   }
   if (
     !body ||
@@ -55,10 +61,16 @@ export async function POST(request: Request) {
     !("projectId" in body) ||
     typeof body.projectId !== "string"
   ) {
-    return Response.json({ active: false }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    return Response.json(
+      { active: false },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
   }
   if (!/^G[A-Z2-7]{55}$/.test(body.account) || body.projectId.length > 128) {
-    return Response.json({ active: false }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    return Response.json(
+      { active: false },
+      { status: 400, headers: { "Cache-Control": "no-store" } },
+    );
   }
 
   try {
@@ -92,6 +104,9 @@ export async function POST(request: Request) {
     return Response.json({ active }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[arc.session-check] access refresh failed", error);
-    return Response.json({ active: false }, { status: 503, headers: { "Cache-Control": "no-store" } });
+    return Response.json(
+      { active: false },
+      { status: 503, headers: { "Cache-Control": "no-store" } },
+    );
   }
 }

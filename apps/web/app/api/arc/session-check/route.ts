@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { createWalletJwt } from "@/core/auth/wallet-jwt";
 import { env } from "@/core/config/env";
+import { withRouteTelemetry } from "@/core/observability";
 import { stellarConfig } from "@/core/config/stellar";
 import { verifyLiveTestnetProject } from "@/features/arc/server/registry-verification";
 import { api } from "@repo/backend/convex/_generated/api";
@@ -25,7 +26,7 @@ function isTrustedRequest(rawBody: string, timestamp: string | null, signature: 
   return provided.length === expected.length && timingSafeEqual(provided, expected);
 }
 
-export async function POST(request: Request) {
+export const POST = withRouteTelemetry("arc.session_check", async (request) => {
   const rawBody = await request.text();
   if (
     !isTrustedRequest(
@@ -109,4 +110,4 @@ export async function POST(request: Request) {
       { status: 503, headers: { "Cache-Control": "no-store" } },
     );
   }
-}
+});

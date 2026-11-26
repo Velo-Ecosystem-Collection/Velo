@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 
 import { env } from "@/core/config/env";
+import { withRouteTelemetry } from "@/core/observability";
 import { stellarConfig } from "@/core/config/stellar";
 import { verifyLiveTestnetProject } from "@/features/arc/server/registry-verification";
 import { api } from "@repo/backend/convex/_generated/api";
@@ -75,7 +76,7 @@ function walletAddressFromJwt(token: string) {
   }
 }
 
-export async function POST(request: Request) {
+export const POST = withRouteTelemetry("arc.launch", async (request) => {
   if (!env.NEXT_PUBLIC_VELO_ARC_ENABLED) return jsonError("Velo Arc is not enabled.", 404);
 
   const configuration = launchConfiguration();
@@ -148,4 +149,4 @@ export async function POST(request: Request) {
     console.error("[arc.launch] launch ticket creation failed", error);
     return jsonError("Velo could not verify this project for Arc.", 503);
   }
-}
+});

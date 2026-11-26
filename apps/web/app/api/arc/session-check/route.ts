@@ -2,8 +2,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { createWalletJwt } from "@/core/auth/wallet-jwt";
 import { env } from "@/core/config/env";
-import { withRouteTelemetry } from "@/core/observability";
 import { stellarConfig } from "@/core/config/stellar";
+import { withRouteTelemetry } from "@/core/observability";
 import { verifyLiveTestnetProject } from "@/features/arc/server/registry-verification";
 import { api } from "@repo/backend/convex/_generated/api";
 import { ConvexHttpClient } from "convex/browser";

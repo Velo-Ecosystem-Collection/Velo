@@ -1,5 +1,6 @@
 "use client";
 
+import { env } from "@/core/config/env";
 import { stellarConfig } from "@/core/config/stellar";
 import { shortenAddress } from "@/core/wallet/format";
 import { useWallet } from "@/core/wallet/wallet-provider";
@@ -22,6 +23,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { toast } from "sonner";
 
 const selectedProjectStoragePrefix = "velo:selected-project";
 
@@ -301,6 +303,49 @@ export function AppShell({ children }: { children: ReactNode }) {
     [router],
   );
 
+  const handleOpenArc = useCallback(async () => {
+    const popup = window.open("about:blank", "_blank");
+    if (!popup) {
+      toast.error("Allow popups for Velo to open Arc in a new tab.");
+      return;
+    }
+    popup.opener = null;
+
+    try {
+      if (!activeProjectId) throw new Error("Select a registered project first.");
+      const storedToken = window.sessionStorage.getItem("velo:convex-token");
+      const token = storedToken ? (JSON.parse(storedToken) as { token?: string }).token : undefined;
+      if (!token) throw new Error("Reconnect your wallet and try again.");
+
+      const response = await fetch("/api/arc/launch", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ projectId: activeProjectId }),
+        cache: "no-store",
+      });
+      const result: unknown = await response.json().catch(() => null);
+      if (!response.ok || !result || typeof result !== "object" || !("launchUrl" in result)) {
+        const message =
+          result &&
+          typeof result === "object" &&
+          "error" in result &&
+          typeof result.error === "string"
+            ? result.error
+            : "Velo could not open this project in Arc.";
+        throw new Error(message);
+      }
+
+      const launchUrl = new URL(String(result.launchUrl));
+      popup.location.href = launchUrl.toString();
+    } catch (error) {
+      popup.close();
+      toast.error(error instanceof Error ? error.message : "Velo could not open Arc.");
+    }
+  }, [activeProjectId]);
+
   useEffect(() => {
     const activeProject = sidebarProjects.find((project) => project.id === activeProjectId);
     const urls = [
@@ -360,6 +405,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             onCreateProject={handleCreateProject}
             onNavigate={handleNavigate}
             onPrefetch={handlePrefetch}
+            onOpenArc={env.NEXT_PUBLIC_VELO_ARC_ENABLED ? handleOpenArc : undefined}
             onEditProfile={handleEditProfile}
             onDisconnect={wallet.disconnect}
             onConnect={wallet.connect}

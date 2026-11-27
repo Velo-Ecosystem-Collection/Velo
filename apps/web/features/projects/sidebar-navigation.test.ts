@@ -34,6 +34,26 @@ test("dashboard stays above the principle groups as a standalone destination", (
   assert.match(navMainSource, /items\?: NavMainItem\[\]/);
 });
 
+test("Velo Arc follows Project Playground and is limited to registered owners and editors", () => {
+  const playgroundIndex = sidebarSource.indexOf('title: "Project Playground"');
+  const arcIndex = sidebarSource.indexOf('title: "Open in Velo Arc"');
+
+  assert.notEqual(playgroundIndex, -1);
+  assert.notEqual(arcIndex, -1);
+  assert.ok(arcIndex > playgroundIndex);
+  assert.equal(
+    (sidebarSource.slice(playgroundIndex, arcIndex).match(/title:/g) ?? []).length,
+    1,
+    "Open in Velo Arc should be the next Build item after Project Playground",
+  );
+  assert.match(sidebarSource, /activeProject\?\.status === "registered"/);
+  assert.match(
+    sidebarSource,
+    /activeProject\.role === "owner" \|\| activeProject\.role === "editor"/,
+  );
+  assert.match(sidebarSource, /onAction: canOpenArc \? onOpenArc : undefined/);
+});
+
 test("principle groups collapse while preserving active navigation state", () => {
   assert.match(navMainSource, /export type NavMainGroup/);
   assert.match(navMainSource, /openGroups/);

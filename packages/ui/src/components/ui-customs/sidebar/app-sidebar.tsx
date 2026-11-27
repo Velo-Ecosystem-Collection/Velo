@@ -46,6 +46,7 @@ export type SidebarProps = React.ComponentProps<typeof Sidebar> & {
   onDisconnect?: () => void;
   onNavigate?: (url: string) => void;
   onPrefetch?: (url: string) => void;
+  onOpenArc?: () => void;
   onConnect?: () => void;
   isConnecting?: boolean;
 };
@@ -61,12 +62,16 @@ export function AppSidebar({
   onDisconnect,
   onNavigate,
   onPrefetch,
+  onOpenArc,
   onConnect,
   isConnecting,
   ...props
 }: SidebarProps) {
   const activeProject = projects.find((project) => project.id === activeProjectId);
   const isProjectOwner = activeProject?.role === "owner";
+  const canOpenArc =
+    activeProject?.status === "registered" &&
+    (activeProject.role === "owner" || activeProject.role === "editor");
   const ownerOnlyNavItems = new Set([
     "Integration",
     "API Keys",
@@ -124,6 +129,22 @@ export function AppSidebar({
           icon: FlaskConicalIcon,
           disabled: !activeProject,
         },
+        ...(onOpenArc
+          ? [
+              {
+                title: "Open in Velo Arc",
+                url: "/arc",
+                icon: BracesIcon,
+                disabled: !canOpenArc,
+                disabledReason: !activeProject
+                  ? "Select a registered project to open Velo Arc"
+                  : activeProject.status !== "registered"
+                    ? "This project must be registered on Testnet to open Velo Arc"
+                    : "Owner or editor access is required to open Velo Arc",
+                onAction: canOpenArc ? onOpenArc : undefined,
+              },
+            ]
+          : []),
         {
           title: "Docs",
           url: "/docs",

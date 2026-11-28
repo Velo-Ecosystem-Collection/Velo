@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import test from "node:test";
 
-test("Kit initializes once and registers WalletConnect only when configured", async () => {
+import { NoirModule } from "../../../../packages/velo-wallets/src/noir-module.ts";
+
+test("Kit initializes once with Noir and adds WalletConnect when configured", async () => {
   const calls: Array<{ modules: unknown[]; network: string }> = [];
   const configurations: unknown[] = [];
   const env = {
@@ -57,14 +59,17 @@ test("Kit initializes once and registers WalletConnect only when configured", as
     const absent = await load("absent");
     await Promise.all([absent.initializeWalletKit(), absent.initializeWalletKit()]);
     assert.equal(calls.length, 1);
-    assert.deepEqual(calls[0]?.modules, ["existing-wallet"]);
+    assert.equal(calls[0]?.modules.length, 2);
+    assert.equal(calls[0]?.modules[0], "existing-wallet");
+    assert.ok(calls[0]?.modules[1] instanceof NoirModule);
     assert.equal(configurations.length, 0);
     env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID = "public-project-id";
     const configured = await load("configured");
     await Promise.all([configured.initializeWalletKit(), configured.initializeWalletKit()]);
     assert.equal(calls.length, 2);
-    assert.equal(calls[1]?.modules.length, 2);
+    assert.equal(calls[1]?.modules.length, 3);
     assert.equal(calls[1]?.modules[0], "existing-wallet");
+    assert.ok(calls[1]?.modules[1] instanceof NoirModule);
     assert.deepEqual(configurations, [
       {
         projectId: "public-project-id",

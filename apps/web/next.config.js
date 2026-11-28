@@ -7,7 +7,8 @@ function fixturePath(fileName) {
 }
 
 export function createNextConfig(phase, enabled = process.env[gasFixtureFlag] === "1") {
-  if (process.env.VELO_WALLET_AUTH_E2E_FIXTURES === "1") {
+  const walletAuthFixture = process.env.VELO_WALLET_AUTH_E2E_FIXTURES;
+  if (walletAuthFixture === "1" || walletAuthFixture === "noir") {
     if (phase !== PHASE_DEVELOPMENT_SERVER || enabled) {
       throw new Error("Wallet auth fixtures require an isolated development server");
     }
@@ -16,8 +17,10 @@ export function createNextConfig(phase, enabled = process.env[gasFixtureFlag] ==
       turbopack: {
         resolveAlias: {
           "@/core/app-shell": fixturePath("wallet-auth-shell.tsx"),
-          "@/core/wallet/wallet-kit": fixturePath("wallet-auth-kit.ts"),
-          "@creit-tech/stellar-wallets-kit": fixturePath("wallet-auth-kit.ts"),
+          ...(walletAuthFixture === "1" && {
+            "@/core/wallet/wallet-kit": fixturePath("wallet-auth-kit.ts"),
+            "@creit-tech/stellar-wallets-kit": fixturePath("wallet-auth-kit.ts"),
+          }),
           "convex/react": fixturePath("wallet-auth-convex.tsx"),
         },
       },

@@ -1,5 +1,7 @@
 import { assertValidPublicKey } from "@repo/stellar/validation";
 
+import { NOIR_ID, NoirModule } from "../../../../packages/velo-wallets/src/noir-module.ts";
+
 type WalletKitInitializer = () => Promise<typeof import("@creit-tech/stellar-wallets-kit")>;
 
 /** Restores only wallet sessions that can be checked without opening a wallet prompt. */
@@ -20,6 +22,10 @@ export async function restoreWalletSession(
     };
     if (!walletConnectModule.restoreSession) return null;
     restored = await walletConnectModule.restoreSession(expectedAddress);
+  } else if (walletId === NOIR_ID && selectedModule instanceof NoirModule) {
+    if (await selectedModule.hasMatchingSession(expectedAddress, testnetPassphrase)) {
+      restored = { address: expectedAddress };
+    }
   } else if (walletId === "freighter" || walletId === "cactuslink") {
     restored = await selectedModule.getAddress({ skipRequestAccess: true });
     if (!selectedModule.getNetwork) return null;

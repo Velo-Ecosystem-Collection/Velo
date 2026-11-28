@@ -1,3 +1,4 @@
+import { NoirModule } from "../../../../packages/velo-wallets/src/noir-module.ts";
 import { env } from "../config/env";
 import { walletConnectMetadata } from "./wallet-connect-policy.ts";
 
@@ -9,7 +10,7 @@ export function initializeWalletKit() {
       import("@creit-tech/stellar-wallets-kit"),
       import("@creit-tech/stellar-wallets-kit/modules/utils"),
     ]);
-    const modules = defaultModules();
+    const modules = [...defaultModules(), new NoirModule()];
     if (env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID) {
       const [{ VeloWalletConnectModule }, { WalletConnectTargetChain }] = await Promise.all([
         import("./wallet-connect-module"),

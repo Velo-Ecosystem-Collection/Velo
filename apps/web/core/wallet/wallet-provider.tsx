@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 
+import { NOIR_ID } from "../../../../packages/velo-wallets/src/noir-module.ts";
 import { encodeSep45Entries } from "../auth/sep45-client";
 import {
   isPasskeyBrowserSupported,
@@ -358,12 +359,27 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setErrorCode(null);
 
     try {
-      const { StellarWalletsKit } = await initializeWalletKit();
-      await StellarWalletsKit.refreshSupportedWallets();
+      const [{ StellarWalletsKit }, { allowedWallets }] = await Promise.all([
+        initializeWalletKit(),
+        import("@creit-tech/stellar-wallets-kit/state"),
+      ]);
       if (!isCurrent()) return;
+      // Kit 2.3 renders before refreshing and subscribes after. Hide cached options
+      // during that refresh so fast extension responses reach the subscriber.
+      allowedWallets.value = [];
       const result = await StellarWalletsKit.authModal();
       if (!isCurrent()) return;
       const selectedWalletId = StellarWalletsKit.selectedModule?.productId ?? walletId;
+      if (selectedWalletId === NOIR_ID) {
+        const { networkPassphrase } = await StellarWalletsKit.getNetwork();
+        if (!isCurrent()) return;
+        if (networkPassphrase !== STELLAR_TESTNET_NETWORK_PASSPHRASE) {
+          throw new WalletError(
+            "WALLET_NETWORK_MISMATCH",
+            "Switch Noir to Testnet, then reconnect.",
+          );
+        }
+      }
 
       connectedAddress.current = result.address;
       setAddress(result.address);
@@ -383,7 +399,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       window.localStorage.removeItem(LAST_SESSION_KEY);
       const rejected = isRejected(connectError);
       setStatus(rejected ? "rejected" : "error");
-      setErrorCode(rejected ? "WALLET_REJECTED" : "WALLET_UNAVAILABLE");
+      setErrorCode(
+        connectError instanceof WalletError
+          ? connectError.code
+          : rejected
+            ? "WALLET_REJECTED"
+            : "WALLET_UNAVAILABLE",
+      );
       setError(walletErrorMessage(connectError));
     } finally {
       if (isCurrent()) connecting.current = false;

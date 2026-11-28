@@ -1,7 +1,7 @@
 import { type ModuleInterface, ModuleType } from "@creit-tech/stellar-wallets-kit/types";
 
-import { VeloWalletError } from "./errors.js";
-import { isValidStellarAccountId, isWalletSigningPayload } from "./wallet-validation.js";
+import { VeloWalletError } from "./errors.ts";
+import { isValidStellarAccountId, isWalletSigningPayload } from "./wallet-validation.ts";
 
 export const NOIR_ID = "noir";
 export const NOIR_INSTALL_URL =

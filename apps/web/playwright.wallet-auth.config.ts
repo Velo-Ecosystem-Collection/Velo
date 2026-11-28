@@ -1,9 +1,12 @@
 import path from "node:path";
 
 import { defineConfig, devices } from "@playwright/test";
+
+const noir = process.env.VELO_WALLET_AUTH_E2E_FIXTURES === "noir";
+
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "wallet-auth.spec.ts",
+  testMatch: noir ? "wallet-auth-noir.spec.ts" : "wallet-auth.spec.ts",
   fullyParallel: true,
   use: { baseURL: "http://127.0.0.1:3107", trace: "retain-on-failure" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
@@ -13,7 +16,7 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 120_000,
     env: {
-      VELO_WALLET_AUTH_E2E_FIXTURES: "1",
+      VELO_WALLET_AUTH_E2E_FIXTURES: noir ? "noir" : "1",
       NEXT_PUBLIC_CONVEX_URL: "https://wallet-auth-fixture.convex.cloud",
       // The shared UI package owns the PostCSS plugin used by the root layout.
       NODE_PATH: [path.resolve("../../packages/ui/node_modules"), process.env.NODE_PATH]
